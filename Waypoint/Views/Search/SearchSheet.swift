@@ -28,6 +28,7 @@ struct SearchSheet: View {
             List {
                 if viewModel.queryText.isEmpty {
                     tipSection
+                    placesSection
                     categoriesSection
                     nearbySection
                     recentsSection
@@ -119,6 +120,32 @@ struct SearchSheet: View {
         }
     }
 
+    @ViewBuilder
+    private var placesSection: some View {
+        let canAddSelection = viewModel.selectedResult.map { !viewModel.favoritesStore.isFavorite($0) } ?? false
+        if !viewModel.favoritesStore.favorites.isEmpty || canAddSelection {
+            Section("Places") {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 16) {
+                        ForEach(viewModel.favoritesStore.favorites) { favorite in
+                            FavoriteCircle(favorite: favorite) {
+                                select(favorite: favorite)
+                            }
+                        }
+                        if let selected = viewModel.selectedResult, canAddSelection {
+                            AddFavoriteCircle {
+                                viewModel.favoritesStore.toggle(selected)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+            }
+        }
+    }
+
     private var categoriesSection: some View {
         Section {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -193,6 +220,11 @@ struct SearchSheet: View {
     private func select(nearby result: SearchResult) {
         isFieldFocused = false
         viewModel.selectResult(result)
+    }
+
+    private func select(favorite: FavoritePlace) {
+        isFieldFocused = false
+        viewModel.selectFavorite(favorite)
     }
 }
 
@@ -279,6 +311,53 @@ private struct NearbyRow: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+private struct FavoriteCircle: View {
+    let favorite: FavoritePlace
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Circle()
+                    .fill(Color.indigo.gradient)
+                    .frame(width: 44, height: 44)
+                    .overlay {
+                        Text(favorite.title.prefix(1))
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                    }
+                Text(favorite.title)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .frame(width: 60)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct AddFavoriteCircle: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Circle()
+                    .strokeBorder(Color.secondary, style: StrokeStyle(lineWidth: 1.5, dash: [4]))
+                    .frame(width: 44, height: 44)
+                    .overlay {
+                        Image(systemName: "plus")
+                            .foregroundStyle(.secondary)
+                    }
+                Text("Add")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
     }
 }
 

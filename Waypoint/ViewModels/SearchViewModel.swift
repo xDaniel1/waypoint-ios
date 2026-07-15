@@ -17,6 +17,7 @@ final class SearchViewModel {
     }
 
     let recentsStore = RecentSearchesStore()
+    let favoritesStore = FavoritesStore()
     let speechService = SpeechRecognitionService()
     let nearbyService = NearbyPlacesService()
 
@@ -62,14 +63,23 @@ final class SearchViewModel {
     }
 
     func selectRecent(_ recent: RecentSearch) {
-        let placemark = MKPlacemark(coordinate: recent.coordinate)
-        let mapItem = MKMapItem(placemark: placemark)
-        mapItem.name = recent.title
-        selectedResult = SearchResult(mapItem: mapItem)
+        selectedResult = syntheticResult(title: recent.title, coordinate: recent.coordinate)
         queryText = recent.title
+    }
+
+    func selectFavorite(_ favorite: FavoritePlace) {
+        selectedResult = syntheticResult(title: favorite.title, coordinate: favorite.coordinate)
+        queryText = favorite.title
     }
 
     func clearSelection() {
         selectedResult = nil
+    }
+
+    private func syntheticResult(title: String, coordinate: CLLocationCoordinate2D) -> SearchResult {
+        let placemark = MKPlacemark(coordinate: coordinate)
+        let mapItem = MKMapItem(placemark: placemark)
+        mapItem.name = title
+        return SearchResult(mapItem: mapItem)
     }
 }
