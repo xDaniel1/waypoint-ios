@@ -51,7 +51,6 @@ struct MapScreen: View {
         .onChange(of: searchViewModel.selectedResult) { _, newValue in
             guard let newValue else { return }
             viewModel.centerCamera(on: newValue.coordinate)
-            searchDetent = .height(120)
         }
     }
 

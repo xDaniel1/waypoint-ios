@@ -18,34 +18,43 @@ struct SearchSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                searchField
-                profileButton
-            }
-            .padding(.horizontal)
-            .padding(.top, 8)
-            .padding(.bottom, 12)
-
-            if isFieldFocused {
-                List {
-                    if viewModel.queryText.isEmpty {
-                        tipSection
-                        placesSection
-                        categoriesSection
-                        nearbySection
-                        recentsSection
-                    } else {
-                        suggestionsSection
-                    }
+            if let selected = viewModel.selectedResult, !isFieldFocused {
+                PlaceDetailContent(result: selected) {
+                    viewModel.clearSelection()
                 }
-                .listStyle(.plain)
-                .scrollDismissesKeyboard(.immediately)
             } else {
-                Spacer(minLength: 0)
+                HStack(spacing: 10) {
+                    searchField
+                    profileButton
+                }
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .padding(.bottom, 12)
+
+                if isFieldFocused {
+                    List {
+                        if viewModel.queryText.isEmpty {
+                            tipSection
+                            placesSection
+                            categoriesSection
+                            nearbySection
+                            recentsSection
+                        } else {
+                            suggestionsSection
+                        }
+                    }
+                    .listStyle(.plain)
+                    .scrollDismissesKeyboard(.immediately)
+                } else {
+                    Spacer(minLength: 0)
+                }
             }
         }
         .onChange(of: isFieldFocused) { _, focused in
-            detent = focused ? .large : .height(120)
+            detent = focused ? .large : (viewModel.selectedResult == nil ? .height(120) : .medium)
+        }
+        .onChange(of: viewModel.selectedResult) { _, newValue in
+            detent = newValue == nil ? .height(120) : .medium
         }
         .onChange(of: viewModel.speechService.transcript) { _, newValue in
             guard viewModel.speechService.isRecording else { return }

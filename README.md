@@ -11,9 +11,9 @@ A native iOS maps app: Apple Maps' look, feel, native MapKit rendering, and the 
 - [x] Custom-positioned map controls (3D, compass, map style, location) matching Apple Maps' own layout
 - [x] Local Favorites ("Places") with a quick-add row
 - [x] WeatherKit floating weather widget (needs the WeatherKit capability enabled with a paid account, see Setup)
-- [ ] Tap-to-open place detail sheet: photos, star ratings, reviews, hours, phone, website, address (sourced from Google Places, not Apple's default POI data)
-- [ ] "Get Directions" handoff to Apple Maps for turn-by-turn navigation
-- [ ] Recent searches / favorites (local storage)
+- [x] Tap-to-open place detail sheet: photos, star ratings, reviews, hours, phone, website, address (sourced from Google Places, not Apple's default POI data). Google's API doesn't expose structured menus or in-app ordering, so those aren't faked.
+- [x] "Get Directions" handoff to Apple Maps for turn-by-turn navigation
+- [x] Recent searches / favorites (local storage)
 
 See [Roadmap](#roadmap) for what's built vs. planned.
 
@@ -55,7 +55,7 @@ See [Roadmap](#roadmap) for what's built vs. planned.
    cp Secrets.xcconfig.example Secrets.xcconfig
    # then edit Secrets.xcconfig and set GOOGLE_PLACES_API_KEY
    ```
-   `Secrets.xcconfig` is git-ignored — your key never gets committed.
+   `Secrets.xcconfig` is git-ignored — your key never gets committed. In Google Cloud Console, restrict the key to **iOS apps** and list this app's bundle ID (`com.danielguzman.waypoint`) so it can't be used from anywhere else if it ever leaks.
 4. Generate the Xcode project:
    ```sh
    xcodegen generate
@@ -93,8 +93,8 @@ Waypoint/
 - [x] Base map view with current-location centering and permission handling
 - [x] Search bar
 - [x] Recent searches / favorites (local only)
-- [ ] Place detail sheet (photos, ratings, reviews, hours, contact info)
-- [ ] Directions handoff to Apple Maps
+- [x] Place detail sheet (photos, ratings, reviews, hours, contact info)
+- [x] Directions handoff to Apple Maps
 
 **Phase 2 (future)**
 - User accounts
