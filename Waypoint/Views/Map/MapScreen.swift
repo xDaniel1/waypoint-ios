@@ -42,7 +42,7 @@ struct MapScreen: View {
             await viewModel.start()
         }
         .sheet(isPresented: .constant(true)) {
-            SearchSheet(viewModel: searchViewModel)
+            SearchSheet(viewModel: searchViewModel, detent: $searchDetent)
                 .presentationDetents([.height(120), .medium, .large], selection: $searchDetent)
                 .presentationDragIndicator(.visible)
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))

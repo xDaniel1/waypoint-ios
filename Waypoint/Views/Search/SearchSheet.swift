@@ -11,6 +11,7 @@ private let categories: [(title: String, symbol: String)] = [
 
 struct SearchSheet: View {
     @Bindable var viewModel: SearchViewModel
+    @Binding var detent: PresentationDetent
     @FocusState private var isFieldFocused: Bool
     @State private var isShowingProfile = false
     @AppStorage("com.danielguzman.waypoint.hasDismissedVoiceSearchTip") private var hasDismissedTip = false
@@ -25,19 +26,26 @@ struct SearchSheet: View {
             .padding(.top, 8)
             .padding(.bottom, 12)
 
-            List {
-                if viewModel.queryText.isEmpty {
-                    tipSection
-                    placesSection
-                    categoriesSection
-                    nearbySection
-                    recentsSection
-                } else {
-                    suggestionsSection
+            if isFieldFocused {
+                List {
+                    if viewModel.queryText.isEmpty {
+                        tipSection
+                        placesSection
+                        categoriesSection
+                        nearbySection
+                        recentsSection
+                    } else {
+                        suggestionsSection
+                    }
                 }
+                .listStyle(.plain)
+                .scrollDismissesKeyboard(.immediately)
+            } else {
+                Spacer(minLength: 0)
             }
-            .listStyle(.plain)
-            .scrollDismissesKeyboard(.immediately)
+        }
+        .onChange(of: isFieldFocused) { _, focused in
+            detent = focused ? .large : .height(120)
         }
         .onChange(of: viewModel.speechService.transcript) { _, newValue in
             guard viewModel.speechService.isRecording else { return }
