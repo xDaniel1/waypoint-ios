@@ -27,26 +27,28 @@ struct MapScreen: View {
 
 private struct LocationPermissionDeniedView: View {
     var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "location.slash.fill")
-                .font(.largeTitle)
-                .foregroundStyle(.secondary)
-            Text("Location Access Needed")
-                .font(.headline)
-            Text("Waypoint uses your location to center the map and show places near you.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Button("Open Settings") {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
+        GlassEffectContainer {
+            VStack(spacing: 12) {
+                Image(systemName: "location.slash.fill")
+                    .font(.largeTitle)
+                    .foregroundStyle(.secondary)
+                Text("Location Access Needed")
+                    .font(.headline)
+                Text("Waypoint uses your location to center the map and show places near you.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Button("Open Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
                 }
+                .buttonStyle(.glassProminent)
             }
-            .buttonStyle(.borderedProminent)
+            .padding(24)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20))
+            .padding()
         }
-        .padding(24)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .padding()
     }
 }
 
