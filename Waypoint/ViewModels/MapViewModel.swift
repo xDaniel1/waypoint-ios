@@ -26,6 +26,15 @@ final class MapViewModel {
         }
     }
 
+    func centerCamera(on coordinate: CLLocationCoordinate2D) {
+        cameraPosition = .region(
+            MKCoordinateRegion(
+                center: coordinate,
+                span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
+            )
+        )
+    }
+
     private func centerOnUserLocation(_ location: CLLocation) {
         guard !hasCenteredOnUser else { return }
         hasCenteredOnUser = true

@@ -3,15 +3,24 @@ import SwiftUI
 
 struct MapScreen: View {
     @State private var viewModel = MapViewModel()
+    @State private var searchViewModel = SearchViewModel()
+    @State private var searchDetent: PresentationDetent = .height(120)
 
     var body: some View {
         ZStack {
             Map(position: $viewModel.cameraPosition) {
                 UserAnnotation()
+                if let result = searchViewModel.selectedResult {
+                    Marker(result.title, coordinate: result.coordinate)
+                        .tint(.indigo)
+                }
             }
             .mapControls {
                 MapUserLocationButton()
                 MapCompass()
+            }
+            .onMapCameraChange(frequency: .onEnd) { context in
+                searchViewModel.updateSearchRegion(context.region)
             }
             .ignoresSafeArea(edges: .top)
 
@@ -21,6 +30,18 @@ struct MapScreen: View {
         }
         .task {
             await viewModel.start()
+        }
+        .sheet(isPresented: .constant(true)) {
+            SearchSheet(viewModel: searchViewModel)
+                .presentationDetents([.height(120), .medium, .large], selection: $searchDetent)
+                .presentationDragIndicator(.visible)
+                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+                .interactiveDismissDisabled(true)
+        }
+        .onChange(of: searchViewModel.selectedResult) { _, newValue in
+            guard let newValue else { return }
+            viewModel.centerCamera(on: newValue.coordinate)
+            searchDetent = .height(120)
         }
     }
 }

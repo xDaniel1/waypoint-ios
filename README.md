@@ -7,7 +7,7 @@ A native iOS maps app: Apple Maps' look, feel, native MapKit rendering, and the 
 ## Features
 
 - [x] Native MapKit map centered on the user's current location, with graceful handling of denied/restricted location permission
-- [ ] Search bar for places and addresses
+- [x] Apple-Maps-style search: persistent Liquid Glass bottom sheet, category shortcuts, live autocomplete, recents
 - [ ] Tap-to-open place detail sheet: photos, star ratings, reviews, hours, phone, website, address (sourced from Google Places, not Apple's default POI data)
 - [ ] "Get Directions" handoff to Apple Maps for turn-by-turn navigation
 - [ ] Recent searches / favorites (local storage)
@@ -85,7 +85,7 @@ Waypoint/
 
 **Phase 1 (MVP)**
 - [x] Base map view with current-location centering and permission handling
-- [ ] Search bar
+- [x] Search bar
 - [ ] Place detail sheet (photos, ratings, reviews, hours, contact info)
 - [ ] Directions handoff to Apple Maps
 - [ ] Recent searches / favorites (local only)

@@ -1,0 +1,60 @@
+import MapKit
+import Observation
+
+@Observable
+@MainActor
+final class SearchViewModel {
+    var queryText: String = "" {
+        didSet { completerService.updateQuery(queryText) }
+    }
+
+    private(set) var selectedResult: SearchResult?
+    private(set) var isSearching = false
+    private(set) var errorMessage: String?
+
+    var suggestions: [MKLocalSearchCompletion] {
+        completerService.suggestions
+    }
+
+    let recentsStore = RecentSearchesStore()
+
+    private let completerService = SearchCompleterService()
+
+    func updateSearchRegion(_ region: MKCoordinateRegion) {
+        completerService.updateRegion(region)
+    }
+
+    func select(_ completion: MKLocalSearchCompletion) async {
+        isSearching = true
+        errorMessage = nil
+        defer { isSearching = false }
+
+        let request = MKLocalSearch.Request(completion: completion)
+        let search = MKLocalSearch(request: request)
+        do {
+            let response = try await search.start()
+            if let item = response.mapItems.first {
+                let result = SearchResult(mapItem: item)
+                selectedResult = result
+                recentsStore.add(result)
+                queryText = result.title
+            } else {
+                errorMessage = "No results found."
+            }
+        } catch {
+            errorMessage = "Couldn't find that place. Try again."
+        }
+    }
+
+    func selectRecent(_ recent: RecentSearch) {
+        let placemark = MKPlacemark(coordinate: recent.coordinate)
+        let mapItem = MKMapItem(placemark: placemark)
+        mapItem.name = recent.title
+        selectedResult = SearchResult(mapItem: mapItem)
+        queryText = recent.title
+    }
+
+    func clearSelection() {
+        selectedResult = nil
+    }
+}

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Apple-Maps-style search: a persistent Liquid Glass bottom sheet (collapsed/medium/large detents, map stays interactive underneath) with a floating search field, category shortcut pills (Restaurants, Coffee, Gas, Groceries, Hotels), live autocomplete suggestions via `MKLocalSearchCompleter`, and a "Recents" list persisted locally via `RecentSearchesStore`. Selecting a result resolves it with `MKLocalSearch`, drops a marker on the map, and recenters the camera.
 - App icon (indigo-to-teal gradient with a pin/waypoint glyph) and accent color, replacing the placeholder that disabled icon compilation.
 - Initial project scaffold: folder structure, XcodeGen `project.yml`, `.gitignore`, README, CHANGELOG, LICENSE, and gitignored `Secrets.xcconfig` / committed `Secrets.xcconfig.example` for the Google Places API key.
 - Base MapKit map view centered on the user's current location, using `CLLocationUpdate.liveUpdates()` via `LocationManager` and `MapViewModel`. Shows a graceful in-app prompt with a link to Settings when location permission is denied or restricted, instead of a blank map.
