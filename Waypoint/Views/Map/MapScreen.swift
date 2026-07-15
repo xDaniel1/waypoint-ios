@@ -4,6 +4,8 @@ import SwiftUI
 struct MapScreen: View {
     @State private var viewModel = MapViewModel()
     @State private var searchViewModel = SearchViewModel()
+    @State private var weatherService = WeatherService()
+    @State private var hasFetchedWeather = false
     @State private var searchDetent: PresentationDetent = .height(120)
     @State private var mapStyle: MapStyle = .standard
     @Namespace private var mapScope
@@ -28,9 +30,15 @@ struct MapScreen: View {
             }
 
             mapControlsOverlay
+            weatherWidgetOverlay
         }
         .mapScope(mapScope)
         .task {
+            viewModel.onLocationUpdate = { location in
+                guard !hasFetchedWeather else { return }
+                hasFetchedWeather = true
+                Task { await weatherService.refresh(for: location) }
+            }
             await viewModel.start()
         }
         .sheet(isPresented: .constant(true)) {
@@ -71,6 +79,21 @@ struct MapScreen: View {
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 150)
+        }
+    }
+
+    @ViewBuilder
+    private var weatherWidgetOverlay: some View {
+        if let temperature = weatherService.temperature, let symbolName = weatherService.symbolName {
+            VStack {
+                HStack {
+                    WeatherWidgetView(temperature: temperature, symbolName: symbolName)
+                        .padding(.leading, 12)
+                        .padding(.top, 8)
+                    Spacer()
+                }
+                Spacer()
+            }
         }
     }
 }

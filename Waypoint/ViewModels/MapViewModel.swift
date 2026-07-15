@@ -12,6 +12,9 @@ final class MapViewModel {
         locationManager.authorizationStatus
     }
 
+    /// Called on every location update; consumers should debounce/guard for one-shot work like a weather fetch.
+    var onLocationUpdate: ((CLLocation) -> Void)?
+
     private let locationManager: LocationManager
     private var hasCenteredOnUser = false
 
@@ -23,6 +26,7 @@ final class MapViewModel {
         locationManager.requestPermission()
         await locationManager.startUpdating { [weak self] location in
             self?.centerOnUserLocation(location)
+            self?.onLocationUpdate?(location)
         }
     }
 

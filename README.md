@@ -56,6 +56,7 @@ See [Roadmap](#roadmap) for what's built vs. planned.
    xcodegen generate
    ```
 5. Open `Waypoint.xcodeproj` and run on an iOS 26+ simulator or device.
+6. To see live weather in the top-left widget, sign in with your paid Apple Developer team in Xcode's Signing & Capabilities tab for the `Waypoint` target and confirm the **WeatherKit** capability is enabled for your App ID (the entitlement is already checked into `Waypoint/Waypoint.entitlements`; Xcode/App Store Connect need your team to actually grant it). Without this, the app runs fine but the weather widget just stays hidden.
 
 ## Project structure
 

@@ -25,6 +25,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.danielguzman.waypoint
+        CODE_SIGN_ENTITLEMENTS: Waypoint/Waypoint.entitlements
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Waypoint uses your location to center the map and show places near you."
