@@ -5,20 +5,19 @@ struct MapScreen: View {
     @State private var viewModel = MapViewModel()
     @State private var searchViewModel = SearchViewModel()
     @State private var searchDetent: PresentationDetent = .height(120)
+    @State private var mapStyle: MapStyle = .standard
+    @Namespace private var mapScope
 
     var body: some View {
         ZStack {
-            Map(position: $viewModel.cameraPosition) {
+            Map(position: $viewModel.cameraPosition, scope: mapScope) {
                 UserAnnotation()
                 if let result = searchViewModel.selectedResult {
                     Marker(result.title, coordinate: result.coordinate)
                         .tint(.indigo)
                 }
             }
-            .mapControls {
-                MapUserLocationButton()
-                MapCompass()
-            }
+            .mapStyle(mapStyle)
             .onMapCameraChange(frequency: .onEnd) { context in
                 searchViewModel.updateSearchRegion(context.region)
             }
@@ -27,7 +26,10 @@ struct MapScreen: View {
             if viewModel.authorizationStatus == .denied || viewModel.authorizationStatus == .restricted {
                 LocationPermissionDeniedView()
             }
+
+            mapControlsOverlay
         }
+        .mapScope(mapScope)
         .task {
             await viewModel.start()
         }
@@ -43,6 +45,51 @@ struct MapScreen: View {
             viewModel.centerCamera(on: newValue.coordinate)
             searchDetent = .height(120)
         }
+    }
+
+    private var mapControlsOverlay: some View {
+        VStack {
+            Spacer()
+            HStack(alignment: .bottom) {
+                GlassEffectContainer {
+                    VStack(spacing: 12) {
+                        MapPitchToggle(scope: mapScope)
+                        MapCompass(scope: mapScope)
+                    }
+                    .mapControlVisibility(.visible)
+                }
+
+                Spacer()
+
+                GlassEffectContainer {
+                    VStack(spacing: 12) {
+                        MapStyleMenu(mapStyle: $mapStyle)
+                        MapUserLocationButton(scope: mapScope)
+                    }
+                    .mapControlVisibility(.visible)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 150)
+        }
+    }
+}
+
+private struct MapStyleMenu: View {
+    @Binding var mapStyle: MapStyle
+
+    var body: some View {
+        Menu {
+            Button("Standard") { mapStyle = .standard }
+            Button("Satellite") { mapStyle = .imagery }
+            Button("Hybrid") { mapStyle = .hybrid }
+        } label: {
+            Image(systemName: "square.3.layers.3d")
+                .font(.system(size: 18, weight: .medium))
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.glass)
+        .clipShape(Circle())
     }
 }
 
