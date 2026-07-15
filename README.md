@@ -7,7 +7,10 @@ A native iOS maps app: Apple Maps' look, feel, native MapKit rendering, and the 
 ## Features
 
 - [x] Native MapKit map centered on the user's current location, with graceful handling of denied/restricted location permission
-- [x] Apple-Maps-style search: persistent Liquid Glass bottom sheet, category shortcuts, live autocomplete, recents
+- [x] Apple-Maps-style search: persistent Liquid Glass bottom sheet, category shortcuts, live autocomplete, recents, on-device voice search
+- [x] Custom-positioned map controls (3D, compass, map style, location) matching Apple Maps' own layout
+- [x] Local Favorites ("Places") with a quick-add row
+- [x] WeatherKit floating weather widget (needs the WeatherKit capability enabled with a paid account, see Setup)
 - [ ] Tap-to-open place detail sheet: photos, star ratings, reviews, hours, phone, website, address (sourced from Google Places, not Apple's default POI data)
 - [ ] "Get Directions" handoff to Apple Maps for turn-by-turn navigation
 - [ ] Recent searches / favorites (local storage)
@@ -18,7 +21,9 @@ See [Roadmap](#roadmap) for what's built vs. planned.
 
 - Swift 6, SwiftUI
 - Liquid Glass (`.glassEffect`, `GlassEffectContainer`, `.glassProminent` button style) — iOS 26+ only, so custom UI matches system chrome
-- MapKit (native `Map` view and annotations)
+- MapKit (native `Map` view and annotations, scope-based custom control placement)
+- WeatherKit (current-location weather widget)
+- Speech + AVFoundation (on-device voice search)
 - Google Places API (New) — Place Details, Text/Nearby Search, Photos
 - URLSession + async/await for networking (no third-party networking libraries)
 - MVVM architecture
@@ -87,9 +92,9 @@ Waypoint/
 **Phase 1 (MVP)**
 - [x] Base map view with current-location centering and permission handling
 - [x] Search bar
+- [x] Recent searches / favorites (local only)
 - [ ] Place detail sheet (photos, ratings, reviews, hours, contact info)
 - [ ] Directions handoff to Apple Maps
-- [ ] Recent searches / favorites (local only)
 
 **Phase 2 (future)**
 - User accounts
