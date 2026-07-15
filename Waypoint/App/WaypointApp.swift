@@ -4,7 +4,7 @@ import SwiftUI
 struct WaypointApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            MapScreen()
         }
     }
 }
