@@ -28,6 +28,8 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Waypoint uses your location to center the map and show places near you."
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Waypoint uses the microphone for voice search."
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Waypoint uses speech recognition to turn your voice into a search query."
         INFOPLIST_KEY_GOOGLE_PLACES_API_KEY: "$(GOOGLE_PLACES_API_KEY)"
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_EMIT_LOC_STRINGS: YES

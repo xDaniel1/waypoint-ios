@@ -12,13 +12,17 @@ private let categories: [(title: String, symbol: String)] = [
 struct SearchSheet: View {
     @Bindable var viewModel: SearchViewModel
     @FocusState private var isFieldFocused: Bool
+    @State private var isShowingProfile = false
 
     var body: some View {
         VStack(spacing: 0) {
-            searchField
-                .padding(.horizontal)
-                .padding(.top, 8)
-                .padding(.bottom, 12)
+            HStack(spacing: 10) {
+                searchField
+                profileButton
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
 
             List {
                 if viewModel.queryText.isEmpty {
@@ -31,29 +35,52 @@ struct SearchSheet: View {
             .listStyle(.plain)
             .scrollDismissesKeyboard(.immediately)
         }
+        .onChange(of: viewModel.speechService.transcript) { _, newValue in
+            guard viewModel.speechService.isRecording else { return }
+            viewModel.queryText = newValue
+        }
+        .sheet(isPresented: $isShowingProfile) {
+            ProfilePlaceholderSheet()
+        }
     }
 
     private var searchField: some View {
-        GlassEffectContainer {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("Search Maps", text: $viewModel.queryText)
-                    .focused($isFieldFocused)
-                    .submitLabel(.search)
-                if !viewModel.queryText.isEmpty {
-                    Button {
-                        viewModel.queryText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search Maps", text: $viewModel.queryText)
+                .focused($isFieldFocused)
+                .submitLabel(.search)
+            if !viewModel.queryText.isEmpty {
+                Button {
+                    viewModel.queryText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .glassEffect(.regular.interactive(), in: Capsule())
+            Button {
+                Task { await viewModel.toggleVoiceSearch() }
+            } label: {
+                Image(systemName: viewModel.speechService.isRecording ? "mic.fill" : "mic")
+                    .foregroundStyle(viewModel.speechService.isRecording ? Color.red : Color.secondary)
+            }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .glassEffect(.regular.tint(.blue.opacity(0.3)).interactive(), in: Capsule())
+    }
+
+    private var profileButton: some View {
+        Button {
+            isShowingProfile = true
+        } label: {
+            Image(systemName: "person.crop.circle.fill")
+                .font(.system(size: 32))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Circle())
     }
 
     private var categoriesSection: some View {
@@ -162,5 +189,43 @@ private struct RecentRow: View {
                 }
             }
         }
+    }
+}
+
+private struct ProfilePlaceholderSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: 64))
+                    .foregroundStyle(.secondary)
+                Text("Accounts aren't built yet")
+                    .font(.headline)
+                Text("Sign-in and synced favorites are planned for a later version of Waypoint. Recents and favorites are stored on this device only for now.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+                Spacer()
+                Text("Waypoint v\(appVersion)")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.top, 40)
+            .navigationTitle("Profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 }

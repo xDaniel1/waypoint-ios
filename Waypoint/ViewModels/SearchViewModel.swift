@@ -17,11 +17,21 @@ final class SearchViewModel {
     }
 
     let recentsStore = RecentSearchesStore()
+    let speechService = SpeechRecognitionService()
 
     private let completerService = SearchCompleterService()
 
     func updateSearchRegion(_ region: MKCoordinateRegion) {
         completerService.updateRegion(region)
+    }
+
+    func toggleVoiceSearch() async {
+        if speechService.isRecording {
+            speechService.stop()
+        } else {
+            queryText = ""
+            await speechService.start()
+        }
     }
 
     func select(_ completion: MKLocalSearchCompletion) async {
