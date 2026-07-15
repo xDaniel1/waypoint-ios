@@ -13,6 +13,7 @@ struct SearchSheet: View {
     @Bindable var viewModel: SearchViewModel
     @FocusState private var isFieldFocused: Bool
     @State private var isShowingProfile = false
+    @AppStorage("com.danielguzman.waypoint.hasDismissedVoiceSearchTip") private var hasDismissedTip = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,7 +27,9 @@ struct SearchSheet: View {
 
             List {
                 if viewModel.queryText.isEmpty {
+                    tipSection
                     categoriesSection
+                    nearbySection
                     recentsSection
                 } else {
                     suggestionsSection
@@ -81,6 +84,39 @@ struct SearchSheet: View {
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: Circle())
+    }
+
+    @ViewBuilder
+    private var tipSection: some View {
+        if !hasDismissedTip {
+            Section {
+                TipCard(
+                    symbol: "mic.fill",
+                    title: "Try Voice Search",
+                    message: "Tap the microphone in the search bar to search hands-free."
+                ) {
+                    hasDismissedTip = true
+                }
+            }
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+        }
+    }
+
+    @ViewBuilder
+    private var nearbySection: some View {
+        if !viewModel.nearbyService.nearbyResults.isEmpty {
+            Section("Nearby") {
+                ForEach(viewModel.nearbyService.nearbyResults) { result in
+                    Button {
+                        select(nearby: result)
+                    } label: {
+                        NearbyRow(result: result)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
     }
 
     private var categoriesSection: some View {
@@ -153,6 +189,11 @@ struct SearchSheet: View {
         isFieldFocused = false
         viewModel.selectRecent(recent)
     }
+
+    private func select(nearby result: SearchResult) {
+        isFieldFocused = false
+        viewModel.selectResult(result)
+    }
 }
 
 private struct SuggestionRow: View {
@@ -187,6 +228,55 @@ private struct RecentRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+        }
+    }
+}
+
+private struct TipCard: View {
+    let symbol: String
+    let title: String
+    let message: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: symbol)
+                .font(.title2)
+                .foregroundStyle(.blue)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(12)
+    }
+}
+
+private struct NearbyRow: View {
+    let result: SearchResult
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "mappin.circle.fill")
+                .foregroundStyle(.red)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(result.title)
+                    .font(.body)
+                Text("Nearby")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }

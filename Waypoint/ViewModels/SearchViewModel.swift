@@ -18,11 +18,13 @@ final class SearchViewModel {
 
     let recentsStore = RecentSearchesStore()
     let speechService = SpeechRecognitionService()
+    let nearbyService = NearbyPlacesService()
 
     private let completerService = SearchCompleterService()
 
     func updateSearchRegion(_ region: MKCoordinateRegion) {
         completerService.updateRegion(region)
+        Task { await nearbyService.refresh(around: region) }
     }
 
     func toggleVoiceSearch() async {
@@ -44,16 +46,19 @@ final class SearchViewModel {
         do {
             let response = try await search.start()
             if let item = response.mapItems.first {
-                let result = SearchResult(mapItem: item)
-                selectedResult = result
-                recentsStore.add(result)
-                queryText = result.title
+                selectResult(SearchResult(mapItem: item))
             } else {
                 errorMessage = "No results found."
             }
         } catch {
             errorMessage = "Couldn't find that place. Try again."
         }
+    }
+
+    func selectResult(_ result: SearchResult) {
+        selectedResult = result
+        recentsStore.add(result)
+        queryText = result.title
     }
 
     func selectRecent(_ recent: RecentSearch) {
