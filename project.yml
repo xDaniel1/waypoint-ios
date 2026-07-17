@@ -49,15 +49,30 @@ targets:
     dependencies:
       - target: Waypoint
 
+  WaypointUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: WaypointUITests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Waypoint
+    dependencies:
+      - target: Waypoint
+
 schemes:
   Waypoint:
     build:
       targets:
         Waypoint: all
         WaypointTests: [test]
+        WaypointUITests: [test]
     test:
       targets:
         - WaypointTests
+        - WaypointUITests
     run:
       config: Debug
     archive:

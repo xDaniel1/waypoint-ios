@@ -72,6 +72,7 @@ struct SearchSheet: View {
             TextField("Search Maps", text: $viewModel.queryText)
                 .focused($isFieldFocused)
                 .submitLabel(.search)
+                .accessibilityIdentifier("searchField")
             if !viewModel.queryText.isEmpty {
                 Button {
                     viewModel.queryText = ""
@@ -86,6 +87,7 @@ struct SearchSheet: View {
                 Image(systemName: viewModel.speechService.isRecording ? "mic.fill" : "mic")
                     .foregroundStyle(viewModel.speechService.isRecording ? Color.red : Color.secondary)
             }
+            .accessibilityIdentifier("micButton")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -102,6 +104,7 @@ struct SearchSheet: View {
         }
         .buttonStyle(.plain)
         .glassEffect(.regular.interactive(), in: Circle())
+        .accessibilityIdentifier("profileButton")
     }
 
     @ViewBuilder

@@ -63,6 +63,7 @@ struct PlaceDetailContent: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("closeDetailButton")
         }
         .padding(.top, 8)
     }
@@ -174,6 +175,7 @@ struct PlaceDetailContent: View {
         }
         .buttonStyle(.glassProminent)
         .padding(.top, 8)
+        .accessibilityIdentifier("getDirectionsButton")
     }
 
     private func openDirections() {
