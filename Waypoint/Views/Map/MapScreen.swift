@@ -4,6 +4,7 @@ import SwiftUI
 struct MapScreen: View {
     @State private var viewModel = MapViewModel()
     @State private var searchViewModel = SearchViewModel()
+    @State private var directionsViewModel = DirectionsViewModel()
     @State private var weatherService = WeatherService()
     @State private var hasFetchedWeather = false
     @State private var searchDetent: PresentationDetent = .height(120)
@@ -17,6 +18,10 @@ struct MapScreen: View {
                 if let result = searchViewModel.selectedResult {
                     Marker(result.title, coordinate: result.coordinate)
                         .tint(.indigo)
+                }
+                if let route = directionsViewModel.route {
+                    MapPolyline(route.polyline)
+                        .stroke(.blue, lineWidth: 5)
                 }
             }
             .mapStyle(mapStyle)
@@ -39,14 +44,22 @@ struct MapScreen: View {
                 hasFetchedWeather = true
                 Task { await weatherService.refresh(for: location) }
             }
+            directionsViewModel.onRouteCalculated = { route in
+                viewModel.fitCamera(toRoute: route.polyline.boundingMapRect)
+            }
             await viewModel.start()
         }
         .sheet(isPresented: .constant(true)) {
-            SearchSheet(viewModel: searchViewModel, detent: $searchDetent)
-                .presentationDetents([.height(120), .medium, .large], selection: $searchDetent)
-                .presentationDragIndicator(.visible)
-                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
-                .interactiveDismissDisabled(true)
+            SearchSheet(
+                viewModel: searchViewModel,
+                directionsViewModel: directionsViewModel,
+                currentLocation: viewModel.currentLocation,
+                detent: $searchDetent
+            )
+            .presentationDetents([.height(120), .medium, .large], selection: $searchDetent)
+            .presentationDragIndicator(.visible)
+            .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+            .interactiveDismissDisabled(true)
         }
         .onChange(of: searchViewModel.selectedResult) { _, newValue in
             guard let newValue else { return }

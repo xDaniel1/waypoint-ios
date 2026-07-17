@@ -1,3 +1,4 @@
+import CoreLocation
 import MapKit
 import SwiftUI
 
@@ -11,6 +12,8 @@ private let categories: [(title: String, symbol: String)] = [
 
 struct SearchSheet: View {
     @Bindable var viewModel: SearchViewModel
+    @Bindable var directionsViewModel: DirectionsViewModel
+    let currentLocation: CLLocation?
     @Binding var detent: PresentationDetent
     @FocusState private var isFieldFocused: Bool
     @State private var isShowingProfile = false
@@ -18,8 +21,16 @@ struct SearchSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let selected = viewModel.selectedResult, !isFieldFocused {
-                PlaceDetailContent(result: selected) {
+            if directionsViewModel.isActive {
+                DirectionsCard(viewModel: directionsViewModel) {
+                    directionsViewModel.stop()
+                }
+            } else if let selected = viewModel.selectedResult, !isFieldFocused {
+                PlaceDetailContent(
+                    result: selected,
+                    currentLocation: currentLocation,
+                    directionsViewModel: directionsViewModel
+                ) {
                     viewModel.clearSelection()
                 }
             } else {

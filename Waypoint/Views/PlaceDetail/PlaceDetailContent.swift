@@ -1,8 +1,11 @@
+import CoreLocation
 import MapKit
 import SwiftUI
 
 struct PlaceDetailContent: View {
     let result: SearchResult
+    let currentLocation: CLLocation?
+    let directionsViewModel: DirectionsViewModel
     let onClose: () -> Void
 
     @State private var viewModel = PlaceDetailViewModel()
@@ -177,7 +180,7 @@ struct PlaceDetailContent: View {
     }
 
     private func openDirections() {
-        result.mapItem.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving])
+        Task { await directionsViewModel.start(destination: result.mapItem, from: currentLocation) }
     }
 }
 

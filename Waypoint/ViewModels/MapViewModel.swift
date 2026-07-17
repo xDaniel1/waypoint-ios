@@ -12,6 +12,10 @@ final class MapViewModel {
         locationManager.authorizationStatus
     }
 
+    var currentLocation: CLLocation? {
+        locationManager.currentLocation
+    }
+
     /// Called on every location update; consumers should debounce/guard for one-shot work like a weather fetch.
     var onLocationUpdate: ((CLLocation) -> Void)?
 
@@ -37,6 +41,10 @@ final class MapViewModel {
                 span: MKCoordinateSpan(latitudeDelta: 0.01, longitudeDelta: 0.01)
             )
         )
+    }
+
+    func fitCamera(toRoute mapRect: MKMapRect) {
+        cameraPosition = .rect(mapRect)
     }
 
     private func centerOnUserLocation(_ location: CLLocation) {
