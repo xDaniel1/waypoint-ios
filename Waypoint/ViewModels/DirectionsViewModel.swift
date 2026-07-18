@@ -6,21 +6,14 @@ import Observation
 @MainActor
 final class DirectionsViewModel {
     enum Mode: CaseIterable, Hashable {
-        case automobile, walking, transit
-
-        var transportType: MKDirectionsTransportType {
-            switch self {
-            case .automobile: .automobile
-            case .walking: .walking
-            case .transit: .transit
-            }
-        }
+        case automobile, walking, transit, cycling
 
         var symbolName: String {
             switch self {
             case .automobile: "car.fill"
             case .walking: "figure.walk"
             case .transit: "tram.fill"
+            case .cycling: "bicycle"
             }
         }
 
@@ -29,75 +22,128 @@ final class DirectionsViewModel {
             case .automobile: "Drive"
             case .walking: "Walk"
             case .transit: "Transit"
+            case .cycling: "Bike"
             }
+        }
+
+        var usesGoogle: Bool {
+            self == .transit || self == .cycling
+        }
+
+        var mkTransportType: MKDirectionsTransportType {
+            self == .walking ? .walking : .automobile
+        }
+
+        var googleMode: GoogleRoutesService.Mode {
+            self == .cycling ? .bicycle : .transit
         }
     }
 
     var mode: Mode = .automobile {
-        didSet { Task { await calculateRoute() } }
+        didSet { Task { await calculateRoutes() } }
     }
-    private(set) var route: MKRoute?
+
+    private(set) var routeOptions: [RouteOption] = []
+    private(set) var selectedRouteID: RouteOption.ID?
     private(set) var isCalculating = false
     private(set) var errorMessage: String?
 
     var isActive: Bool { destination != nil }
     var destinationTitle: String { destination?.name ?? "Destination" }
 
-    /// Fired once a route is successfully calculated, so the map can fit its camera to it.
-    var onRouteCalculated: ((MKRoute) -> Void)?
+    var selectedRoute: RouteOption? {
+        routeOptions.first { $0.id == selectedRouteID } ?? routeOptions.first
+    }
+
+    /// Fired whenever the drawn routes change, so the map can fit its camera to the selection.
+    var onRoutesChanged: (([RouteOption], RouteOption?) -> Void)?
 
     private var destination: MKMapItem?
     private var origin: CLLocation?
-
-    var formattedDistance: String? {
-        guard let route else { return nil }
-        return Measurement(value: route.distance, unit: UnitLength.meters)
-            .formatted(.measurement(width: .abbreviated, usage: .road))
-    }
-
-    var formattedDuration: String? {
-        guard let route else { return nil }
-        let formatter = DateComponentsFormatter()
-        formatter.unitsStyle = .abbreviated
-        formatter.allowedUnits = [.hour, .minute]
-        return formatter.string(from: route.expectedTravelTime)
-    }
+    private let routesService = GoogleRoutesService()
 
     func start(destination: MKMapItem, from origin: CLLocation?) async {
         self.destination = destination
         self.origin = origin
-        await calculateRoute()
+        mode = .automobile
+        await calculateRoutes()
     }
 
     func stop() {
         destination = nil
         origin = nil
-        route = nil
+        routeOptions = []
+        selectedRouteID = nil
         errorMessage = nil
+        onRoutesChanged?([], nil)
     }
 
-    private func calculateRoute() async {
+    func select(_ option: RouteOption) {
+        selectedRouteID = option.id
+        onRoutesChanged?(routeOptions, selectedRoute)
+    }
+
+    private func calculateRoutes() async {
         guard let destination, let origin else { return }
         isCalculating = true
         errorMessage = nil
-        route = nil
+        routeOptions = []
+        selectedRouteID = nil
+        onRoutesChanged?([], nil)
 
+        if mode.usesGoogle {
+            await calculateGoogleRoutes(origin: origin.coordinate, destination: destination.placemark.coordinate)
+        } else {
+            await calculateMapKitRoutes(origin: origin.coordinate, destination: destination)
+        }
+
+        isCalculating = false
+    }
+
+    private func calculateMapKitRoutes(origin: CLLocationCoordinate2D, destination: MKMapItem) async {
         let request = MKDirections.Request()
-        request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin.coordinate))
+        request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
         request.destination = destination
-        request.transportType = mode.transportType
+        request.transportType = mode.mkTransportType
+        request.requestsAlternateRoutes = true
 
         do {
             let response = try await MKDirections(request: request).calculate()
-            if let calculatedRoute = response.routes.first {
-                route = calculatedRoute
-                onRouteCalculated?(calculatedRoute)
-            } else {
-                errorMessage = "No \(mode.label.lowercased()) route found."
+            let options = response.routes.map { route in
+                RouteOption(
+                    coordinates: route.coordinates,
+                    travelTime: route.expectedTravelTime,
+                    distanceMeters: route.distance,
+                    summary: route.name.isEmpty ? "\(mode.label) route" : "via \(route.name)",
+                    transitSteps: []
+                )
             }
+            applyOptions(options, emptyMessage: "No \(mode.label.lowercased()) route found.")
         } catch {
             errorMessage = "Couldn't calculate a \(mode.label.lowercased()) route."
         }
-        isCalculating = false
+    }
+
+    private func calculateGoogleRoutes(origin: CLLocationCoordinate2D, destination: CLLocationCoordinate2D) async {
+        do {
+            let options = try await routesService.computeRoutes(from: origin, to: destination, mode: mode.googleMode)
+            applyOptions(options, emptyMessage: "No \(mode.label.lowercased()) route found.")
+        } catch GoogleRoutesError.apiNotEnabled {
+            errorMessage = "Enable the Google Routes API on your Cloud project to see \(mode.label.lowercased()) routes."
+        } catch GoogleRoutesError.missingAPIKey {
+            errorMessage = "Add a Google API key to see \(mode.label.lowercased()) routes."
+        } catch {
+            errorMessage = "Couldn't calculate a \(mode.label.lowercased()) route."
+        }
+    }
+
+    private func applyOptions(_ options: [RouteOption], emptyMessage: String) {
+        guard !options.isEmpty else {
+            errorMessage = emptyMessage
+            return
+        }
+        routeOptions = options
+        selectedRouteID = options.first?.id
+        onRoutesChanged?(options, options.first)
     }
 }

@@ -160,23 +160,33 @@ final class WaypointUITests: XCTestCase {
         // App must still be foregrounded — confirms we never handed off to Apple Maps.
         XCTAssertEqual(app.state, .runningForeground)
 
+        // At least one route option row should appear after calculation.
         XCTAssertTrue(
-            app.otherElements["routeSummary"].waitForExistence(timeout: 15)
-                || app.staticTexts.element(matching: NSPredicate(format: "label CONTAINS[c] %@", "route")).waitForExistence(timeout: 5),
-            "Route summary or an error message should appear after calculation"
+            app.staticTexts["Fastest"].waitForExistence(timeout: 20)
+                || app.staticTexts["Route"].waitForExistence(timeout: 5),
+            "A route option should appear after driving calculation"
         )
         attachScreenshot("07a-directions-drive")
 
+        // All four modes should be present (Drive/Walk/Transit/Bike).
         let driveButton = app.buttons["Drive"]
         let walkButton = app.buttons["Walk"]
-        XCTAssertTrue(walkButton.waitForExistence(timeout: 5), "Walk button should exist inside the mode picker")
+        XCTAssertTrue(app.buttons["Transit"].exists, "Transit mode should exist")
+        XCTAssertTrue(app.buttons["Bike"].exists, "Bike mode should exist")
         XCTAssertTrue(driveButton.isSelected, "Drive should start selected")
+
         walkButton.tap()
         XCTAssertTrue(walkButton.isSelected, "Walk should become selected after tapping it")
         XCTAssertFalse(driveButton.isSelected, "Drive should no longer be selected")
-        // Let the walking route recalculate before capturing.
         Thread.sleep(forTimeInterval: 2.0)
         attachScreenshot("07b-directions-walk")
+
+        // Bike uses Google Routes; whether it returns routes or an "enable API" notice,
+        // the app must stay foregrounded and not crash.
+        app.buttons["Bike"].tap()
+        Thread.sleep(forTimeInterval: 3.0)
+        XCTAssertEqual(app.state, .runningForeground, "Bike mode should be handled gracefully in-app")
+        attachScreenshot("07d-bike")
 
         app.buttons["closeDirectionsButton"].tap()
         XCTAssertTrue(app.buttons["closeDetailButton"].waitForExistence(timeout: 5), "Closing directions should return to the place card")

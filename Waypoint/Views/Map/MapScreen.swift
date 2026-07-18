@@ -23,9 +23,13 @@ struct MapScreen: View {
                     Marker(result.title, coordinate: result.coordinate)
                         .tint(.indigo)
                 }
-                if let route = directionsViewModel.route {
-                    MapPolyline(route.polyline)
-                        .stroke(.blue, lineWidth: 5)
+                ForEach(directionsViewModel.routeOptions) { option in
+                    let isSelected = option.id == directionsViewModel.selectedRoute?.id
+                    MapPolyline(option.polyline)
+                        .stroke(
+                            isSelected ? Color.blue : Color.gray.opacity(0.6),
+                            style: StrokeStyle(lineWidth: isSelected ? 6 : 4, lineCap: .round, lineJoin: .round)
+                        )
                 }
             }
             .mapStyle(mapStyle)
@@ -50,8 +54,10 @@ struct MapScreen: View {
                 hasFetchedWeather = true
                 Task { await weatherService.refresh(for: location) }
             }
-            directionsViewModel.onRouteCalculated = { route in
-                viewModel.fitCamera(toRoute: route.polyline.boundingMapRect)
+            directionsViewModel.onRoutesChanged = { _, selected in
+                if let selected {
+                    viewModel.fitCamera(toRoute: selected.boundingMapRect)
+                }
             }
             await viewModel.start()
         }
