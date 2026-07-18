@@ -47,6 +47,37 @@ final class MapViewModel {
         cameraPosition = .rect(mapRect)
     }
 
+    /// Toggles between flat (2D) and tilted (3D) using the live camera so zoom/center are preserved.
+    func toggle3D(from camera: MapCamera?) {
+        guard let camera else { return }
+        let newPitch: CGFloat = camera.pitch > 1 ? 0 : 55
+        cameraPosition = .camera(
+            MapCamera(
+                centerCoordinate: camera.centerCoordinate,
+                distance: camera.distance,
+                heading: camera.heading,
+                pitch: newPitch
+            )
+        )
+    }
+
+    func recenterOnUser() {
+        guard let location = currentLocation else { return }
+        centerCamera(on: location.coordinate)
+    }
+
+    func resetHeading(from camera: MapCamera?) {
+        guard let camera else { return }
+        cameraPosition = .camera(
+            MapCamera(
+                centerCoordinate: camera.centerCoordinate,
+                distance: camera.distance,
+                heading: 0,
+                pitch: camera.pitch
+            )
+        )
+    }
+
     private func centerOnUserLocation(_ location: CLLocation) {
         guard !hasCenteredOnUser else { return }
         hasCenteredOnUser = true

@@ -12,6 +12,7 @@ struct MapScreen: View {
     @State private var sheetHeight: CGFloat = 90
     @State private var mapStyle: MapStyle = .standard
     @State private var mapCenter: CLLocationCoordinate2D?
+    @State private var currentCamera: MapCamera?
     @Namespace private var mapScope
 
     var body: some View {
@@ -31,6 +32,7 @@ struct MapScreen: View {
             .onMapCameraChange(frequency: .onEnd) { context in
                 searchViewModel.updateSearchRegion(context.region)
                 mapCenter = context.region.center
+                currentCamera = context.camera
             }
             .ignoresSafeArea(edges: .top)
 
@@ -79,29 +81,44 @@ struct MapScreen: View {
         VStack {
             Spacer()
             HStack(alignment: .bottom) {
-                GlassEffectContainer {
-                    VStack(spacing: 12) {
-                        MapPitchToggle(scope: mapScope)
+                GlassEffectContainer(spacing: 4) {
+                    VStack(spacing: 4) {
+                        ClearMapButton {
+                            withAnimation(.easeInOut(duration: 0.4)) {
+                                viewModel.toggle3D(from: currentCamera)
+                            }
+                        } label: {
+                            Text(is3D ? "2D" : "3D")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
                         LookAroundButton(coordinate: mapCenter ?? viewModel.currentLocation?.coordinate)
-                        MapCompass(scope: mapScope)
                     }
-                    .mapControlVisibility(.visible)
                 }
 
                 Spacer()
 
-                GlassEffectContainer {
-                    VStack(spacing: 12) {
-                        MapUserLocationButton(scope: mapScope)
+                GlassEffectContainer(spacing: 4) {
+                    VStack(spacing: 4) {
+                        ClearMapButton {
+                            withAnimation(.easeInOut(duration: 0.4)) {
+                                viewModel.recenterOnUser()
+                            }
+                        } label: {
+                            Image(systemName: "location.fill")
+                                .font(.system(size: 17, weight: .medium))
+                        }
                         MapStyleMenu(mapStyle: $mapStyle)
                     }
-                    .mapControlVisibility(.visible)
                 }
             }
             .padding(.horizontal, 12)
             .padding(.bottom, sheetHeight + 20)
             .animation(.easeInOut(duration: 0.3), value: sheetHeight)
         }
+    }
+
+    private var is3D: Bool {
+        (currentCamera?.pitch ?? 0) > 1
     }
 
     @ViewBuilder
@@ -120,6 +137,23 @@ struct MapScreen: View {
     }
 }
 
+/// A clear (translucent) Liquid Glass circular map control, matching Apple Maps' 3D/location buttons.
+private struct ClearMapButton<Label: View>: View {
+    let action: () -> Void
+    @ViewBuilder let label: Label
+
+    var body: some View {
+        Button(action: action) {
+            label
+                .foregroundStyle(.white)
+                .frame(width: 48, height: 48)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.clear.interactive(), in: Circle())
+    }
+}
+
 private struct MapStyleMenu: View {
     @Binding var mapStyle: MapStyle
 
@@ -131,10 +165,12 @@ private struct MapStyleMenu: View {
         } label: {
             Image(systemName: "square.3.layers.3d")
                 .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 48, height: 48)
+                .contentShape(Circle())
         }
-        .buttonStyle(.glass)
-        .frame(width: 44, height: 44)
-        .clipShape(Circle())
+        .buttonStyle(.plain)
+        .glassEffect(.clear.interactive(), in: Circle())
     }
 }
 
@@ -153,16 +189,18 @@ private struct LookAroundButton: View {
         } label: {
             Group {
                 if isLoading {
-                    ProgressView()
+                    ProgressView().tint(.white)
                 } else {
                     Image(systemName: "binoculars.fill")
                         .font(.system(size: 17, weight: .medium))
                 }
             }
-            .frame(width: 44, height: 44)
+            .foregroundStyle(.white)
+            .frame(width: 48, height: 48)
+            .contentShape(Circle())
         }
-        .buttonStyle(.glass)
-        .clipShape(Circle())
+        .buttonStyle(.plain)
+        .glassEffect(.clear.interactive(), in: Circle())
         .accessibilityIdentifier("lookAroundButton")
         .task(id: coordinateKey) {
             await refreshScene()
