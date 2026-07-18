@@ -1,6 +1,7 @@
+import CoreLocation
 import Foundation
 
-struct GooglePlace: Codable {
+struct GooglePlace: Codable, Identifiable {
     let id: String
     let displayName: LocalizedText?
     let primaryTypeDisplayName: LocalizedText?
@@ -11,8 +12,19 @@ struct GooglePlace: Codable {
     let userRatingCount: Int?
     let businessStatus: String?
     let currentOpeningHours: OpeningHours?
+    let location: LatLng?
     let photos: [Photo]?
     let reviews: [Review]?
+
+    var coordinate: CLLocationCoordinate2D? {
+        guard let location else { return nil }
+        return CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude)
+    }
+
+    struct LatLng: Codable {
+        let latitude: Double
+        let longitude: Double
+    }
 
     struct LocalizedText: Codable {
         let text: String

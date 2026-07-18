@@ -57,6 +57,9 @@ struct SearchSheet: View {
                             tipSection
                             placesSection
                             categoriesSection
+                            DiscoverSections(discover: viewModel.discover) { place in
+                                selectDiscover(place)
+                            }
                             nearbySection
                             recentsSection
                         } else {
@@ -81,6 +84,7 @@ struct SearchSheet: View {
         }
         .onChange(of: isFieldFocused) { _, focused in
             detent = focused ? .large : (viewModel.selectedResult == nil ? .height(collapsedHeight) : .medium)
+            if focused { viewModel.loadDiscover() }
         }
         .onChange(of: viewModel.selectedResult) { _, newValue in
             detent = newValue == nil ? .height(collapsedHeight) : .medium
@@ -120,7 +124,7 @@ struct SearchSheet: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .glassEffect(.regular.tint(.blue.opacity(0.3)).interactive(), in: Capsule())
+        .glassEffect(.regular.interactive(), in: Capsule())
     }
 
     private var profileButton: some View {
@@ -273,6 +277,11 @@ struct SearchSheet: View {
     private func select(favorite: FavoritePlace) {
         isFieldFocused = false
         viewModel.selectFavorite(favorite)
+    }
+
+    private func selectDiscover(_ place: GooglePlace) {
+        isFieldFocused = false
+        viewModel.selectDiscover(place)
     }
 }
 

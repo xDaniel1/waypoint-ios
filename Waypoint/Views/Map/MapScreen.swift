@@ -11,6 +11,7 @@ struct MapScreen: View {
     @State private var collapsedHeight: CGFloat = 90
     @State private var sheetHeight: CGFloat = 90
     @State private var mapStyle: MapStyle = .standard
+    @State private var mapCenter: CLLocationCoordinate2D?
     @Namespace private var mapScope
 
     var body: some View {
@@ -29,6 +30,7 @@ struct MapScreen: View {
             .mapStyle(mapStyle)
             .onMapCameraChange(frequency: .onEnd) { context in
                 searchViewModel.updateSearchRegion(context.region)
+                mapCenter = context.region.center
             }
             .ignoresSafeArea(edges: .top)
 
@@ -80,6 +82,7 @@ struct MapScreen: View {
                 GlassEffectContainer {
                     VStack(spacing: 12) {
                         MapPitchToggle(scope: mapScope)
+                        LookAroundButton(coordinate: mapCenter ?? viewModel.currentLocation?.coordinate)
                         MapCompass(scope: mapScope)
                     }
                     .mapControlVisibility(.visible)
@@ -132,6 +135,90 @@ private struct MapStyleMenu: View {
         .buttonStyle(.glass)
         .frame(width: 44, height: 44)
         .clipShape(Circle())
+    }
+}
+
+/// Apple Maps–style Look Around (binoculars). Fetches a street-level scene for the
+/// current map center and presents it; the button is disabled where no scene exists.
+private struct LookAroundButton: View {
+    let coordinate: CLLocationCoordinate2D?
+
+    @State private var scene: MKLookAroundScene?
+    @State private var isLoading = false
+    @State private var isPresented = false
+
+    var body: some View {
+        Button {
+            Task { await presentIfAvailable() }
+        } label: {
+            Group {
+                if isLoading {
+                    ProgressView()
+                } else {
+                    Image(systemName: "binoculars.fill")
+                        .font(.system(size: 17, weight: .medium))
+                }
+            }
+            .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.glass)
+        .clipShape(Circle())
+        .accessibilityIdentifier("lookAroundButton")
+        .task(id: coordinateKey) {
+            await refreshScene()
+        }
+        .disabled(scene == nil && !isLoading)
+        .opacity(scene == nil && !isLoading ? 0.5 : 1)
+        .fullScreenCover(isPresented: $isPresented) {
+            if let scene {
+                LookAroundScenePresenter(scene: scene) { isPresented = false }
+            }
+        }
+    }
+
+    private var coordinateKey: String {
+        guard let coordinate else { return "none" }
+        return "\(coordinate.latitude.rounded(toPlaces: 3)),\(coordinate.longitude.rounded(toPlaces: 3))"
+    }
+
+    private func refreshScene() async {
+        guard let coordinate else { scene = nil; return }
+        let request = MKLookAroundSceneRequest(coordinate: coordinate)
+        scene = try? await request.scene
+    }
+
+    private func presentIfAvailable() async {
+        if scene == nil {
+            isLoading = true
+            await refreshScene()
+            isLoading = false
+        }
+        if scene != nil { isPresented = true }
+    }
+}
+
+private struct LookAroundScenePresenter: View {
+    let scene: MKLookAroundScene
+    let onDismiss: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            LookAroundPreview(initialScene: scene)
+                .ignoresSafeArea()
+            Button(action: onDismiss) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(.white, .black.opacity(0.4))
+                    .padding()
+            }
+        }
+    }
+}
+
+private extension Double {
+    func rounded(toPlaces places: Int) -> Double {
+        let factor = pow(10.0, Double(places))
+        return (self * factor).rounded() / factor
     }
 }
 

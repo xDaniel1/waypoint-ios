@@ -51,6 +51,41 @@ struct GooglePlacesService {
         return try await placeDetails(placeId: placeId)
     }
 
+    /// Nearby Search (New), ranked by popularity. Used for Trending/Suggested discovery sections.
+    func searchNearby(
+        includedTypes: [String],
+        coordinate: CLLocationCoordinate2D,
+        radius: Double = 2000,
+        maxResults: Int = 8
+    ) async throws -> [GooglePlace] {
+        guard !apiKey.isEmpty else { throw GooglePlacesError.missingAPIKey }
+
+        var request = URLRequest(url: URL(string: "https://places.googleapis.com/v1/places:searchNearby")!)
+        request.httpMethod = "POST"
+        request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
+        request.setValue(
+            "places.id,places.displayName,places.primaryTypeDisplayName,places.rating,places.userRatingCount,places.photos,places.formattedAddress,places.location,places.currentOpeningHours.openNow",
+            forHTTPHeaderField: "X-Goog-FieldMask"
+        )
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "includedTypes": includedTypes,
+            "maxResultCount": maxResults,
+            "rankPreference": "POPULARITY",
+            "locationRestriction": [
+                "circle": [
+                    "center": ["latitude": coordinate.latitude, "longitude": coordinate.longitude],
+                    "radius": radius,
+                ]
+            ],
+        ])
+
+        let (data, response) = try await session.data(for: request)
+        try Self.validate(response)
+        let decoded = try JSONDecoder().decode(NearbySearchResponse.self, from: data)
+        return decoded.places ?? []
+    }
+
     func placeDetails(placeId: String) async throws -> GooglePlace {
         guard !apiKey.isEmpty else { throw GooglePlacesError.missingAPIKey }
 
@@ -87,4 +122,8 @@ private struct TextSearchResponse: Codable {
     }
 
     let places: [PlaceRef]?
+}
+
+private struct NearbySearchResponse: Codable {
+    let places: [GooglePlace]?
 }

@@ -20,12 +20,20 @@ final class SearchViewModel {
     let favoritesStore = FavoritesStore()
     let speechService = SpeechRecognitionService()
     let nearbyService = NearbyPlacesService()
+    let discover = DiscoverViewModel()
 
     private let completerService = SearchCompleterService()
+    private var lastRegionCenter: CLLocationCoordinate2D?
 
     func updateSearchRegion(_ region: MKCoordinateRegion) {
         completerService.updateRegion(region)
+        lastRegionCenter = region.center
         Task { await nearbyService.refresh(around: region) }
+    }
+
+    func loadDiscover() {
+        guard let center = lastRegionCenter else { return }
+        Task { await discover.loadIfNeeded(around: center) }
     }
 
     func toggleVoiceSearch() async {
@@ -70,6 +78,14 @@ final class SearchViewModel {
     func selectFavorite(_ favorite: FavoritePlace) {
         selectedResult = syntheticResult(title: favorite.title, coordinate: favorite.coordinate)
         queryText = favorite.title
+    }
+
+    func selectDiscover(_ place: GooglePlace) {
+        guard let coordinate = place.coordinate, let name = place.displayName?.text else { return }
+        let result = syntheticResult(title: name, coordinate: coordinate)
+        selectedResult = result
+        recentsStore.add(result)
+        queryText = name
     }
 
     func clearSelection() {
