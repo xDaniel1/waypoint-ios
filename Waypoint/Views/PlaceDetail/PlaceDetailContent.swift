@@ -9,44 +9,57 @@ struct PlaceDetailContent: View {
     let onClose: () -> Void
 
     @State private var viewModel = PlaceDetailViewModel()
+    @State private var tab: PlaceDetailTab = .overview
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
+        VStack(spacing: 0) {
+            header
+                .padding(.horizontal)
+                .padding(.top, 8)
 
-                if let place = viewModel.place {
-                    if let photos = place.photos, !photos.isEmpty {
-                        photoCarousel(photos)
-                    }
-                    ratingRow(place)
-                    if let hours = place.currentOpeningHours {
-                        hoursSection(hours)
-                    }
-                    contactSection(place)
-                    if let reviews = place.reviews, !reviews.isEmpty {
-                        reviewsSection(reviews)
-                    }
-                } else if viewModel.isLoading {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 24)
-                } else if let errorMessage = viewModel.errorMessage {
-                    Text(errorMessage)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 8)
-                }
+            if let place = viewModel.place {
+                ratingRow(place)
+                    .padding(.horizontal)
+                    .padding(.top, 4)
 
                 getDirectionsButton
+                    .padding(.horizontal)
+                    .padding(.top, 12)
+
+                tabPicker(place)
+                    .padding(.horizontal)
+                    .padding(.top, 16)
+
+                Divider()
+                    .padding(.top, 8)
+
+                tabContent(place)
+            } else if viewModel.isLoading {
+                Spacer(minLength: 0)
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 40)
+                Spacer(minLength: 0)
+            } else if let errorMessage = viewModel.errorMessage {
+                getDirectionsButton
+                    .padding(.horizontal)
+                    .padding(.top, 12)
+                Text(errorMessage)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding()
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal)
-            .padding(.bottom, 24)
         }
+        .animation(.easeInOut(duration: 0.2), value: tab)
         .task(id: result.id) {
+            tab = .overview
             await viewModel.load(for: result)
         }
     }
+
+    // MARK: Header
 
     private var header: some View {
         HStack(alignment: .top) {
@@ -68,28 +81,6 @@ struct PlaceDetailContent: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("closeDetailButton")
         }
-        .padding(.top, 8)
-    }
-
-    private func photoCarousel(_ photos: [GooglePlace.Photo]) -> some View {
-        TabView {
-            ForEach(photos) { photo in
-                if let url = viewModel.photoURL(for: photo) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().scaledToFill()
-                        default:
-                            Rectangle().fill(.quaternary)
-                        }
-                    }
-                    .clipped()
-                }
-            }
-        }
-        .tabViewStyle(.page)
-        .frame(height: 200)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
     @ViewBuilder
@@ -104,8 +95,93 @@ struct PlaceDetailContent: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
+                if let openNow = place.currentOpeningHours?.openNow {
+                    Text("·")
+                        .foregroundStyle(.secondary)
+                    Text(openNow ? "Open" : "Closed")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(openNow ? .green : .red)
+                }
             }
         }
+    }
+
+    private var getDirectionsButton: some View {
+        Button(action: openDirections) {
+            Label("Directions", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.glassProminent)
+        .accessibilityIdentifier("getDirectionsButton")
+    }
+
+    // MARK: Tabs
+
+    private func tabPicker(_ place: GooglePlace) -> some View {
+        let tabs = availableTabs(place)
+        return HStack(spacing: 8) {
+            ForEach(tabs, id: \.self) { item in
+                TabChip(title: item.title, isSelected: tab == item) {
+                    tab = item
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func tabContent(_ place: GooglePlace) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                switch tab {
+                case .overview:
+                    overviewTab(place)
+                case .reviews:
+                    reviewsTab(place)
+                case .photos:
+                    photosTab(place)
+                case .menu:
+                    menuTab(place)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.top, 16)
+            .padding(.bottom, 32)
+        }
+        .transition(.opacity)
+    }
+
+    private func availableTabs(_ place: GooglePlace) -> [PlaceDetailTab] {
+        var tabs: [PlaceDetailTab] = [.overview]
+        if let reviews = place.reviews, !reviews.isEmpty { tabs.append(.reviews) }
+        if let photos = place.photos, !photos.isEmpty {
+            tabs.append(.photos)
+            tabs.append(.menu)
+        }
+        return tabs
+    }
+
+    // MARK: Overview
+
+    @ViewBuilder
+    private func overviewTab(_ place: GooglePlace) -> some View {
+        if let photos = place.photos, !photos.isEmpty {
+            photoCarousel(Array(photos.prefix(10)))
+        }
+        if let hours = place.currentOpeningHours {
+            hoursSection(hours)
+        }
+        contactSection(place)
+    }
+
+    private func photoCarousel(_ photos: [GooglePlace.Photo]) -> some View {
+        TabView {
+            ForEach(photos) { photo in
+                photoImage(photo, contentMode: .fill)
+            }
+        }
+        .tabViewStyle(.page)
+        .frame(height: 200)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
     private func hoursSection(_ hours: GooglePlace.OpeningHours) -> some View {
@@ -161,28 +237,134 @@ struct PlaceDetailContent: View {
         .foregroundStyle(.primary)
     }
 
-    private func reviewsSection(_ reviews: [GooglePlace.Review]) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Reviews")
-                .font(.headline)
+    // MARK: Reviews
+
+    @ViewBuilder
+    private func reviewsTab(_ place: GooglePlace) -> some View {
+        if let reviews = place.reviews {
             ForEach(reviews) { review in
                 ReviewRow(review: review)
+                if review.id != reviews.last?.id {
+                    Divider()
+                }
             }
         }
     }
 
-    private var getDirectionsButton: some View {
-        Button(action: openDirections) {
-            Label("Get Directions", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
-                .frame(maxWidth: .infinity)
+    // MARK: Photos
+
+    @ViewBuilder
+    private func photosTab(_ place: GooglePlace) -> some View {
+        if let photos = place.photos {
+            let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(photos) { photo in
+                    photoImage(photo, contentMode: .fill)
+                        .frame(height: 120)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+            }
         }
-        .buttonStyle(.glassProminent)
-        .padding(.top, 8)
-        .accessibilityIdentifier("getDirectionsButton")
+    }
+
+    // MARK: Menu
+
+    @ViewBuilder
+    private func menuTab(_ place: GooglePlace) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let websiteUri = place.websiteUri, let url = URL(string: websiteUri) {
+                Button {
+                    UIApplication.shared.open(url)
+                } label: {
+                    Label("View Full Menu on Website", systemImage: "arrow.up.forward.square")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.glass)
+            }
+
+            Text("Menu Photos")
+                .font(.headline)
+            Text("Photos posted for this place — often including menu boards and dishes. Google's public Places API doesn't provide a structured, itemized menu, so these come straight from the place's photos.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if let photos = place.photos {
+                let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
+                LazyVGrid(columns: columns, spacing: 8) {
+                    ForEach(photos) { photo in
+                        photoImage(photo, contentMode: .fill)
+                            .frame(height: 120)
+                            .frame(maxWidth: .infinity)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: Shared
+
+    private func photoImage(_ photo: GooglePlace.Photo, contentMode: ContentMode) -> some View {
+        Group {
+            if let url = viewModel.photoURL(for: photo) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().aspectRatio(contentMode: contentMode)
+                    default:
+                        Rectangle().fill(.quaternary)
+                    }
+                }
+            } else {
+                Rectangle().fill(.quaternary)
+            }
+        }
+        .clipped()
     }
 
     private func openDirections() {
         Task { await directionsViewModel.start(destination: result.mapItem, from: currentLocation) }
+    }
+}
+
+enum PlaceDetailTab: Hashable {
+    case overview, reviews, photos, menu
+
+    var title: String {
+        switch self {
+        case .overview: "Overview"
+        case .reviews: "Reviews"
+        case .photos: "Photos"
+        case .menu: "Menu"
+        }
+    }
+}
+
+private struct TabChip: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Group {
+            if isSelected {
+                Button(action: action) { label }
+                    .buttonStyle(.glassProminent)
+            } else {
+                Button(action: action) { label }
+                    .buttonStyle(.glass)
+            }
+        }
+        .accessibilityIdentifier("tab-\(title)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var label: some View {
+        Text(title)
+            .font(.subheadline.weight(.medium))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 6)
     }
 }
 

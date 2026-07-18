@@ -76,14 +76,27 @@ final class WaypointUITests: XCTestCase {
         XCTAssertTrue(app.buttons["closeDetailButton"].waitForExistence(timeout: 10), "Detail card should replace search UI")
         XCTAssertTrue(app.buttons["getDirectionsButton"].waitForExistence(timeout: 5))
 
-        let reviewsHeader = app.staticTexts["Reviews"]
-        XCTAssertTrue(reviewsHeader.waitForExistence(timeout: 20), "Google reviews should load with a valid API key")
-        attachScreenshot("04b-place-detail")
+        // Tabbed layout: Reviews/Photos/Menu chips appear once Google data loads.
+        let reviewsTab = app.buttons["tab-Reviews"]
+        XCTAssertTrue(reviewsTab.waitForExistence(timeout: 20), "Reviews tab should appear once Google data loads")
+        attachScreenshot("04b-place-detail-overview")
+
+        reviewsTab.tap()
+        XCTAssertTrue(reviewsTab.isSelected, "Reviews tab should become selected")
+        attachScreenshot("04c-reviews-tab")
+
+        let photosTab = app.buttons["tab-Photos"]
+        XCTAssertTrue(photosTab.waitForExistence(timeout: 5), "Photos tab should exist")
+        photosTab.tap()
+        attachScreenshot("04d-photos-tab")
+
+        app.buttons["tab-Menu"].tap()
+        attachScreenshot("04e-menu-tab")
 
         // Closing should return to the plain collapsed search bar.
         app.buttons["closeDetailButton"].tap()
         XCTAssertTrue(searchField.waitForExistence(timeout: 5), "Search bar should return after closing the card")
-        attachScreenshot("04c-closed")
+        attachScreenshot("04f-closed")
     }
 
     // Profile button should present the honest accounts-not-built-yet sheet.
