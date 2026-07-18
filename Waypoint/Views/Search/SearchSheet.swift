@@ -15,6 +15,8 @@ struct SearchSheet: View {
     @Bindable var directionsViewModel: DirectionsViewModel
     let currentLocation: CLLocation?
     @Binding var detent: PresentationDetent
+    @Binding var collapsedHeight: CGFloat
+    @Binding var sheetHeight: CGFloat
     @FocusState private var isFieldFocused: Bool
     @State private var isShowingProfile = false
     @AppStorage("com.danielguzman.waypoint.hasDismissedVoiceSearchTip") private var hasDismissedTip = false
@@ -25,6 +27,7 @@ struct SearchSheet: View {
                 DirectionsCard(viewModel: directionsViewModel) {
                     directionsViewModel.stop()
                 }
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
             } else if let selected = viewModel.selectedResult, !isFieldFocused {
                 PlaceDetailContent(
                     result: selected,
@@ -33,6 +36,7 @@ struct SearchSheet: View {
                 ) {
                     viewModel.clearSelection()
                 }
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
             } else {
                 HStack(spacing: 10) {
                     searchField
@@ -41,6 +45,11 @@ struct SearchSheet: View {
                 .padding(.horizontal)
                 .padding(.top, 8)
                 .padding(.bottom, 12)
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { newValue in
+                    collapsedHeight = newValue + 24
+                }
 
                 if isFieldFocused {
                     List {
@@ -61,11 +70,20 @@ struct SearchSheet: View {
                 }
             }
         }
+        .frame(maxHeight: .infinity, alignment: .top)
+        .animation(.easeInOut(duration: 0.25), value: directionsViewModel.isActive)
+        .animation(.easeInOut(duration: 0.25), value: viewModel.selectedResult)
+        .animation(.easeInOut(duration: 0.25), value: isFieldFocused)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { newValue in
+            sheetHeight = newValue
+        }
         .onChange(of: isFieldFocused) { _, focused in
-            detent = focused ? .large : (viewModel.selectedResult == nil ? .fraction(0.12) : .medium)
+            detent = focused ? .large : (viewModel.selectedResult == nil ? .height(collapsedHeight) : .medium)
         }
         .onChange(of: viewModel.selectedResult) { _, newValue in
-            detent = newValue == nil ? .fraction(0.12) : .medium
+            detent = newValue == nil ? .height(collapsedHeight) : .medium
         }
         .onChange(of: viewModel.speechService.transcript) { _, newValue in
             guard viewModel.speechService.isRecording else { return }
@@ -205,12 +223,11 @@ struct SearchSheet: View {
         if !viewModel.recentsStore.recents.isEmpty {
             Section {
                 ForEach(viewModel.recentsStore.recents) { recent in
-                    Button {
+                    RecentRow(recent: recent) {
                         select(recent: recent)
-                    } label: {
-                        RecentRow(recent: recent)
+                    } onRemove: {
+                        viewModel.recentsStore.remove(recent)
                     }
-                    .buttonStyle(.plain)
                 }
             } header: {
                 HStack {
@@ -263,13 +280,24 @@ private struct SuggestionRow: View {
     let suggestion: MKLocalSearchCompletion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(suggestion.title)
-                .font(.body)
-            if !suggestion.subtitle.isEmpty {
-                Text(suggestion.subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        let icon = PlaceCategoryIcon.icon(for: suggestion.title)
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(icon.color.opacity(0.2))
+                    .frame(width: 36, height: 36)
+                Image(systemName: icon.symbol)
+                    .font(.subheadline)
+                    .foregroundStyle(icon.color)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(suggestion.title)
+                    .font(.body)
+                if !suggestion.subtitle.isEmpty {
+                    Text(suggestion.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -277,20 +305,46 @@ private struct SuggestionRow: View {
 
 private struct RecentRow: View {
     let recent: RecentSearch
+    let onSelect: () -> Void
+    let onRemove: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "clock")
-                .foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(recent.title)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                if !recent.subtitle.isEmpty {
-                    Text(recent.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            Button(action: onSelect) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(.quaternary)
+                            .frame(width: 32, height: 32)
+                        Image(systemName: "clock")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(recent.title)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                        if !recent.subtitle.isEmpty {
+                            Text(recent.subtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Menu {
+                Button(role: .destructive, action: onRemove) {
+                    Label("Remove", systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
             }
         }
     }
@@ -331,9 +385,16 @@ private struct NearbyRow: View {
     let result: SearchResult
 
     var body: some View {
+        let icon = PlaceCategoryIcon.icon(for: result.title)
         HStack(spacing: 12) {
-            Image(systemName: "mappin.circle.fill")
-                .foregroundStyle(.red)
+            ZStack {
+                Circle()
+                    .fill(icon.color.opacity(0.2))
+                    .frame(width: 32, height: 32)
+                Image(systemName: icon.symbol)
+                    .font(.subheadline)
+                    .foregroundStyle(icon.color)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(result.title)
                     .font(.body)

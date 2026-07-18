@@ -7,7 +7,9 @@ struct MapScreen: View {
     @State private var directionsViewModel = DirectionsViewModel()
     @State private var weatherService = WeatherService()
     @State private var hasFetchedWeather = false
-    @State private var searchDetent: PresentationDetent = .fraction(0.12)
+    @State private var searchDetent: PresentationDetent = .height(90)
+    @State private var collapsedHeight: CGFloat = 90
+    @State private var sheetHeight: CGFloat = 90
     @State private var mapStyle: MapStyle = .standard
     @Namespace private var mapScope
 
@@ -54,9 +56,11 @@ struct MapScreen: View {
                 viewModel: searchViewModel,
                 directionsViewModel: directionsViewModel,
                 currentLocation: viewModel.currentLocation,
-                detent: $searchDetent
+                detent: $searchDetent,
+                collapsedHeight: $collapsedHeight,
+                sheetHeight: $sheetHeight
             )
-            .presentationDetents([.fraction(0.12), .medium, .large], selection: $searchDetent)
+            .presentationDetents([.height(collapsedHeight), .medium, .large], selection: $searchDetent)
             .presentationDragIndicator(.visible)
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
             .presentationSizing(.page)
@@ -92,7 +96,8 @@ struct MapScreen: View {
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.bottom, 130)
+            .padding(.bottom, sheetHeight + 20)
+            .animation(.easeInOut(duration: 0.3), value: sheetHeight)
         }
     }
 

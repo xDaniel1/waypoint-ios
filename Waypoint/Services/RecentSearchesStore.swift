@@ -31,6 +31,11 @@ final class RecentSearchesStore {
         save()
     }
 
+    func remove(_ recent: RecentSearch) {
+        recents.removeAll { $0.id == recent.id }
+        save()
+    }
+
     func clear() {
         recents.removeAll()
         save()
