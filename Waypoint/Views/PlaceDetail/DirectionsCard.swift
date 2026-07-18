@@ -21,14 +21,10 @@ struct DirectionsCard: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("closeDirectionsButton")
             }
 
-            Picker("Mode", selection: $viewModel.mode) {
-                ForEach(DirectionsViewModel.Mode.allCases, id: \.self) { mode in
-                    Label(mode.label, systemImage: mode.symbolName).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
+            modePicker
 
             Group {
                 if viewModel.isCalculating {
@@ -47,6 +43,7 @@ struct DirectionsCard: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
+                    .accessibilityIdentifier("routeSummary")
                 }
             }
 
@@ -57,5 +54,43 @@ struct DirectionsCard: View {
         .padding(.horizontal)
         .padding(.top, 8)
         .padding(.bottom, 16)
+    }
+
+    private var modePicker: some View {
+        HStack(spacing: 8) {
+            ForEach(DirectionsViewModel.Mode.allCases, id: \.self) { mode in
+                ModeButton(mode: mode, isSelected: viewModel.mode == mode) {
+                    viewModel.mode = mode
+                }
+            }
+        }
+        .accessibilityIdentifier("directionsModePicker")
+    }
+}
+
+private struct ModeButton: View {
+    let mode: DirectionsViewModel.Mode
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Group {
+            if isSelected {
+                Button(action: action) { label }
+                    .buttonStyle(.glassProminent)
+            } else {
+                Button(action: action) { label }
+                    .buttonStyle(.glass)
+            }
+        }
+        .accessibilityIdentifier(mode.label)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var label: some View {
+        Label(mode.label, systemImage: mode.symbolName)
+            .font(.subheadline.weight(.medium))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
     }
 }

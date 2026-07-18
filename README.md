@@ -12,7 +12,7 @@ A native iOS maps app: Apple Maps' look, feel, native MapKit rendering, and the 
 - [x] Local Favorites ("Places") with a quick-add row
 - [x] WeatherKit floating weather widget (needs the WeatherKit capability enabled with a paid account, see Setup)
 - [x] Tap-to-open place detail sheet: photos, star ratings, reviews, hours, phone, website, address (sourced from Google Places, not Apple's default POI data). Google's API doesn't expose structured menus or in-app ordering, so those aren't faked.
-- [x] "Get Directions" handoff to Apple Maps for turn-by-turn navigation
+- [x] In-app directions: Drive/Walk/Transit mode picker, route drawn on the map, distance/ETA summary — no handoff to Apple Maps. (Live voice-guided turn-by-turn is an Apple-private feature no third-party app can access.)
 - [x] Recent searches / favorites (local storage)
 
 See [Roadmap](#roadmap) for what's built vs. planned.
@@ -94,7 +94,7 @@ Waypoint/
 - [x] Search bar
 - [x] Recent searches / favorites (local only)
 - [x] Place detail sheet (photos, ratings, reviews, hours, contact info)
-- [x] Directions handoff to Apple Maps
+- [x] In-app directions (Drive/Walk/Transit, route + ETA, no Apple Maps handoff)
 
 **Phase 2 (future)**
 - User accounts

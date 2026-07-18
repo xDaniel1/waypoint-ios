@@ -109,4 +109,47 @@ final class WaypointUITests: XCTestCase {
         satellite.tap()
         attachScreenshot("06-satellite-style")
     }
+
+    // Get Directions should stay in-app: mode picker + route summary, never leaving to Apple Maps.
+    func test07_inAppDirections() throws {
+        let searchField = app.textFields["searchField"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 10))
+        searchField.tap()
+        searchField.typeText("Blue Bottle Coffee")
+
+        let firstSuggestion = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Blue Bottle'")).firstMatch
+        XCTAssertTrue(firstSuggestion.waitForExistence(timeout: 10))
+        firstSuggestion.tap()
+
+        let getDirections = app.buttons["getDirectionsButton"]
+        XCTAssertTrue(getDirections.waitForExistence(timeout: 10))
+        getDirections.tap()
+
+        XCTAssertTrue(app.buttons["closeDirectionsButton"].waitForExistence(timeout: 5), "Directions card should appear")
+        XCTAssertTrue(app.buttons["Drive"].waitForExistence(timeout: 5), "Mode picker should appear")
+        // App must still be foregrounded — confirms we never handed off to Apple Maps.
+        XCTAssertEqual(app.state, .runningForeground)
+
+        XCTAssertTrue(
+            app.otherElements["routeSummary"].waitForExistence(timeout: 15)
+                || app.staticTexts.element(matching: NSPredicate(format: "label CONTAINS[c] %@", "route")).waitForExistence(timeout: 5),
+            "Route summary or an error message should appear after calculation"
+        )
+        attachScreenshot("07a-directions-drive")
+
+        let driveButton = app.buttons["Drive"]
+        let walkButton = app.buttons["Walk"]
+        XCTAssertTrue(walkButton.waitForExistence(timeout: 5), "Walk button should exist inside the mode picker")
+        XCTAssertTrue(driveButton.isSelected, "Drive should start selected")
+        walkButton.tap()
+        XCTAssertTrue(walkButton.isSelected, "Walk should become selected after tapping it")
+        XCTAssertFalse(driveButton.isSelected, "Drive should no longer be selected")
+        // Let the walking route recalculate before capturing.
+        Thread.sleep(forTimeInterval: 2.0)
+        attachScreenshot("07b-directions-walk")
+
+        app.buttons["closeDirectionsButton"].tap()
+        XCTAssertTrue(app.buttons["closeDetailButton"].waitForExistence(timeout: 5), "Closing directions should return to the place card")
+        attachScreenshot("07c-back-to-place-detail")
+    }
 }
