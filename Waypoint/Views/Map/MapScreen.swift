@@ -59,6 +59,8 @@ struct MapScreen: View {
             .presentationDetents([.height(120), .medium, .large], selection: $searchDetent)
             .presentationDragIndicator(.visible)
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+            .presentationSizing(.page)
+            .presentationCornerRadius(20)
             .interactiveDismissDisabled(true)
         }
         .onChange(of: searchViewModel.selectedResult) { _, newValue in
