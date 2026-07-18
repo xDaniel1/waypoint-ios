@@ -7,7 +7,7 @@ struct MapScreen: View {
     @State private var directionsViewModel = DirectionsViewModel()
     @State private var weatherService = WeatherService()
     @State private var hasFetchedWeather = false
-    @State private var searchDetent: PresentationDetent = .height(120)
+    @State private var searchDetent: PresentationDetent = .fraction(0.12)
     @State private var mapStyle: MapStyle = .standard
     @Namespace private var mapScope
 
@@ -56,11 +56,11 @@ struct MapScreen: View {
                 currentLocation: viewModel.currentLocation,
                 detent: $searchDetent
             )
-            .presentationDetents([.height(120), .medium, .large], selection: $searchDetent)
+            .presentationDetents([.fraction(0.12), .medium, .large], selection: $searchDetent)
             .presentationDragIndicator(.visible)
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
             .presentationSizing(.page)
-            .presentationCornerRadius(20)
+            .presentationCornerRadius(28)
             .interactiveDismissDisabled(true)
         }
         .onChange(of: searchViewModel.selectedResult) { _, newValue in
@@ -85,14 +85,14 @@ struct MapScreen: View {
 
                 GlassEffectContainer {
                     VStack(spacing: 12) {
-                        MapStyleMenu(mapStyle: $mapStyle)
                         MapUserLocationButton(scope: mapScope)
+                        MapStyleMenu(mapStyle: $mapStyle)
                     }
                     .mapControlVisibility(.visible)
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.bottom, 150)
+            .padding(.bottom, 130)
         }
     }
 
@@ -123,9 +123,9 @@ private struct MapStyleMenu: View {
         } label: {
             Image(systemName: "square.3.layers.3d")
                 .font(.system(size: 18, weight: .medium))
-                .frame(width: 44, height: 44)
         }
         .buttonStyle(.glass)
+        .frame(width: 44, height: 44)
         .clipShape(Circle())
     }
 }

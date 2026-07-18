@@ -62,10 +62,10 @@ struct SearchSheet: View {
             }
         }
         .onChange(of: isFieldFocused) { _, focused in
-            detent = focused ? .large : (viewModel.selectedResult == nil ? .height(120) : .medium)
+            detent = focused ? .large : (viewModel.selectedResult == nil ? .fraction(0.12) : .medium)
         }
         .onChange(of: viewModel.selectedResult) { _, newValue in
-            detent = newValue == nil ? .height(120) : .medium
+            detent = newValue == nil ? .fraction(0.12) : .medium
         }
         .onChange(of: viewModel.speechService.transcript) { _, newValue in
             guard viewModel.speechService.isRecording else { return }
