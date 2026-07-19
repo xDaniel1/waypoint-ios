@@ -13,6 +13,14 @@ struct RouteOption: Identifiable {
     let transitSteps: [TransitStep]
     var steps: [RouteStep] = []
     var hasTraffic: Bool = false
+    /// Ordered walk/transit legs for the transit card's icon sequence.
+    var transitLegs: [DirectionsLeg] = []
+    /// e.g. "$3.00"
+    var fare: String?
+    /// e.g. "Bus departs in 6 min" or "Leave by 7:49 PM"
+    var departureText: String?
+    /// Named stops along the selected transit ride, for drawing on the map.
+    var transitStops: [NamedStop] = []
 
     var polyline: MKPolyline {
         MKPolyline(coordinates: coordinates, count: coordinates.count)
@@ -78,10 +86,43 @@ struct TransitStep: Identifiable {
     let numStops: Int?
     let headsign: String?
     let color: String?
+    var departureISO: String? = nil
 
     var displayLine: String {
         lineShortName ?? lineName
     }
+
+    var isSubway: Bool {
+        vehicle.uppercased().contains("SUBWAY") || vehicle.uppercased().contains("METRO")
+            || vehicle.uppercased().contains("RAIL") || vehicle.uppercased().contains("TRAIN")
+    }
+
+    var vehicleSymbol: String {
+        switch vehicle.uppercased() {
+        case let v where v.contains("BUS"): "bus.fill"
+        case let v where v.contains("FERRY") || v.contains("BOAT"): "ferry.fill"
+        default: "tram.fill"
+        }
+    }
+}
+
+/// One leg of a transit itinerary: either a walk of N minutes, or a transit ride.
+enum DirectionsLeg: Identifiable {
+    case walk(minutes: Int)
+    case transit(TransitStep)
+
+    var id: String {
+        switch self {
+        case .walk(let m): "walk-\(m)-\(UUID().uuidString.prefix(4))"
+        case .transit(let s): "transit-\(s.id)"
+        }
+    }
+}
+
+struct NamedStop: Identifiable {
+    let id = UUID()
+    let name: String
+    let coordinate: CLLocationCoordinate2D
 }
 
 extension MKRoute {

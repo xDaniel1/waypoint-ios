@@ -35,17 +35,29 @@ struct MapScreen: View {
                     MapPolyline(selected.polyline)
                         .stroke(Color.blue, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
                 }
-                ForEach(directionsViewModel.routeOptions) { option in
+                ForEach(Array(directionsViewModel.routeOptions.enumerated()), id: \.element.id) { index, option in
                     if let mid = option.midCoordinate {
                         Annotation("", coordinate: mid) {
                             RouteTimeBubble(
                                 text: option.shortDuration,
+                                label: index == 0 ? "Fastest" : nil,
                                 isSelected: option.id == directionsViewModel.selectedRoute?.id
                             ) {
                                 directionsViewModel.select(option)
                             }
                         }
                         .annotationTitles(.hidden)
+                    }
+                }
+                // Transit stops for the selected transit route.
+                if directionsViewModel.mode == .transit, let selected = directionsViewModel.selectedRoute {
+                    ForEach(selected.transitStops) { stop in
+                        Annotation(stop.name, coordinate: stop.coordinate) {
+                            Circle()
+                                .fill(.white)
+                                .frame(width: 10, height: 10)
+                                .overlay(Circle().stroke(.blue, lineWidth: 3))
+                        }
                     }
                 }
             }
@@ -166,22 +178,30 @@ struct MapScreen: View {
 /// The time label drawn on each route line; tapping it selects that route.
 private struct RouteTimeBubble: View {
     let text: String
+    var label: String? = nil
     let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Text(text)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(isSelected ? .white : .primary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
-                    isSelected ? AnyShapeStyle(Color.blue) : AnyShapeStyle(.ultraThickMaterial),
-                    in: Capsule()
-                )
-                .overlay(Capsule().stroke(.white.opacity(isSelected ? 0.6 : 0.2), lineWidth: 1))
-                .shadow(radius: 2)
+            VStack(spacing: 0) {
+                Text(text)
+                    .font(.caption.weight(.semibold))
+                if isSelected, let label {
+                    Text(label)
+                        .font(.caption2.weight(.medium))
+                        .opacity(0.9)
+                }
+            }
+            .foregroundStyle(isSelected ? .white : .primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                isSelected ? AnyShapeStyle(Color.blue) : AnyShapeStyle(.ultraThickMaterial),
+                in: RoundedRectangle(cornerRadius: 12)
+            )
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(isSelected ? 0.6 : 0.2), lineWidth: 1))
+            .shadow(radius: 2)
         }
         .buttonStyle(.plain)
     }

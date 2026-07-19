@@ -41,7 +41,9 @@ struct GoogleRoutesService {
             [
                 "routes.duration", "routes.staticDuration", "routes.distanceMeters",
                 "routes.polyline.encodedPolyline", "routes.description",
+                "routes.travelAdvisory.transitFare",
                 "routes.legs.steps.navigationInstruction", "routes.legs.steps.distanceMeters",
+                "routes.legs.steps.travelMode", "routes.legs.steps.staticDuration",
                 "routes.legs.steps.transitDetails",
             ].joined(separator: ","),
             forHTTPHeaderField: "X-Goog-FieldMask"
@@ -82,7 +84,7 @@ struct GoogleRoutesService {
             let transit = Self.transitSteps(from: route)
             let steps = Self.navSteps(from: route)
             let summary = Self.summary(mode: mode, route: route, transit: transit)
-            return RouteOption(
+            var option = RouteOption(
                 coordinates: coords,
                 travelTime: seconds,
                 distanceMeters: Double(route.distanceMeters ?? 0),
@@ -91,6 +93,13 @@ struct GoogleRoutesService {
                 steps: steps,
                 hasTraffic: mode == .drive && seconds > staticSeconds + 60
             )
+            if mode == .transit {
+                option.transitLegs = Self.transitLegs(from: route)
+                option.fare = Self.fareString(from: route)
+                option.departureText = Self.departureText(from: transit)
+                option.transitStops = Self.namedStops(from: route)
+            }
+            return option
         }
     }
 
@@ -111,6 +120,77 @@ struct GoogleRoutesService {
         return steps
     }
 
+    /// Ordered walk/transit legs; consecutive walk sub-steps are merged into one walk leg.
+    private static func transitLegs(from route: RoutesResponse.Route) -> [DirectionsLeg] {
+        var legs: [DirectionsLeg] = []
+        var walkSeconds = 0.0
+        func flushWalk() {
+            if walkSeconds > 0 {
+                let minutes = max(1, Int((walkSeconds / 60).rounded()))
+                legs.append(.walk(minutes: minutes))
+                walkSeconds = 0
+            }
+        }
+        for leg in route.legs ?? [] {
+            for step in leg.steps ?? [] {
+                if let td = step.transitDetails {
+                    flushWalk()
+                    let line = td.transitLine
+                    legs.append(.transit(TransitStep(
+                        lineName: line?.name ?? line?.nameShort ?? "Transit",
+                        lineShortName: line?.nameShort,
+                        vehicle: line?.vehicle?.type ?? "TRANSIT",
+                        departureStop: td.stopDetails?.departureStop?.name ?? "—",
+                        arrivalStop: td.stopDetails?.arrivalStop?.name ?? "—",
+                        numStops: td.stopCount,
+                        headsign: td.headsign,
+                        color: line?.color
+                    )))
+                } else if step.travelMode == "WALK" {
+                    walkSeconds += parseDuration(step.staticDuration)
+                }
+            }
+        }
+        flushWalk()
+        return legs
+    }
+
+    private static func fareString(from route: RoutesResponse.Route) -> String? {
+        guard let fare = route.travelAdvisory?.transitFare,
+              let units = fare.units, let amount = Double(units) else { return nil }
+        let code = fare.currencyCode ?? "USD"
+        return amount.formatted(.currency(code: code))
+    }
+
+    private static func departureText(from transit: [TransitStep]) -> String? {
+        guard let first = transit.first, let iso = first.departureISO else { return nil }
+        let formatter = ISO8601DateFormatter()
+        guard let date = formatter.date(from: iso) else { return nil }
+        let minutes = Int(date.timeIntervalSinceNow / 60)
+        let verb = first.vehicle.uppercased().contains("BUS") ? "Bus" : "Train"
+        if minutes <= 0 { return "\(verb) departs now" }
+        if minutes <= 20 { return "\(verb) departs in \(minutes) min" }
+        return "Leave by \(date.formatted(date: .omitted, time: .shortened))"
+    }
+
+    private static func namedStops(from route: RoutesResponse.Route) -> [NamedStop] {
+        var stops: [NamedStop] = []
+        for leg in route.legs ?? [] {
+            for step in leg.steps ?? [] {
+                guard let td = step.transitDetails else { continue }
+                for stop in [td.stopDetails?.departureStop, td.stopDetails?.arrivalStop] {
+                    if let stop, let loc = stop.location?.latLng, let name = stop.name {
+                        stops.append(NamedStop(
+                            name: name,
+                            coordinate: CLLocationCoordinate2D(latitude: loc.latitude, longitude: loc.longitude)
+                        ))
+                    }
+                }
+            }
+        }
+        return stops
+    }
+
     private static func transitSteps(from route: RoutesResponse.Route) -> [TransitStep] {
         var steps: [TransitStep] = []
         for leg in route.legs ?? [] {
@@ -125,7 +205,8 @@ struct GoogleRoutesService {
                     arrivalStop: td.stopDetails?.arrivalStop?.name ?? "—",
                     numStops: td.stopCount,
                     headsign: td.headsign,
-                    color: line?.color
+                    color: line?.color,
+                    departureISO: td.stopDetails?.departureTime
                 ))
             }
         }
@@ -154,6 +235,16 @@ private struct RoutesResponse: Codable {
         let description: String?
         let polyline: Polyline?
         let legs: [Leg]?
+        let travelAdvisory: TravelAdvisory?
+    }
+
+    struct TravelAdvisory: Codable {
+        let transitFare: Fare?
+    }
+
+    struct Fare: Codable {
+        let currencyCode: String?
+        let units: String?
     }
 
     struct Polyline: Codable {
@@ -167,6 +258,8 @@ private struct RoutesResponse: Codable {
     struct Step: Codable {
         let navigationInstruction: NavInstruction?
         let distanceMeters: Int?
+        let travelMode: String?
+        let staticDuration: String?
         let transitDetails: TransitDetails?
     }
 
@@ -184,10 +277,21 @@ private struct RoutesResponse: Codable {
     struct StopDetails: Codable {
         let arrivalStop: Stop?
         let departureStop: Stop?
+        let departureTime: String?
     }
 
     struct Stop: Codable {
         let name: String?
+        let location: StopLocation?
+    }
+
+    struct StopLocation: Codable {
+        let latLng: LatLng?
+    }
+
+    struct LatLng: Codable {
+        let latitude: Double
+        let longitude: Double
     }
 
     struct TransitLine: Codable {
