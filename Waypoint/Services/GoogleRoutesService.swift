@@ -8,10 +8,13 @@ enum GoogleRoutesError: Error {
     case noRoutes
 }
 
-/// Google Routes API (computeRoutes) for travel modes MapKit can't do — biking and transit
-/// (with train/bus line details). Requires the Routes API enabled on the Cloud project.
+/// Google Routes API (computeRoutes) for all travel modes with traffic-aware driving,
+/// alternate routes, turn-by-turn steps, and transit line details.
+/// Requires the Routes API enabled on the Cloud project.
 struct GoogleRoutesService {
     enum Mode: String {
+        case drive = "DRIVE"
+        case walk = "WALK"
         case bicycle = "BICYCLE"
         case transit = "TRANSIT"
     }
@@ -35,21 +38,27 @@ struct GoogleRoutesService {
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
         request.setValue(
-            "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.legs.steps.transitDetails,routes.description",
+            [
+                "routes.duration", "routes.staticDuration", "routes.distanceMeters",
+                "routes.polyline.encodedPolyline", "routes.description",
+                "routes.legs.steps.navigationInstruction", "routes.legs.steps.distanceMeters",
+                "routes.legs.steps.transitDetails",
+            ].joined(separator: ","),
             forHTTPHeaderField: "X-Goog-FieldMask"
         )
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 12
 
         var body: [String: Any] = [
             "origin": ["location": ["latLng": ["latitude": origin.latitude, "longitude": origin.longitude]]],
             "destination": ["location": ["latLng": ["latitude": destination.latitude, "longitude": destination.longitude]]],
             "travelMode": mode.rawValue,
             "polylineQuality": "HIGH_QUALITY",
+            "computeAlternativeRoutes": true,
         ]
-        if mode == .transit {
-            body["computeAlternativeRoutes"] = true
-        } else {
-            body["computeAlternativeRoutes"] = true
+        if mode == .drive {
+            // Live-traffic-aware routing so ETAs reflect current congestion and closures.
+            body["routingPreference"] = "TRAFFIC_AWARE_OPTIMAL"
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
@@ -69,22 +78,37 @@ struct GoogleRoutesService {
             let coords = PolylineDecoder.decode(encoded)
             guard !coords.isEmpty else { return nil }
             let seconds = Self.parseDuration(route.duration)
-            let steps = Self.transitSteps(from: route)
-            let summary = Self.summary(mode: mode, route: route, steps: steps)
+            let staticSeconds = Self.parseDuration(route.staticDuration)
+            let transit = Self.transitSteps(from: route)
+            let steps = Self.navSteps(from: route)
+            let summary = Self.summary(mode: mode, route: route, transit: transit)
             return RouteOption(
                 coordinates: coords,
                 travelTime: seconds,
                 distanceMeters: Double(route.distanceMeters ?? 0),
                 summary: summary,
-                transitSteps: steps
+                transitSteps: transit,
+                steps: steps,
+                hasTraffic: mode == .drive && seconds > staticSeconds + 60
             )
         }
     }
 
     private static func parseDuration(_ value: String?) -> TimeInterval {
-        // Google returns e.g. "1234s"
         guard let value, value.hasSuffix("s"), let seconds = Double(value.dropLast()) else { return 0 }
         return seconds
+    }
+
+    private static func navSteps(from route: RoutesResponse.Route) -> [RouteStep] {
+        var steps: [RouteStep] = []
+        for leg in route.legs ?? [] {
+            for step in leg.steps ?? [] {
+                if let instruction = step.navigationInstruction?.instructions, !instruction.isEmpty {
+                    steps.append(RouteStep(instruction: instruction, distanceMeters: Double(step.distanceMeters ?? 0)))
+                }
+            }
+        }
+        return steps
     }
 
     private static func transitSteps(from route: RoutesResponse.Route) -> [TransitStep] {
@@ -108,12 +132,13 @@ struct GoogleRoutesService {
         return steps
     }
 
-    private static func summary(mode: Mode, route: RoutesResponse.Route, steps: [TransitStep]) -> String {
+    private static func summary(mode: Mode, route: RoutesResponse.Route, transit: [TransitStep]) -> String {
         if mode == .transit {
-            let lines = steps.map { $0.displayLine }
+            let lines = transit.map { $0.displayLine }
             return lines.isEmpty ? "Transit" : lines.joined(separator: " → ")
         }
-        return route.description ?? "Bike route"
+        if let desc = route.description, !desc.isEmpty { return "via \(desc)" }
+        return "\(mode.rawValue.capitalized) route"
     }
 }
 
@@ -124,6 +149,7 @@ private struct RoutesResponse: Codable {
 
     struct Route: Codable {
         let duration: String?
+        let staticDuration: String?
         let distanceMeters: Int?
         let description: String?
         let polyline: Polyline?
@@ -139,7 +165,13 @@ private struct RoutesResponse: Codable {
     }
 
     struct Step: Codable {
+        let navigationInstruction: NavInstruction?
+        let distanceMeters: Int?
         let transitDetails: TransitDetails?
+    }
+
+    struct NavInstruction: Codable {
+        let instructions: String?
     }
 
     struct TransitDetails: Codable {
@@ -175,7 +207,6 @@ private struct RoutesResponse: Codable {
 enum PolylineDecoder {
     static func decode(_ encoded: String) -> [CLLocationCoordinate2D] {
         var coordinates: [CLLocationCoordinate2D] = []
-        var index = encoded.startIndex
         var lat = 0
         var lng = 0
         let scalars = Array(encoded.unicodeScalars)
@@ -194,7 +225,6 @@ enum PolylineDecoder {
             return (result & 1) != 0 ? ~(result >> 1) : (result >> 1)
         }
 
-        _ = index
         while i < scalars.count {
             lat += nextValue()
             lng += nextValue()

@@ -23,13 +23,30 @@ struct MapScreen: View {
                     Marker(result.title, coordinate: result.coordinate)
                         .tint(.indigo)
                 }
+                // Draw alternates first (under), selected route last (on top).
                 ForEach(directionsViewModel.routeOptions) { option in
-                    let isSelected = option.id == directionsViewModel.selectedRoute?.id
-                    MapPolyline(option.polyline)
-                        .stroke(
-                            isSelected ? Color.blue : Color.gray.opacity(0.6),
-                            style: StrokeStyle(lineWidth: isSelected ? 6 : 4, lineCap: .round, lineJoin: .round)
-                        )
+                    if option.id != directionsViewModel.selectedRoute?.id {
+                        MapPolyline(option.polyline)
+                            .stroke(Color.gray.opacity(0.55),
+                                    style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                    }
+                }
+                if let selected = directionsViewModel.selectedRoute {
+                    MapPolyline(selected.polyline)
+                        .stroke(Color.blue, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                }
+                ForEach(directionsViewModel.routeOptions) { option in
+                    if let mid = option.midCoordinate {
+                        Annotation("", coordinate: mid) {
+                            RouteTimeBubble(
+                                text: option.shortDuration,
+                                isSelected: option.id == directionsViewModel.selectedRoute?.id
+                            ) {
+                                directionsViewModel.select(option)
+                            }
+                        }
+                        .annotationTitles(.hidden)
+                    }
                 }
             }
             .mapStyle(mapStyle)
@@ -80,6 +97,9 @@ struct MapScreen: View {
         .onChange(of: searchViewModel.selectedResult) { _, newValue in
             guard let newValue else { return }
             viewModel.centerCamera(on: newValue.coordinate)
+        }
+        .onChange(of: viewModel.currentLocation) { _, newValue in
+            if let newValue { directionsViewModel.updateOrigin(newValue) }
         }
     }
 
@@ -140,6 +160,30 @@ struct MapScreen: View {
                 Spacer()
             }
         }
+    }
+}
+
+/// The time label drawn on each route line; tapping it selects that route.
+private struct RouteTimeBubble: View {
+    let text: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(text)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(isSelected ? .white : .primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    isSelected ? AnyShapeStyle(Color.blue) : AnyShapeStyle(.ultraThickMaterial),
+                    in: Capsule()
+                )
+                .overlay(Capsule().stroke(.white.opacity(isSelected ? 0.6 : 0.2), lineWidth: 1))
+                .shadow(radius: 2)
+        }
+        .buttonStyle(.plain)
     }
 }
 

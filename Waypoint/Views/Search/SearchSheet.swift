@@ -89,6 +89,9 @@ struct SearchSheet: View {
         .onChange(of: viewModel.selectedResult) { _, newValue in
             detent = newValue == nil ? .height(collapsedHeight) : .medium
         }
+        .onChange(of: directionsViewModel.isActive) { _, active in
+            if active { detent = .large }
+        }
         .onChange(of: viewModel.speechService.transcript) { _, newValue in
             guard viewModel.speechService.isRecording else { return }
             viewModel.queryText = newValue

@@ -324,7 +324,7 @@ struct PlaceDetailContent: View {
     }
 
     private func openDirections() {
-        Task { await directionsViewModel.start(destination: result.mapItem, from: currentLocation) }
+        directionsViewModel.start(destination: result.mapItem, from: currentLocation)
     }
 }
 
