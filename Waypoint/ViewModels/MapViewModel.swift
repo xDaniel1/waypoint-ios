@@ -16,6 +16,12 @@ final class MapViewModel {
         locationManager.currentLocation
     }
 
+    /// Magnetometer+gyro-fused device heading; used to rotate the nav camera live as the
+    /// phone turns, since GPS course alone doesn't update while stationary or moving slowly.
+    var currentHeading: CLLocationDirection? {
+        locationManager.currentHeading
+    }
+
     /// Called on every location update; consumers should debounce/guard for one-shot work like a weather fetch.
     var onLocationUpdate: ((CLLocation) -> Void)?
 

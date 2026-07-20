@@ -91,12 +91,16 @@ struct MapScreen: View {
 
             if !navigationViewModel.isActive {
                 mapControlsOverlay
+                    .transition(.opacity)
                 weatherWidgetOverlay
+                    .transition(.opacity)
             }
             if navigationViewModel.isActive {
                 navigationOverlay
+                    .transition(.opacity)
             }
         }
+        .animation(.smooth(duration: 0.4), value: navigationViewModel.isActive)
         .mapScope(mapScope)
         .task {
             viewModel.onLocationUpdate = { location in
@@ -104,8 +108,9 @@ struct MapScreen: View {
                     navigationViewModel.update(with: location)
                     // Keep the camera glued to the user in 3D follow-mode, animating smoothly
                     // between fixes instead of jump-cutting like Apple Maps' continuous pursuit-cam.
+                    let heading = viewModel.currentHeading ?? (location.course >= 0 ? location.course : 0)
                     withAnimation(.smooth(duration: 1.0)) {
-                        viewModel.followUser(at: location, heading: location.course)
+                        viewModel.followUser(at: location, heading: heading)
                     }
                 }
                 guard !hasFetchedWeather else { return }
@@ -119,6 +124,14 @@ struct MapScreen: View {
             }
             await viewModel.start()
         }
+        // Compass-driven camera rotation: fires far more often than GPS fixes, so the map
+        // turns with the phone in near real time, the way Apple Maps' puck does.
+        .onChange(of: viewModel.currentHeading) { _, newHeading in
+            guard navigationViewModel.isActive, let newHeading, let location = viewModel.currentLocation else { return }
+            withAnimation(.linear(duration: 0.25)) {
+                viewModel.followUser(at: location, heading: newHeading)
+            }
+        }
         .sheet(isPresented: .constant(!navigationViewModel.isActive)) {
             SearchSheet(
                 viewModel: searchViewModel,
@@ -131,6 +144,14 @@ struct MapScreen: View {
                     let name = searchViewModel.selectedResult?.title ?? directionsViewModel.destinationTitle
                     navigationViewModel.start(route: route, destinationName: name)
                     directionsViewModel.stop()
+                    // Zoom straight into the user's pin the moment GO is tapped, instead of
+                    // waiting for the next GPS fix to snap the camera into follow-mode.
+                    if let location = viewModel.currentLocation {
+                        let heading = viewModel.currentHeading ?? (location.course >= 0 ? location.course : 0)
+                        withAnimation(.smooth(duration: 0.6)) {
+                            viewModel.followUser(at: location, heading: heading)
+                        }
+                    }
                 }
             )
             .presentationDetents([.height(collapsedHeight), .height(380), .medium, .large], selection: $searchDetent)
@@ -210,8 +231,9 @@ struct MapScreen: View {
             HStack {
                 Button {
                     if let location = viewModel.currentLocation {
+                        let heading = viewModel.currentHeading ?? (location.course >= 0 ? location.course : 0)
                         withAnimation(.snappy(duration: 0.4)) {
-                            viewModel.followUser(at: location, heading: location.course)
+                            viewModel.followUser(at: location, heading: heading)
                         }
                     }
                 } label: {

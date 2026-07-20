@@ -44,5 +44,7 @@ struct NavigationBanner: View {
         .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
         .padding(.horizontal, 12)
         .transition(.move(edge: .top).combined(with: .opacity))
+        .animation(.smooth(duration: 0.3), value: currentInstruction)
+        .animation(.smooth(duration: 0.3), value: nextInstruction)
     }
 }

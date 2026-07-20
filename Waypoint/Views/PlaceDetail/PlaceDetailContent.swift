@@ -26,6 +26,9 @@ struct PlaceDetailContent: View {
                     .padding(.horizontal)
                     .padding(.top, 12)
 
+                quickActionsRow(place)
+                    .padding(.top, 14)
+
                 tabPicker(place)
                     .padding(.horizontal)
                     .padding(.top, 16)
@@ -113,6 +116,39 @@ struct PlaceDetailContent: View {
         }
         .buttonStyle(.glassProminent)
         .accessibilityIdentifier("getDirectionsButton")
+    }
+
+    // MARK: Quick actions
+
+    @ViewBuilder
+    private func quickActionsRow(_ place: GooglePlace) -> some View {
+        let phone = place.internationalPhoneNumber
+        let website = place.websiteUri.flatMap(URL.init(string:))
+        if phone != nil || website != nil {
+            HStack(spacing: 28) {
+                if let phone {
+                    QuickActionButton(symbol: "phone.fill", label: "Call", tint: .green) {
+                        if let url = URL(string: "tel:\(phone.filter { !$0.isWhitespace })") {
+                            UIApplication.shared.open(url)
+                        }
+                    }
+                }
+                if let website {
+                    QuickActionButton(symbol: "safari.fill", label: "Website", tint: .blue) {
+                        UIApplication.shared.open(website)
+                    }
+                }
+                ShareLink(item: shareText(place)) {
+                    QuickActionButtonLabel(symbol: "square.and.arrow.up", label: "Share", tint: .blue)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal)
+        }
+    }
+
+    private func shareText(_ place: GooglePlace) -> String {
+        [place.displayName?.text ?? result.title, place.formattedAddress].compactMap { $0 }.joined(separator: " — ")
     }
 
     // MARK: Tabs
@@ -342,6 +378,39 @@ enum PlaceDetailTab: Hashable {
         case .reviews: "Reviews"
         case .photos: "Photos"
         case .menu: "Menu"
+        }
+    }
+}
+
+private struct QuickActionButton: View {
+    let symbol: String
+    let label: String
+    let tint: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            QuickActionButtonLabel(symbol: symbol, label: label, tint: tint)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct QuickActionButtonLabel: View {
+    let symbol: String
+    let label: String
+    let tint: Color
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: symbol)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background(tint.gradient, in: Circle())
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.primary)
         }
     }
 }
