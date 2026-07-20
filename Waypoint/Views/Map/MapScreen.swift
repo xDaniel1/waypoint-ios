@@ -5,6 +5,7 @@ struct MapScreen: View {
     @State private var viewModel = MapViewModel()
     @State private var searchViewModel = SearchViewModel()
     @State private var directionsViewModel = DirectionsViewModel()
+    @State private var navigationViewModel = NavigationViewModel()
     @State private var weatherService = WeatherService()
     @State private var hasFetchedWeather = false
     @State private var searchDetent: PresentationDetent = .height(90)
@@ -61,11 +62,13 @@ struct MapScreen: View {
                     }
                 }
             }
-            .mapStyle(mapStyle)
+            .mapStyle(navigationViewModel.isActive ? .standard(elevation: .realistic) : mapStyle)
             .onMapCameraChange(frequency: .onEnd) { context in
                 searchViewModel.updateSearchRegion(context.region)
                 mapCenter = context.region.center
-                currentCamera = context.camera
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    currentCamera = context.camera
+                }
             }
             .ignoresSafeArea(edges: .top)
 
@@ -73,12 +76,22 @@ struct MapScreen: View {
                 LocationPermissionDeniedView()
             }
 
-            mapControlsOverlay
-            weatherWidgetOverlay
+            if !navigationViewModel.isActive {
+                mapControlsOverlay
+                weatherWidgetOverlay
+            }
+            if navigationViewModel.isActive {
+                navigationOverlay
+            }
         }
         .mapScope(mapScope)
         .task {
             viewModel.onLocationUpdate = { location in
+                if navigationViewModel.isActive {
+                    navigationViewModel.update(with: location)
+                    // Keep the camera glued to the user in 3D follow-mode.
+                    viewModel.followUser(at: location, heading: location.course)
+                }
                 guard !hasFetchedWeather else { return }
                 hasFetchedWeather = true
                 Task { await weatherService.refresh(for: location) }
@@ -90,16 +103,21 @@ struct MapScreen: View {
             }
             await viewModel.start()
         }
-        .sheet(isPresented: .constant(true)) {
+        .sheet(isPresented: .constant(!navigationViewModel.isActive)) {
             SearchSheet(
                 viewModel: searchViewModel,
                 directionsViewModel: directionsViewModel,
                 currentLocation: viewModel.currentLocation,
                 detent: $searchDetent,
                 collapsedHeight: $collapsedHeight,
-                sheetHeight: $sheetHeight
+                sheetHeight: $sheetHeight,
+                onStartNavigation: { route in
+                    let name = searchViewModel.selectedResult?.title ?? directionsViewModel.destinationTitle
+                    navigationViewModel.start(route: route, destinationName: name)
+                    directionsViewModel.stop()
+                }
             )
-            .presentationDetents([.height(collapsedHeight), .medium, .large], selection: $searchDetent)
+            .presentationDetents([.height(collapsedHeight), .height(380), .medium, .large], selection: $searchDetent)
             .presentationDragIndicator(.visible)
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
             .presentationSizing(.page)
@@ -119,35 +137,33 @@ struct MapScreen: View {
         VStack {
             Spacer()
             HStack(alignment: .bottom) {
-                GlassEffectContainer(spacing: 4) {
-                    VStack(spacing: 4) {
-                        ClearMapButton {
-                            withAnimation(.easeInOut(duration: 0.4)) {
-                                viewModel.toggle3D(from: currentCamera)
+                if isCloseEnoughForStreetControls {
+                    GlassEffectContainer(spacing: 4) {
+                        VStack(spacing: 4) {
+                            ClearMapButton {
+                                withAnimation(.easeInOut(duration: 0.4)) {
+                                    viewModel.toggle3D(from: currentCamera)
+                                }
+                            } label: {
+                                Text(is3D ? "2D" : "3D")
+                                    .font(.system(size: 16, weight: .semibold))
                             }
-                        } label: {
-                            Text(is3D ? "2D" : "3D")
-                                .font(.system(size: 16, weight: .semibold))
+                            LookAroundButton(coordinate: mapCenter ?? viewModel.currentLocation?.coordinate)
                         }
-                        LookAroundButton(coordinate: mapCenter ?? viewModel.currentLocation?.coordinate)
                     }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
                 Spacer()
 
-                GlassEffectContainer(spacing: 4) {
-                    VStack(spacing: 4) {
-                        ClearMapButton {
-                            withAnimation(.easeInOut(duration: 0.4)) {
-                                viewModel.recenterOnUser()
-                            }
-                        } label: {
-                            Image(systemName: "location.fill")
-                                .font(.system(size: 17, weight: .medium))
+                FusedRightControls(
+                    mapStyle: $mapStyle,
+                    onRecenter: {
+                        withAnimation(.easeInOut(duration: 0.4)) {
+                            viewModel.recenterOnUser()
                         }
-                        MapStyleMenu(mapStyle: $mapStyle)
                     }
-                }
+                )
             }
             .padding(.horizontal, 12)
             .padding(.bottom, sheetHeight + 20)
@@ -157,6 +173,53 @@ struct MapScreen: View {
 
     private var is3D: Bool {
         (currentCamera?.pitch ?? 0) > 1
+    }
+
+    /// Apple Maps only shows 3D/Look Around once you're zoomed to roughly street/neighborhood level.
+    private var isCloseEnoughForStreetControls: Bool {
+        guard let distance = currentCamera?.distance else { return false }
+        return distance < 4000
+    }
+
+    @ViewBuilder
+    private var navigationOverlay: some View {
+        VStack {
+            NavigationBanner(
+                currentInstruction: navigationViewModel.currentStep?.instruction ?? "Head to \(navigationViewModel.destinationName)",
+                nextInstruction: navigationViewModel.nextStep?.instruction
+            )
+            .padding(.top, 4)
+            Spacer()
+            HStack {
+                Button {
+                    if let location = viewModel.currentLocation {
+                        withAnimation(.easeInOut(duration: 0.4)) {
+                            viewModel.followUser(at: location, heading: location.course)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "location.north.fill")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.white)
+                        .frame(width: 48, height: 48)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.clear.interactive(), in: Circle())
+                .padding(.leading, 14)
+                Spacer()
+            }
+            .padding(.bottom, 10)
+            NavigationBottomBar(
+                arrival: navigationViewModel.formattedArrival,
+                minutes: navigationViewModel.formattedRemainingMinutes,
+                distance: navigationViewModel.formattedRemainingDistance,
+                destinationName: navigationViewModel.destinationName,
+                onEndRoute: {
+                    navigationViewModel.end()
+                }
+            )
+        }
     }
 
     @ViewBuilder
@@ -224,23 +287,43 @@ private struct ClearMapButton<Label: View>: View {
     }
 }
 
-private struct MapStyleMenu: View {
+/// The recenter-location and map-style buttons fused into a single Liquid Glass pill,
+/// matching Apple Maps rather than rendering as two separate circular buttons.
+private struct FusedRightControls: View {
     @Binding var mapStyle: MapStyle
+    let onRecenter: () -> Void
 
     var body: some View {
-        Menu {
-            Button("Standard") { mapStyle = .standard }
-            Button("Satellite") { mapStyle = .imagery }
-            Button("Hybrid") { mapStyle = .hybrid }
-        } label: {
-            Image(systemName: "square.3.layers.3d")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(.white)
-                .frame(width: 48, height: 48)
-                .contentShape(Circle())
+        GlassEffectContainer(spacing: 0) {
+            VStack(spacing: 0) {
+                Button(action: onRecenter) {
+                    Image(systemName: "location.fill")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(.white)
+                        .frame(width: 48, height: 48)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Divider()
+                    .frame(width: 30)
+                    .overlay(Color.white.opacity(0.25))
+
+                Menu {
+                    Button("Standard") { mapStyle = .standard }
+                    Button("Satellite") { mapStyle = .imagery }
+                    Button("Hybrid") { mapStyle = .hybrid }
+                } label: {
+                    Image(systemName: "square.3.layers.3d")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.white)
+                        .frame(width: 48, height: 48)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .glassEffect(.clear.interactive(), in: Capsule())
         }
-        .buttonStyle(.plain)
-        .glassEffect(.clear.interactive(), in: Circle())
     }
 }
 

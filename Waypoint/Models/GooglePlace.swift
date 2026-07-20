@@ -15,6 +15,12 @@ struct GooglePlace: Codable, Identifiable {
     let location: LatLng?
     let photos: [Photo]?
     let reviews: [Review]?
+    let editorialSummary: LocalizedText?
+
+    /// Google's descriptive blurb for the place (landmark, park, business), when available.
+    var descriptionText: String? {
+        editorialSummary?.text
+    }
 
     var coordinate: CLLocationCoordinate2D? {
         guard let location else { return nil }

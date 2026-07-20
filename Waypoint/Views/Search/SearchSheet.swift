@@ -17,6 +17,7 @@ struct SearchSheet: View {
     @Binding var detent: PresentationDetent
     @Binding var collapsedHeight: CGFloat
     @Binding var sheetHeight: CGFloat
+    let onStartNavigation: (RouteOption) -> Void
     @FocusState private var isFieldFocused: Bool
     @State private var isShowingProfile = false
     @AppStorage("com.danielguzman.waypoint.hasDismissedVoiceSearchTip") private var hasDismissedTip = false
@@ -24,9 +25,11 @@ struct SearchSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             if directionsViewModel.isActive {
-                DirectionsCard(viewModel: directionsViewModel) {
-                    directionsViewModel.stop()
-                }
+                DirectionsCard(
+                    viewModel: directionsViewModel,
+                    onClose: { directionsViewModel.stop() },
+                    onStartNavigation: { route in onStartNavigation(route) }
+                )
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             } else if let selected = viewModel.selectedResult, !isFieldFocused {
                 PlaceDetailContent(
@@ -90,7 +93,7 @@ struct SearchSheet: View {
             detent = newValue == nil ? .height(collapsedHeight) : .medium
         }
         .onChange(of: directionsViewModel.isActive) { _, active in
-            if active { detent = .large }
+            if active { detent = .height(380) }
         }
         .onChange(of: viewModel.speechService.transcript) { _, newValue in
             guard viewModel.speechService.isRecording else { return }

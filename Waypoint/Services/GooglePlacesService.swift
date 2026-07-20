@@ -11,7 +11,7 @@ struct GooglePlacesService {
     private static let detailFields = [
         "id", "displayName", "primaryTypeDisplayName", "formattedAddress",
         "internationalPhoneNumber", "websiteUri", "rating", "userRatingCount",
-        "businessStatus", "currentOpeningHours", "photos", "reviews",
+        "businessStatus", "currentOpeningHours", "photos", "reviews", "editorialSummary",
     ].joined(separator: ",")
 
     private let apiKey: String

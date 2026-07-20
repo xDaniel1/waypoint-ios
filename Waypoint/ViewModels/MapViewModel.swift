@@ -66,6 +66,19 @@ final class MapViewModel {
         centerCamera(on: location.coordinate)
     }
 
+    /// Follow-camera used during navigation: tilted 3D, oriented toward the user's heading.
+    func followUser(at location: CLLocation, heading: CLLocationDirection) {
+        let heading = heading >= 0 ? heading : 0
+        cameraPosition = .camera(
+            MapCamera(
+                centerCoordinate: location.coordinate,
+                distance: 400,
+                heading: heading,
+                pitch: 55
+            )
+        )
+    }
+
     func resetHeading(from camera: MapCamera?) {
         guard let camera else { return }
         cameraPosition = .camera(

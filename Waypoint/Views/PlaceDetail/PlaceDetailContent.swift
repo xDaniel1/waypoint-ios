@@ -167,6 +167,11 @@ struct PlaceDetailContent: View {
         if let photos = place.photos, !photos.isEmpty {
             photoCarousel(Array(photos.prefix(10)))
         }
+        if let description = place.descriptionText, !description.isEmpty {
+            Text(description)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+        }
         if let hours = place.currentOpeningHours {
             hoursSection(hours)
         }

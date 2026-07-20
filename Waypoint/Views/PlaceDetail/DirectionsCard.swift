@@ -3,6 +3,7 @@ import SwiftUI
 struct DirectionsCard: View {
     @Bindable var viewModel: DirectionsViewModel
     let onClose: () -> Void
+    let onStartNavigation: (RouteOption) -> Void
 
     @State private var pageIndex = 0
     @State private var showingSteps = false
@@ -110,7 +111,14 @@ struct DirectionsCard: View {
                     DriveRouteCard(
                         option: option,
                         label: index == 0 ? "Fastest" : shortLabel(option),
-                        onGo: { showingSteps = true }
+                        onGo: {
+                            viewModel.select(option)
+                            if viewModel.mode == .automobile || viewModel.mode == .walking || viewModel.mode == .cycling {
+                                onStartNavigation(option)
+                            } else {
+                                showingSteps = true
+                            }
+                        }
                     )
                     .padding(.horizontal, 2)
                     .tag(index)
