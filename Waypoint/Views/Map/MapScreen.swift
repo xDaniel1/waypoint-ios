@@ -61,6 +61,19 @@ struct MapScreen: View {
                         }
                     }
                 }
+                // Active navigation route: dim the traveled portion, keep the road ahead bright.
+                if navigationViewModel.isActive {
+                    let traveled = navigationViewModel.traveledCoordinates
+                    if traveled.count > 1 {
+                        MapPolyline(coordinates: traveled)
+                            .stroke(Color.blue.opacity(0.35), style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
+                    }
+                    let remaining = navigationViewModel.remainingCoordinates
+                    if remaining.count > 1 {
+                        MapPolyline(coordinates: remaining)
+                            .stroke(Color.blue, style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
+                    }
+                }
             }
             .mapStyle(navigationViewModel.isActive ? .standard(elevation: .realistic) : mapStyle)
             .onMapCameraChange(frequency: .onEnd) { context in
@@ -89,8 +102,11 @@ struct MapScreen: View {
             viewModel.onLocationUpdate = { location in
                 if navigationViewModel.isActive {
                     navigationViewModel.update(with: location)
-                    // Keep the camera glued to the user in 3D follow-mode.
-                    viewModel.followUser(at: location, heading: location.course)
+                    // Keep the camera glued to the user in 3D follow-mode, animating smoothly
+                    // between fixes instead of jump-cutting like Apple Maps' continuous pursuit-cam.
+                    withAnimation(.linear(duration: 1.0)) {
+                        viewModel.followUser(at: location, heading: location.course)
+                    }
                 }
                 guard !hasFetchedWeather else { return }
                 hasFetchedWeather = true
@@ -227,7 +243,7 @@ struct MapScreen: View {
         if let temperature = weatherService.temperature, let symbolName = weatherService.symbolName {
             VStack {
                 HStack {
-                    WeatherWidgetView(temperature: temperature, symbolName: symbolName)
+                    WeatherWidgetView(temperature: temperature, symbolName: symbolName, airQualityIndex: weatherService.airQualityIndex)
                         .padding(.leading, 12)
                         .padding(.top, 8)
                     Spacer()

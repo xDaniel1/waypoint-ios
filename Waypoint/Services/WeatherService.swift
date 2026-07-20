@@ -8,8 +8,10 @@ final class WeatherService {
     private(set) var temperature: String?
     private(set) var symbolName: String?
     private(set) var errorMessage: String?
+    private(set) var airQualityIndex: Int?
 
     private let service = WeatherKit.WeatherService.shared
+    private let airQualityService = GoogleAirQualityService()
 
     func refresh(for location: CLLocation) async {
         do {
@@ -24,5 +26,8 @@ final class WeatherService {
             symbolName = nil
             errorMessage = "Weather unavailable"
         }
+
+        // Air quality is Google-sourced since WeatherKit doesn't expose an AQI.
+        airQualityIndex = try? await airQualityService.currentConditions(at: location.coordinate).aqi
     }
 }

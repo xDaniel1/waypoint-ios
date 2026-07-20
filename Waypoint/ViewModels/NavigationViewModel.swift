@@ -14,6 +14,19 @@ final class NavigationViewModel {
     private(set) var currentStepIndex: Int = 0
     private(set) var remainingTime: TimeInterval = 0
     private(set) var remainingDistance: Double = 0
+    private(set) var progressIndex: Int = 0
+
+    /// The portion of the route still ahead, drawn bright/thick like Apple Maps.
+    var remainingCoordinates: [CLLocationCoordinate2D] {
+        guard let route, route.coordinates.indices.contains(progressIndex) else { return route?.coordinates ?? [] }
+        return Array(route.coordinates[progressIndex...])
+    }
+
+    /// The portion already driven, drawn dimmer/thinner behind the user.
+    var traveledCoordinates: [CLLocationCoordinate2D] {
+        guard let route, route.coordinates.indices.contains(progressIndex) else { return [] }
+        return Array(route.coordinates[0...progressIndex])
+    }
 
     var isActive: Bool { route != nil }
     var currentStep: RouteStep? {
@@ -44,6 +57,7 @@ final class NavigationViewModel {
         self.route = route
         self.destinationName = destinationName
         currentStepIndex = 0
+        progressIndex = 0
         remainingTime = route.travelTime
         remainingDistance = route.distanceMeters
     }
@@ -52,6 +66,7 @@ final class NavigationViewModel {
         route = nil
         destinationName = ""
         currentStepIndex = 0
+        progressIndex = 0
         remainingTime = 0
         remainingDistance = 0
     }
@@ -68,6 +83,7 @@ final class NavigationViewModel {
         }
         // Recompute remaining distance from the closest polyline point to the destination.
         let (idx, _) = closestPointIndex(to: location.coordinate, in: route.coordinates)
+        progressIndex = idx
         let remaining = pathDistance(from: idx, in: route.coordinates)
         remainingDistance = remaining
         // Assume average travel speed = total distance / total time; scale ETA by remaining fraction.
