@@ -77,9 +77,9 @@ struct SearchSheet: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
-        .animation(.easeInOut(duration: 0.25), value: directionsViewModel.isActive)
-        .animation(.easeInOut(duration: 0.25), value: viewModel.selectedResult)
-        .animation(.easeInOut(duration: 0.25), value: isFieldFocused)
+        .animation(.smooth(duration: 0.3), value: directionsViewModel.isActive)
+        .animation(.smooth(duration: 0.3), value: viewModel.selectedResult)
+        .animation(.smooth(duration: 0.3), value: isFieldFocused)
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.height
         } action: { newValue in

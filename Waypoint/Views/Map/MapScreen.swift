@@ -79,7 +79,7 @@ struct MapScreen: View {
             .onMapCameraChange(frequency: .onEnd) { context in
                 searchViewModel.updateSearchRegion(context.region)
                 mapCenter = context.region.center
-                withAnimation(.easeInOut(duration: 0.35)) {
+                withAnimation(.smooth(duration: 0.35)) {
                     currentCamera = context.camera
                 }
             }
@@ -104,7 +104,7 @@ struct MapScreen: View {
                     navigationViewModel.update(with: location)
                     // Keep the camera glued to the user in 3D follow-mode, animating smoothly
                     // between fixes instead of jump-cutting like Apple Maps' continuous pursuit-cam.
-                    withAnimation(.linear(duration: 1.0)) {
+                    withAnimation(.smooth(duration: 1.0)) {
                         viewModel.followUser(at: location, heading: location.course)
                     }
                 }
@@ -157,7 +157,7 @@ struct MapScreen: View {
                     GlassEffectContainer(spacing: 4) {
                         VStack(spacing: 4) {
                             ClearMapButton {
-                                withAnimation(.easeInOut(duration: 0.4)) {
+                                withAnimation(.snappy(duration: 0.4)) {
                                     viewModel.toggle3D(from: currentCamera)
                                 }
                             } label: {
@@ -175,7 +175,7 @@ struct MapScreen: View {
                 FusedRightControls(
                     mapStyle: $mapStyle,
                     onRecenter: {
-                        withAnimation(.easeInOut(duration: 0.4)) {
+                        withAnimation(.snappy(duration: 0.4)) {
                             viewModel.recenterOnUser()
                         }
                     }
@@ -183,7 +183,8 @@ struct MapScreen: View {
             }
             .padding(.horizontal, 12)
             .padding(.bottom, sheetHeight + 20)
-            .animation(.easeInOut(duration: 0.3), value: sheetHeight)
+            .animation(.smooth(duration: 0.3), value: sheetHeight)
+            .animation(.snappy(duration: 0.35), value: isCloseEnoughForStreetControls)
         }
     }
 
@@ -209,7 +210,7 @@ struct MapScreen: View {
             HStack {
                 Button {
                     if let location = viewModel.currentLocation {
-                        withAnimation(.easeInOut(duration: 0.4)) {
+                        withAnimation(.snappy(duration: 0.4)) {
                             viewModel.followUser(at: location, heading: location.course)
                         }
                     }

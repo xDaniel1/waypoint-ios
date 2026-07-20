@@ -24,7 +24,7 @@ struct NavigationBottomBar: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 28))
         .padding(.horizontal, 14)
         .padding(.bottom, 12)
-        .animation(.easeInOut(duration: 0.25), value: isExpanded)
+        .animation(.smooth(duration: 0.3), value: isExpanded)
         .contentShape(Rectangle())
         .onTapGesture { isExpanded.toggle() }
         .gesture(

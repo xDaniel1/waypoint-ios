@@ -31,9 +31,9 @@ struct DirectionsCard: View {
         .padding(.horizontal)
         .padding(.top, 8)
         .padding(.bottom, 10)
-        .animation(.easeInOut(duration: 0.2), value: viewModel.mode)
-        .animation(.easeInOut(duration: 0.2), value: viewModel.selectedRouteID)
-        .animation(.easeInOut(duration: 0.2), value: viewModel.isCalculating)
+        .animation(.smooth(duration: 0.25), value: viewModel.mode)
+        .animation(.smooth(duration: 0.25), value: viewModel.selectedRouteID)
+        .animation(.smooth(duration: 0.25), value: viewModel.isCalculating)
         .onChange(of: pageIndex) { _, i in
             guard viewModel.routeOptions.indices.contains(i) else { return }
             viewModel.select(viewModel.routeOptions[i])

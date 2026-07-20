@@ -52,7 +52,7 @@ struct PlaceDetailContent: View {
                 Spacer(minLength: 0)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: tab)
+        .animation(.smooth(duration: 0.25), value: tab)
         .task(id: result.id) {
             tab = .overview
             await viewModel.load(for: result)

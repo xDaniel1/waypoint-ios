@@ -28,6 +28,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.danielguzman.waypoint
         CODE_SIGN_ENTITLEMENTS: Waypoint/Waypoint.entitlements
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: Q9AGJR7SC5
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Waypoint/Info.plist
         TARGETED_DEVICE_FAMILY: "1"
