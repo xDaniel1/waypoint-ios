@@ -1,6 +1,12 @@
 import MapKit
 import SwiftUI
 
+/// The three states Apple Maps' own location button cycles through: not tracking, centered on
+/// the user without rotating the map, and centered while rotating to match device heading.
+enum UserTrackingMode {
+    case off, follow, followHeading
+}
+
 struct MapScreen: View {
     @State private var viewModel = MapViewModel()
     @State private var searchViewModel = SearchViewModel()
@@ -14,6 +20,10 @@ struct MapScreen: View {
     @State private var mapStyle: MapStyle = .standard
     @State private var mapCenter: CLLocationCoordinate2D?
     @State private var currentCamera: MapCamera?
+    @State private var trackingMode: UserTrackingMode = .off
+    /// Shared between the GPS-fix and compass-heading update paths so they never both animate
+    /// the camera within the same window — that fight was the source of the stutter/snapping.
+    @State private var lastCameraAnimation: Date = .distantPast
     @Namespace private var mapScope
 
     var body: some View {
@@ -106,11 +116,14 @@ struct MapScreen: View {
             viewModel.onLocationUpdate = { location in
                 if navigationViewModel.isActive {
                     navigationViewModel.update(with: location)
-                    // Keep the camera glued to the user in 3D follow-mode, animating smoothly
-                    // between fixes instead of jump-cutting like Apple Maps' continuous pursuit-cam.
                     let heading = viewModel.currentHeading ?? (location.course >= 0 ? location.course : 0)
-                    withAnimation(.smooth(duration: 1.0)) {
+                    animateCamera(duration: 0.9) {
                         viewModel.followUser(at: location, heading: heading)
+                    }
+                } else if trackingMode == .follow {
+                    // Recenter without rotating — the map stays north-up, only the dot moves.
+                    animateCamera(duration: 0.6) {
+                        viewModel.recenterKeepingZoom(on: location, camera: currentCamera)
                     }
                 }
                 guard !hasFetchedWeather else { return }
@@ -124,11 +137,14 @@ struct MapScreen: View {
             }
             await viewModel.start()
         }
-        // Compass-driven camera rotation: fires far more often than GPS fixes, so the map
-        // turns with the phone in near real time, the way Apple Maps' puck does.
+        // Compass-driven camera rotation only applies during active navigation or when the
+        // user has explicitly opted into heading-tracking (2nd tap of the location button) —
+        // otherwise the base map stays fixed and only the blue dot's heading cone moves,
+        // matching how iOS itself behaves outside of turn-by-turn.
         .onChange(of: viewModel.currentHeading) { _, newHeading in
-            guard navigationViewModel.isActive, let newHeading, let location = viewModel.currentLocation else { return }
-            withAnimation(.linear(duration: 0.25)) {
+            guard let newHeading, let location = viewModel.currentLocation else { return }
+            guard navigationViewModel.isActive || trackingMode == .followHeading else { return }
+            animateCamera(duration: 0.15, linear: true) {
                 viewModel.followUser(at: location, heading: newHeading)
             }
         }
@@ -148,7 +164,7 @@ struct MapScreen: View {
                     // waiting for the next GPS fix to snap the camera into follow-mode.
                     if let location = viewModel.currentLocation {
                         let heading = viewModel.currentHeading ?? (location.course >= 0 ? location.course : 0)
-                        withAnimation(.smooth(duration: 0.6)) {
+                        animateCamera(duration: 0.6) {
                             viewModel.followUser(at: location, heading: heading)
                         }
                     }
@@ -167,6 +183,40 @@ struct MapScreen: View {
         }
         .onChange(of: viewModel.currentLocation) { _, newValue in
             if let newValue { directionsViewModel.updateOrigin(newValue) }
+        }
+    }
+
+    /// Routes every programmatic camera move through one throttle so the GPS-fix path and the
+    /// compass-heading path never both animate the same camera at once and fight each other.
+    private func animateCamera(duration: Double, linear: Bool = false, _ body: () -> Void) {
+        let now = Date()
+        guard now.timeIntervalSince(lastCameraAnimation) > duration * 0.6 else { return }
+        lastCameraAnimation = now
+        withAnimation(linear ? .linear(duration: duration) : .smooth(duration: duration)) {
+            body()
+        }
+    }
+
+    private func handleLocationButtonTap() {
+        switch trackingMode {
+        case .off:
+            trackingMode = .follow
+            animateCamera(duration: 0.5) {
+                viewModel.recenterOnUser()
+            }
+        case .follow:
+            trackingMode = .followHeading
+            if let location = viewModel.currentLocation {
+                let heading = viewModel.currentHeading ?? 0
+                animateCamera(duration: 0.5) {
+                    viewModel.followUser(at: location, heading: heading)
+                }
+            }
+        case .followHeading:
+            trackingMode = .follow
+            animateCamera(duration: 0.5) {
+                viewModel.recenterOnUser()
+            }
         }
     }
 
@@ -195,11 +245,8 @@ struct MapScreen: View {
 
                 FusedRightControls(
                     mapStyle: $mapStyle,
-                    onRecenter: {
-                        withAnimation(.snappy(duration: 0.4)) {
-                            viewModel.recenterOnUser()
-                        }
-                    }
+                    trackingMode: trackingMode,
+                    onRecenter: handleLocationButtonTap
                 )
             }
             .padding(.horizontal, 12)
@@ -232,7 +279,7 @@ struct MapScreen: View {
                 Button {
                     if let location = viewModel.currentLocation {
                         let heading = viewModel.currentHeading ?? (location.course >= 0 ? location.course : 0)
-                        withAnimation(.snappy(duration: 0.4)) {
+                        animateCamera(duration: 0.5) {
                             viewModel.followUser(at: location, heading: heading)
                         }
                     }
@@ -330,17 +377,27 @@ private struct ClearMapButton<Label: View>: View {
 /// matching Apple Maps rather than rendering as two separate circular buttons.
 private struct FusedRightControls: View {
     @Binding var mapStyle: MapStyle
+    let trackingMode: UserTrackingMode
     let onRecenter: () -> Void
+
+    private var locationSymbol: String {
+        switch trackingMode {
+        case .off: "location"
+        case .follow: "location.fill"
+        case .followHeading: "location.north.line.fill"
+        }
+    }
 
     var body: some View {
         GlassEffectContainer(spacing: 0) {
             VStack(spacing: 0) {
                 Button(action: onRecenter) {
-                    Image(systemName: "location.fill")
+                    Image(systemName: locationSymbol)
                         .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(trackingMode == .off ? .white : Color.accentColor)
                         .frame(width: 48, height: 48)
                         .contentShape(Rectangle())
+                        .contentTransition(.symbolEffect(.replace))
                 }
                 .buttonStyle(.plain)
 

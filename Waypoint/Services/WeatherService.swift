@@ -25,9 +25,15 @@ final class WeatherService {
             temperature = nil
             symbolName = nil
             errorMessage = "Weather unavailable"
+            print("WeatherKit error: \(error)")
         }
 
         // Air quality is Google-sourced since WeatherKit doesn't expose an AQI.
-        airQualityIndex = try? await airQualityService.currentConditions(at: location.coordinate).aqi
+        do {
+            airQualityIndex = try await airQualityService.currentConditions(at: location.coordinate).aqi
+        } catch {
+            airQualityIndex = nil
+            print("Air Quality error: \(error)")
+        }
     }
 }

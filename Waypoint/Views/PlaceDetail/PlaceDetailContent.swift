@@ -125,7 +125,7 @@ struct PlaceDetailContent: View {
         let phone = place.internationalPhoneNumber
         let website = place.websiteUri.flatMap(URL.init(string:))
         if phone != nil || website != nil {
-            HStack(spacing: 28) {
+            HStack(spacing: 8) {
                 if let phone {
                     QuickActionButton(symbol: "phone.fill", label: "Call", tint: .green) {
                         if let url = URL(string: "tel:\(phone.filter { !$0.isWhitespace })") {
@@ -141,7 +141,6 @@ struct PlaceDetailContent: View {
                 ShareLink(item: shareText(place)) {
                     QuickActionButtonLabel(symbol: "square.and.arrow.up", label: "Share", tint: .blue)
                 }
-                Spacer(minLength: 0)
             }
             .padding(.horizontal)
         }
@@ -382,6 +381,8 @@ enum PlaceDetailTab: Hashable {
     }
 }
 
+/// iOS 26 Maps-style action chip: soft rounded-rect card, icon in a tinted circle up top,
+/// label below, evenly filling the row rather than floating bare circles.
 private struct QuickActionButton: View {
     let symbol: String
     let label: String
@@ -402,16 +403,17 @@ private struct QuickActionButtonLabel: View {
     let tint: Color
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 4) {
             Image(systemName: symbol)
-                .font(.system(size: 20, weight: .medium))
-                .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
-                .background(tint.gradient, in: Circle())
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(tint)
             Text(label)
-                .font(.caption)
-                .foregroundStyle(.primary)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(tint)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 14))
     }
 }
 

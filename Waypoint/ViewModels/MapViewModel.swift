@@ -72,6 +72,19 @@ final class MapViewModel {
         centerCamera(on: location.coordinate)
     }
 
+    /// Keeps the map centered on a moving user without rotating it or resetting the zoom
+    /// the person already chose — used for plain "follow" tracking outside of navigation.
+    func recenterKeepingZoom(on location: CLLocation, camera: MapCamera?) {
+        cameraPosition = .camera(
+            MapCamera(
+                centerCoordinate: location.coordinate,
+                distance: camera?.distance ?? 1000,
+                heading: 0,
+                pitch: 0
+            )
+        )
+    }
+
     /// Follow-camera used during navigation: tilted 3D, oriented toward the user's heading.
     func followUser(at location: CLLocation, heading: CLLocationDirection) {
         let heading = heading >= 0 ? heading : 0
