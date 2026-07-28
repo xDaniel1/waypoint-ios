@@ -7,6 +7,7 @@ struct DirectionsCard: View {
 
     @State private var pageIndex = 0
     @State private var showingSteps = false
+    @Namespace private var modeNamespace
 
     var body: some View {
         VStack(spacing: 14) {
@@ -64,14 +65,18 @@ struct DirectionsCard: View {
         }
     }
 
+    /// One continuous pill housing all the mode icons, with a sliding dark highlight behind the
+    /// selected one — matching Apple Maps' segmented mode control instead of separate chips.
     private var modePicker: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 2) {
             ForEach(DirectionsViewModel.Mode.allCases, id: \.self) { mode in
-                ModeButton(mode: mode, isSelected: viewModel.mode == mode) {
+                ModeButton(mode: mode, isSelected: viewModel.mode == mode, namespace: modeNamespace) {
                     viewModel.mode = mode
                 }
             }
         }
+        .padding(4)
+        .background(.thickMaterial, in: Capsule())
         .accessibilityIdentifier("directionsModePicker")
     }
 
@@ -303,26 +308,29 @@ private struct GoButton: View {
 private struct ModeButton: View {
     let mode: DirectionsViewModel.Mode
     let isSelected: Bool
+    let namespace: Namespace.ID
     let action: () -> Void
 
     var body: some View {
-        Group {
-            if isSelected {
-                Button(action: action) { icon }.buttonStyle(.glassProminent)
-            } else {
-                Button(action: action) { icon }.buttonStyle(.glass)
-            }
+        Button(action: action) {
+            Image(systemName: mode.symbolName)
+                .font(.system(size: 17, weight: .semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .foregroundStyle(isSelected ? Color(uiColor: .systemBackground) : .primary)
+                .background {
+                    if isSelected {
+                        Capsule()
+                            .fill(Color.primary)
+                            .matchedGeometryEffect(id: "modeHighlight", in: namespace)
+                    }
+                }
+                .accessibilityHidden(true)
         }
+        .buttonStyle(.plain)
         .accessibilityIdentifier(mode.label)
         .accessibilityLabel(mode.label)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-    }
-
-    private var icon: some View {
-        Image(systemName: mode.symbolName)
-            .font(.system(size: 18))
-            .frame(maxWidth: .infinity).padding(.vertical, 10)
-            .accessibilityHidden(true)
     }
 }
 

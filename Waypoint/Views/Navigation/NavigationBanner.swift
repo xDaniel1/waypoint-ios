@@ -21,7 +21,7 @@ struct NavigationBanner: View {
             .padding(.horizontal, 18)
             .padding(.top, 18)
             .padding(.bottom, 14)
-            .background(Color(white: 0.32))
+            .background(Color.blue)
 
             if let nextInstruction {
                 HStack(spacing: 14) {
@@ -37,7 +37,7 @@ struct NavigationBanner: View {
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 12)
-                .background(Color(white: 0.42))
+                .background(Color.blue.opacity(0.85))
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 22))

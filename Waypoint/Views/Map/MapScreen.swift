@@ -116,7 +116,11 @@ struct MapScreen: View {
             viewModel.onLocationUpdate = { location in
                 if navigationViewModel.isActive {
                     navigationViewModel.update(with: location)
-                    let heading = viewModel.currentHeading ?? (location.course >= 0 ? location.course : 0)
+                    // North-up by default, even while navigating — the map only rotates once
+                    // the user explicitly opts in via the location button's heading mode.
+                    let heading = trackingMode == .followHeading
+                        ? (viewModel.currentHeading ?? (location.course >= 0 ? location.course : 0))
+                        : 0
                     animateCamera(duration: 0.9) {
                         viewModel.followUser(at: location, heading: heading)
                     }
@@ -137,13 +141,13 @@ struct MapScreen: View {
             }
             await viewModel.start()
         }
-        // Compass-driven camera rotation only applies during active navigation or when the
-        // user has explicitly opted into heading-tracking (2nd tap of the location button) —
-        // otherwise the base map stays fixed and only the blue dot's heading cone moves,
-        // matching how iOS itself behaves outside of turn-by-turn.
+        // Compass-driven camera rotation ONLY applies once the user explicitly opts in via the
+        // location button's heading mode (2nd tap) — never automatically, not even while
+        // navigating. Otherwise the base map stays fixed and only the blue dot's heading cone
+        // moves, matching how iOS itself behaves.
         .onChange(of: viewModel.currentHeading) { _, newHeading in
             guard let newHeading, let location = viewModel.currentLocation else { return }
-            guard navigationViewModel.isActive || trackingMode == .followHeading else { return }
+            guard trackingMode == .followHeading else { return }
             animateCamera(duration: 0.15, linear: true) {
                 viewModel.followUser(at: location, heading: newHeading)
             }
@@ -163,7 +167,9 @@ struct MapScreen: View {
                     // Zoom straight into the user's pin the moment GO is tapped, instead of
                     // waiting for the next GPS fix to snap the camera into follow-mode.
                     if let location = viewModel.currentLocation {
-                        let heading = viewModel.currentHeading ?? (location.course >= 0 ? location.course : 0)
+                        let heading = trackingMode == .followHeading
+                            ? (viewModel.currentHeading ?? (location.course >= 0 ? location.course : 0))
+                            : 0
                         animateCamera(duration: 0.6) {
                             viewModel.followUser(at: location, heading: heading)
                         }
@@ -276,19 +282,13 @@ struct MapScreen: View {
             .padding(.top, 4)
             Spacer()
             HStack {
-                Button {
-                    if let location = viewModel.currentLocation {
-                        let heading = viewModel.currentHeading ?? (location.course >= 0 ? location.course : 0)
-                        animateCamera(duration: 0.5) {
-                            viewModel.followUser(at: location, heading: heading)
-                        }
-                    }
-                } label: {
-                    Image(systemName: "location.north.fill")
+                Button(action: handleLocationButtonTap) {
+                    Image(systemName: trackingMode == .followHeading ? "location.north.line.fill" : "location.north.fill")
                         .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(trackingMode == .followHeading ? Color.accentColor : Color.primary)
                         .frame(width: 48, height: 48)
                         .contentShape(Circle())
+                        .contentTransition(.symbolEffect(.replace))
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.clear.interactive(), in: Circle())
@@ -364,7 +364,7 @@ private struct ClearMapButton<Label: View>: View {
     var body: some View {
         Button(action: action) {
             label
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .frame(width: 48, height: 48)
                 .contentShape(Circle())
         }
@@ -394,7 +394,7 @@ private struct FusedRightControls: View {
                 Button(action: onRecenter) {
                     Image(systemName: locationSymbol)
                         .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(trackingMode == .off ? .white : Color.accentColor)
+                        .foregroundStyle(trackingMode == .off ? Color.primary : Color.accentColor)
                         .frame(width: 48, height: 48)
                         .contentShape(Rectangle())
                         .contentTransition(.symbolEffect(.replace))
@@ -403,7 +403,7 @@ private struct FusedRightControls: View {
 
                 Divider()
                     .frame(width: 30)
-                    .overlay(Color.white.opacity(0.25))
+                    .overlay(Color.primary.opacity(0.15))
 
                 Menu {
                     Button("Standard") { mapStyle = .standard }
@@ -412,7 +412,7 @@ private struct FusedRightControls: View {
                 } label: {
                     Image(systemName: "square.3.layers.3d")
                         .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .frame(width: 48, height: 48)
                         .contentShape(Rectangle())
                 }
@@ -444,7 +444,7 @@ private struct LookAroundButton: View {
                         .font(.system(size: 17, weight: .medium))
                 }
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
             .frame(width: 48, height: 48)
             .contentShape(Circle())
         }

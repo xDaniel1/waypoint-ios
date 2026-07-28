@@ -254,13 +254,23 @@ struct SearchSheet: View {
 
     private var suggestionsSection: some View {
         Section {
-            ForEach(viewModel.suggestions, id: \.title) { suggestion in
-                Button {
-                    Task { await select(suggestion: suggestion) }
-                } label: {
-                    SuggestionRow(suggestion: suggestion)
+            ForEach(Array(viewModel.suggestions.enumerated()), id: \.element.title) { index, suggestion in
+                if index == 0 {
+                    TopSuggestionCard(
+                        suggestion: suggestion,
+                        onSelect: { Task { await select(suggestion: suggestion) } },
+                        onDirections: { Task { await selectAndRouteToDirections(suggestion: suggestion) } }
+                    )
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16))
+                    .listRowSeparator(.hidden)
+                } else {
+                    Button {
+                        Task { await select(suggestion: suggestion) }
+                    } label: {
+                        SuggestionRow(suggestion: suggestion)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
     }
@@ -268,6 +278,15 @@ struct SearchSheet: View {
     private func select(suggestion: MKLocalSearchCompletion) async {
         isFieldFocused = false
         await viewModel.select(suggestion)
+    }
+
+    /// Resolves the suggestion, then jumps straight to directions — the one-tap "Directions"
+    /// pill under the top search result, matching Apple Maps.
+    private func selectAndRouteToDirections(suggestion: MKLocalSearchCompletion) async {
+        isFieldFocused = false
+        await viewModel.select(suggestion)
+        guard let result = viewModel.selectedResult else { return }
+        directionsViewModel.start(destination: result.mapItem, from: currentLocation)
     }
 
     private func select(recent: RecentSearch) {
@@ -288,6 +307,55 @@ struct SearchSheet: View {
     private func selectDiscover(_ place: GooglePlace) {
         isFieldFocused = false
         viewModel.selectDiscover(place)
+    }
+}
+
+/// The elevated top-match card shown above the rest of the results — icon, name, address, and
+/// quick-action pills (Directions) beneath, matching Apple Maps' search results layout.
+private struct TopSuggestionCard: View {
+    let suggestion: MKLocalSearchCompletion
+    let onSelect: () -> Void
+    let onDirections: () -> Void
+
+    var body: some View {
+        let icon = PlaceCategoryIcon.icon(for: suggestion.title)
+        VStack(alignment: .leading, spacing: 10) {
+            Button(action: onSelect) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(icon.color.opacity(0.2))
+                            .frame(width: 40, height: 40)
+                        Image(systemName: icon.symbol)
+                            .font(.subheadline)
+                            .foregroundStyle(icon.color)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(suggestion.title)
+                            .font(.body.weight(.semibold))
+                        if !suggestion.subtitle.isEmpty {
+                            Text(suggestion.subtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .buttonStyle(.plain)
+
+            Button(action: onDirections) {
+                Label("Directions", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                    .font(.subheadline.weight(.medium))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.glass)
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
     }
 }
 
