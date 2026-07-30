@@ -49,6 +49,35 @@ final class DirectionsViewModel {
         didSet { scheduleCalculation() }
     }
 
+    /// Route preferences, mirroring Apple Maps' "Avoid" menu. Changing any of these recomputes.
+    var avoidTolls = false {
+        didSet { scheduleCalculation() }
+    }
+    var avoidHighways = false {
+        didSet { scheduleCalculation() }
+    }
+    var avoidFerries = false {
+        didSet { scheduleCalculation() }
+    }
+
+    /// Human-readable summary for the "Avoid" pill, e.g. "Avoid Tolls" or "Avoid (2)".
+    var avoidSummary: String {
+        let active = [
+            avoidTolls ? "Tolls" : nil,
+            avoidHighways ? "Highways" : nil,
+            avoidFerries ? "Ferries" : nil,
+        ].compactMap { $0 }
+        switch active.count {
+        case 0: return "Avoid"
+        case 1: return "Avoid \(active[0])"
+        default: return "Avoid (\(active.count))"
+        }
+    }
+
+    var hasAvoidPreferences: Bool {
+        avoidTolls || avoidHighways || avoidFerries
+    }
+
     private(set) var routeOptions: [RouteOption] = []
     private(set) var selectedRouteID: RouteOption.ID?
     private(set) var isCalculating = false
@@ -142,7 +171,14 @@ final class DirectionsViewModel {
         destination: CLLocationCoordinate2D
     ) async -> [RouteOption]? {
         do {
-            return try await routesService.computeRoutes(from: origin, to: destination, mode: mode.googleMode)
+            return try await routesService.computeRoutes(
+                from: origin,
+                to: destination,
+                mode: mode.googleMode,
+                avoidTolls: avoidTolls,
+                avoidHighways: avoidHighways,
+                avoidFerries: avoidFerries
+            )
         } catch GoogleRoutesError.apiNotEnabled {
             if !mode.mapKitCanRoute {
                 errorMessage = "Enable the Google Routes API on your Cloud project to see \(mode.label.lowercased()) routes."

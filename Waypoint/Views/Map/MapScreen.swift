@@ -24,12 +24,32 @@ struct MapScreen: View {
     /// Shared between the GPS-fix and compass-heading update paths so they never both animate
     /// the camera within the same window — that fight was the source of the stutter/snapping.
     @State private var lastCameraAnimation: Date = .distantPast
+    @State private var speedLimitService = SpeedLimitService()
+    @State private var navBarHeight: CGFloat = 120
+    @State private var isVoiceMuted = false
+    /// Set when the user pans/zooms/rotates. While true, nothing programmatically moves the
+    /// camera — they stay wherever they dragged to until they tap re-center.
+    @State private var isCameraUserControlled = false
+    /// A built-in map POI (restaurant, shop, landmark) the user tapped directly on the map.
+    @State private var selectedMapFeature: MapFeature?
     @Namespace private var mapScope
 
     var body: some View {
         ZStack {
-            Map(position: $viewModel.cameraPosition, scope: mapScope) {
-                UserAnnotation()
+            Map(position: $viewModel.cameraPosition, selection: $selectedMapFeature, scope: mapScope) {
+                // During navigation we draw our own puck (chevron + heading cone); outside of
+                // it MapKit's stock dot already matches iOS.
+                if navigationViewModel.isActive, let location = viewModel.currentLocation {
+                    Annotation("", coordinate: location.coordinate) {
+                        NavigationPuck(
+                            heading: viewModel.currentHeading ?? (location.course >= 0 ? location.course : 0),
+                            headingAccuracy: viewModel.currentHeadingAccuracy ?? 30
+                        )
+                    }
+                    .annotationTitles(.hidden)
+                } else {
+                    UserAnnotation()
+                }
                 if let result = searchViewModel.selectedResult {
                     Marker(result.title, coordinate: result.coordinate)
                         .tint(.indigo)
@@ -93,6 +113,29 @@ struct MapScreen: View {
                     currentCamera = context.camera
                 }
             }
+            // Any touch on the map hands control back to the user: auto-follow stops re-centering
+            // so panning/rotating sticks instead of snapping back, exactly like Apple Maps.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 4)
+                    .onChanged { _ in
+                        if trackingMode != .off { trackingMode = .off }
+                        isCameraUserControlled = true
+                    }
+            )
+            .simultaneousGesture(
+                MagnifyGesture(minimumScaleDelta: 0.01)
+                    .onChanged { _ in
+                        if trackingMode != .off { trackingMode = .off }
+                        isCameraUserControlled = true
+                    }
+            )
+            .simultaneousGesture(
+                RotateGesture(minimumAngleDelta: .degrees(1))
+                    .onChanged { _ in
+                        if trackingMode != .off { trackingMode = .off }
+                        isCameraUserControlled = true
+                    }
+            )
             .ignoresSafeArea(edges: .top)
 
             if viewModel.authorizationStatus == .denied || viewModel.authorizationStatus == .restricted {
@@ -116,6 +159,10 @@ struct MapScreen: View {
             viewModel.onLocationUpdate = { location in
                 if navigationViewModel.isActive {
                     navigationViewModel.update(with: location)
+                    Task { await speedLimitService.refreshIfNeeded(at: location) }
+                    // Once the user has panned the map themselves, stop dragging the camera
+                    // back to them — they regain control until they tap re-center.
+                    guard !isCameraUserControlled else { return }
                     // North-up by default, even while navigating — the map only rotates once
                     // the user explicitly opts in via the location button's heading mode.
                     let heading = trackingMode == .followHeading
@@ -124,7 +171,7 @@ struct MapScreen: View {
                     animateCamera(duration: 0.9) {
                         viewModel.followUser(at: location, heading: heading)
                     }
-                } else if trackingMode == .follow {
+                } else if trackingMode == .follow, !isCameraUserControlled {
                     // Recenter without rotating — the map stays north-up, only the dot moves.
                     animateCamera(duration: 0.6) {
                         viewModel.recenterKeepingZoom(on: location, camera: currentCamera)
@@ -164,6 +211,10 @@ struct MapScreen: View {
                     let name = searchViewModel.selectedResult?.title ?? directionsViewModel.destinationTitle
                     navigationViewModel.start(route: route, destinationName: name)
                     directionsViewModel.stop()
+                    // Starting navigation always takes the camera back, even if the user had
+                    // panned away while choosing a route.
+                    isCameraUserControlled = false
+                    lastCameraAnimation = .distantPast
                     // Zoom straight into the user's pin the moment GO is tapped, instead of
                     // waiting for the next GPS fix to snap the camera into follow-mode.
                     if let location = viewModel.currentLocation {
@@ -176,7 +227,12 @@ struct MapScreen: View {
                     }
                 }
             )
-            .presentationDetents([.height(collapsedHeight), .height(380), .medium, .large], selection: $searchDetent)
+            // .height(190) is the collapsed-directions stop: header + GO bar stay reachable so
+            // the close button is never cut off, and dragging steps smoothly up to full height.
+            .presentationDetents(
+                [.height(collapsedHeight), .height(190), .height(400), .medium, .large],
+                selection: $searchDetent
+            )
             .presentationDragIndicator(.visible)
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
             .presentationSizing(.page)
@@ -189,6 +245,13 @@ struct MapScreen: View {
         }
         .onChange(of: viewModel.currentLocation) { _, newValue in
             if let newValue { directionsViewModel.updateOrigin(newValue) }
+        }
+        // Tapping a built-in map POI (a restaurant, shop, landmark) opens the same rich place
+        // card you'd get by searching for it.
+        .onChange(of: selectedMapFeature) { _, feature in
+            guard let feature else { return }
+            searchViewModel.selectMapFeature(feature)
+            selectedMapFeature = nil
         }
     }
 
@@ -204,6 +267,9 @@ struct MapScreen: View {
     }
 
     private func handleLocationButtonTap() {
+        // Tapping re-center is how the user hands control back to automatic follow.
+        isCameraUserControlled = false
+        lastCameraAnimation = .distantPast
         switch trackingMode {
         case .off:
             trackingMode = .follow
@@ -274,38 +340,104 @@ struct MapScreen: View {
 
     @ViewBuilder
     private var navigationOverlay: some View {
-        VStack {
-            NavigationBanner(
-                currentInstruction: navigationViewModel.currentStep?.instruction ?? "Head to \(navigationViewModel.destinationName)",
-                nextInstruction: navigationViewModel.nextStep?.instruction
-            )
-            .padding(.top, 4)
-            Spacer()
-            HStack {
-                Button(action: handleLocationButtonTap) {
-                    Image(systemName: trackingMode == .followHeading ? "location.north.line.fill" : "location.north.fill")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(trackingMode == .followHeading ? Color.accentColor : Color.primary)
-                        .frame(width: 48, height: 48)
-                        .contentShape(Circle())
-                        .contentTransition(.symbolEffect(.replace))
+        ZStack(alignment: .top) {
+            // Floating controls sit above the card and ride up/down with it as it expands.
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                HStack(alignment: .bottom) {
+                    Button(action: handleLocationButtonTap) {
+                        Image(systemName: trackingMode == .followHeading ? "location.north.line.fill" : "location.north.fill")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(trackingMode == .followHeading ? Color.accentColor : Color.primary)
+                            .frame(width: 48, height: 48)
+                            .contentShape(Circle())
+                            .contentTransition(.symbolEffect(.replace))
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.clear.interactive(), in: Circle())
+
+                    Spacer()
+
+                    navigationSideButtons
                 }
-                .buttonStyle(.plain)
-                .glassEffect(.clear.interactive(), in: Circle())
-                .padding(.leading, 14)
+                .padding(.horizontal, 16)
+                .padding(.bottom, navBarHeight + 14)
+                .animation(.smooth(duration: 0.35), value: navBarHeight)
+            }
+
+            VStack {
+                NavigationBanner(
+                    currentInstruction: navigationViewModel.currentStep?.instruction ?? "Head to \(navigationViewModel.destinationName)",
+                    nextInstruction: navigationViewModel.nextStep?.instruction
+                )
+                .padding(.top, 4)
+
+                if let limit = speedLimitService.display {
+                    HStack {
+                        SpeedLimitSign(speedLimit: limit.value, unitLabel: limit.unit)
+                            .padding(.leading, 16)
+                            .padding(.top, 6)
+                            .transition(.scale.combined(with: .opacity))
+                        Spacer()
+                    }
+                }
                 Spacer()
             }
-            .padding(.bottom, 10)
-            NavigationBottomBar(
-                arrival: navigationViewModel.formattedArrival,
-                minutes: navigationViewModel.formattedRemainingMinutes,
-                distance: navigationViewModel.formattedRemainingDistance,
-                destinationName: navigationViewModel.destinationName,
-                onEndRoute: {
-                    navigationViewModel.end()
-                }
-            )
+            .animation(.smooth(duration: 0.3), value: speedLimitService.display?.value)
+
+            VStack {
+                Spacer()
+                NavigationBottomBar(
+                    arrival: navigationViewModel.formattedArrival,
+                    minutes: navigationViewModel.formattedRemainingMinutes,
+                    distance: navigationViewModel.formattedRemainingDistance,
+                    destinationName: navigationViewModel.destinationName,
+                    isMuted: isVoiceMuted,
+                    onEndRoute: {
+                        navigationViewModel.end()
+                        speedLimitService.reset()
+                    },
+                    onToggleMute: { isVoiceMuted.toggle() },
+                    onHeightChange: { navBarHeight = $0 }
+                )
+            }
         }
+    }
+
+    /// Route-overview / mute / report stack on the right, matching Apple Maps' nav controls.
+    private var navigationSideButtons: some View {
+        GlassEffectContainer(spacing: 0) {
+            VStack(spacing: 0) {
+                Button {
+                    if let route = navigationViewModel.route {
+                        animateCamera(duration: 0.6) {
+                            viewModel.fitCamera(toRoute: route.boundingMapRect)
+                        }
+                    }
+                } label: {
+                    navSideIcon("point.topleft.down.to.point.bottomright.curvepath")
+                }
+                .buttonStyle(.plain)
+
+                Divider().frame(width: 30).overlay(Color.primary.opacity(0.15))
+
+                Button {
+                    isVoiceMuted.toggle()
+                } label: {
+                    navSideIcon(isVoiceMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                }
+                .buttonStyle(.plain)
+            }
+            .glassEffect(.clear.interactive(), in: Capsule())
+        }
+    }
+
+    private func navSideIcon(_ systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 17, weight: .medium))
+            .foregroundStyle(.primary)
+            .frame(width: 48, height: 48)
+            .contentShape(Rectangle())
     }
 
     @ViewBuilder

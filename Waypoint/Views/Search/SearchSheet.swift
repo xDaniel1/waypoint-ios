@@ -70,7 +70,9 @@ struct SearchSheet: View {
                         }
                     }
                     .listStyle(.plain)
-                    .scrollDismissesKeyboard(.immediately)
+                    // Scrolling the results must not kick you out of search — the keyboard only
+                    // hides when you actually pick something or drag it away.
+                    .scrollDismissesKeyboard(.interactively)
                 } else {
                     Spacer(minLength: 0)
                 }
@@ -93,7 +95,12 @@ struct SearchSheet: View {
             detent = newValue == nil ? .height(collapsedHeight) : .medium
         }
         .onChange(of: directionsViewModel.isActive) { _, active in
-            if active { detent = .height(380) }
+            if active { detent = directionsViewModel.mode == .transit ? .large : .height(400) }
+        }
+        .onChange(of: directionsViewModel.mode) { _, newMode in
+            guard directionsViewModel.isActive else { return }
+            // Transit shows a scrollable list of options, so give it room; other modes stay compact.
+            detent = newMode == .transit ? .large : .height(400)
         }
         .onChange(of: viewModel.speechService.transcript) { _, newValue in
             guard viewModel.speechService.isRecording else { return }

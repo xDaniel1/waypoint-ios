@@ -30,7 +30,10 @@ struct GoogleRoutesService {
     func computeRoutes(
         from origin: CLLocationCoordinate2D,
         to destination: CLLocationCoordinate2D,
-        mode: Mode
+        mode: Mode,
+        avoidTolls: Bool = false,
+        avoidHighways: Bool = false,
+        avoidFerries: Bool = false
     ) async throws -> [RouteOption] {
         guard !apiKey.isEmpty else { throw GoogleRoutesError.missingAPIKey }
 
@@ -61,6 +64,14 @@ struct GoogleRoutesService {
         if mode == .drive {
             // Live-traffic-aware routing so ETAs reflect current congestion and closures.
             body["routingPreference"] = "TRAFFIC_AWARE_OPTIMAL"
+        }
+        // Route modifiers only apply to driving/two-wheeler routes in Google's API.
+        if mode == .drive, avoidTolls || avoidHighways || avoidFerries {
+            body["routeModifiers"] = [
+                "avoidTolls": avoidTolls,
+                "avoidHighways": avoidHighways,
+                "avoidFerries": avoidFerries,
+            ]
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 

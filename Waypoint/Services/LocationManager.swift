@@ -12,6 +12,9 @@ final class LocationManager: NSObject {
     /// what drives the navigation camera's live rotation as the phone turns.
     private(set) var currentHeading: CLLocationDirection?
 
+    /// Reported heading uncertainty in degrees; drives how wide the nav puck's cone renders.
+    private(set) var currentHeadingAccuracy: CLLocationDirection?
+
     private let manager = CLLocationManager()
 
     override init() {
@@ -47,8 +50,10 @@ extension LocationManager: CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
         guard newHeading.headingAccuracy >= 0 else { return }
         let heading = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
+        let accuracy = newHeading.headingAccuracy
         Task { @MainActor in
             self.currentHeading = heading
+            self.currentHeadingAccuracy = accuracy
         }
     }
 }

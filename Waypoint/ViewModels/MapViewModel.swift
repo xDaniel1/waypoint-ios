@@ -22,6 +22,10 @@ final class MapViewModel {
         locationManager.currentHeading
     }
 
+    var currentHeadingAccuracy: CLLocationDirection? {
+        locationManager.currentHeadingAccuracy
+    }
+
     /// Called on every location update; consumers should debounce/guard for one-shot work like a weather fetch.
     var onLocationUpdate: ((CLLocation) -> Void)?
 

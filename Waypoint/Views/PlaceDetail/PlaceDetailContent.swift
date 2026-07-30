@@ -10,6 +10,7 @@ struct PlaceDetailContent: View {
 
     @State private var viewModel = PlaceDetailViewModel()
     @State private var tab: PlaceDetailTab = .overview
+    @State private var lightbox: LightboxSelection?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -60,6 +61,17 @@ struct PlaceDetailContent: View {
             tab = .overview
             await viewModel.load(for: result)
         }
+        .fullScreenCover(item: $lightbox) { selection in
+            PhotoLightbox(
+                photos: selection.photos,
+                startIndex: selection.index,
+                urlProvider: { viewModel.photoURL(for: $0, maxWidthPx: 1600) }
+            )
+        }
+    }
+
+    private func openLightbox(_ photos: [GooglePlace.Photo], at index: Int) {
+        lightbox = LightboxSelection(photos: photos, index: index)
     }
 
     // MARK: Header
@@ -215,8 +227,10 @@ struct PlaceDetailContent: View {
 
     private func photoCarousel(_ photos: [GooglePlace.Photo]) -> some View {
         TabView {
-            ForEach(photos) { photo in
+            ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
                 photoImage(photo, contentMode: .fill)
+                    .contentShape(Rectangle())
+                    .onTapGesture { openLightbox(photos, at: index) }
             }
         }
         .tabViewStyle(.page)
@@ -296,14 +310,24 @@ struct PlaceDetailContent: View {
     @ViewBuilder
     private func photosTab(_ place: GooglePlace) -> some View {
         if let photos = place.photos {
-            let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
-            LazyVGrid(columns: columns, spacing: 8) {
-                ForEach(photos) { photo in
+            photoGrid(photos)
+        }
+    }
+
+    /// Tappable grid — opens the full-screen lightbox at the photo you tapped.
+    private func photoGrid(_ photos: [GooglePlace.Photo]) -> some View {
+        let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
+        return LazyVGrid(columns: columns, spacing: 8) {
+            ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+                Button {
+                    openLightbox(photos, at: index)
+                } label: {
                     photoImage(photo, contentMode: .fill)
                         .frame(height: 120)
                         .frame(maxWidth: .infinity)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -330,15 +354,7 @@ struct PlaceDetailContent: View {
                 .foregroundStyle(.secondary)
 
             if let photos = place.photos {
-                let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
-                LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(photos) { photo in
-                        photoImage(photo, contentMode: .fill)
-                            .frame(height: 120)
-                            .frame(maxWidth: .infinity)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                }
+                photoGrid(photos)
             }
         }
     }

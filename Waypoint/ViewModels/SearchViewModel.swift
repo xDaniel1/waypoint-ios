@@ -1,5 +1,6 @@
 import MapKit
 import Observation
+import SwiftUI
 
 @Observable
 @MainActor
@@ -86,6 +87,16 @@ final class SearchViewModel {
         selectedResult = result
         recentsStore.add(result)
         queryText = name
+    }
+
+    /// Opens the place card for a POI the user tapped directly on the map, exactly as if they
+    /// had searched for it — Google details are then loaded from the name + coordinate.
+    func selectMapFeature(_ feature: MapFeature) {
+        let title = feature.title ?? "Dropped Pin"
+        let result = syntheticResult(title: title, coordinate: feature.coordinate)
+        selectedResult = result
+        recentsStore.add(result)
+        queryText = title
     }
 
     func clearSelection() {

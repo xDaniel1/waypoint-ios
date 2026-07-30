@@ -5,41 +5,46 @@ struct DirectionsCard: View {
     let onClose: () -> Void
     let onStartNavigation: (RouteOption) -> Void
 
-    @State private var pageIndex = 0
     @State private var showingSteps = false
     @Namespace private var modeNamespace
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 0) {
+            // Header stays pinned so the close button is reachable at every detent height.
             header
-            modePicker
-            endpointsCard
+                .padding(.horizontal)
+                .padding(.top, 20)
+                .padding(.bottom, 12)
 
-            if viewModel.isCalculating {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
-            } else if let errorMessage = viewModel.errorMessage {
-                errorView(errorMessage)
-            } else if !viewModel.routeOptions.isEmpty {
-                if viewModel.mode == .transit {
-                    transitList
-                } else {
-                    pagedRouteCards
+            ScrollView {
+                VStack(spacing: 14) {
+                    modePicker
+                    endpointsCard
+                    optionsRow
+
+                    if viewModel.isCalculating {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 20)
+                    } else if let errorMessage = viewModel.errorMessage {
+                        errorView(errorMessage)
+                    } else if !viewModel.routeOptions.isEmpty {
+                        if viewModel.mode == .transit {
+                            transitList
+                        } else if let selected = viewModel.selectedRoute {
+                            selectedRouteBar(selected)
+                        }
+                    }
                 }
+                .padding(.horizontal)
+                .padding(.bottom, 16)
             }
+            .scrollIndicators(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .padding(.horizontal)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-        .animation(.smooth(duration: 0.25), value: viewModel.mode)
-        .animation(.smooth(duration: 0.25), value: viewModel.selectedRouteID)
-        .animation(.smooth(duration: 0.25), value: viewModel.isCalculating)
-        .onChange(of: pageIndex) { _, i in
-            guard viewModel.routeOptions.indices.contains(i) else { return }
-            viewModel.select(viewModel.routeOptions[i])
-        }
-        .onChange(of: viewModel.routeOptions.count) { _, _ in pageIndex = 0 }
+        .animation(.smooth(duration: 0.3), value: viewModel.mode)
+        .animation(.smooth(duration: 0.3), value: viewModel.selectedRouteID)
+        .animation(.smooth(duration: 0.3), value: viewModel.isCalculating)
         .sheet(isPresented: $showingSteps) {
             if let route = viewModel.selectedRoute {
                 RouteStepsSheet(destination: viewModel.destinationTitle, route: route)
@@ -49,20 +54,52 @@ struct DirectionsCard: View {
 
     // MARK: Header
 
+    /// Share on the left, title + Options in the middle, close on the right — the same header
+    /// Apple Maps keeps pinned whether the directions card is collapsed or expanded.
     private var header: some View {
-        ZStack {
-            Text("Directions").font(.headline)
-            HStack {
-                Spacer()
-                Button(action: onClose) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("closeDirectionsButton")
+        HStack(spacing: 12) {
+            ShareLink(item: shareSummary) {
+                headerCircleIcon("square.and.arrow.up")
             }
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 0)
+
+            VStack(spacing: 3) {
+                Text("Directions")
+                    .font(.headline)
+                Text("Options")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.blue)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 3)
+                    .background(.blue.opacity(0.15), in: Capsule())
+            }
+            .fixedSize()
+
+            Spacer(minLength: 0)
+
+            Button(action: onClose) {
+                headerCircleIcon("xmark")
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("closeDirectionsButton")
         }
+    }
+
+    private func headerCircleIcon(_ systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(.primary)
+            .frame(width: 32, height: 32)
+            .background(.thickMaterial, in: Circle())
+    }
+
+    private var shareSummary: String {
+        if let route = viewModel.selectedRoute {
+            return "\(viewModel.destinationTitle) — \(route.shortDuration), \(route.formattedDistance)"
+        }
+        return viewModel.destinationTitle
     }
 
     /// One continuous pill housing all the mode icons, with a sliding dark highlight behind the
@@ -107,39 +144,77 @@ struct DirectionsCard: View {
         .padding(.horizontal, 12).padding(.vertical, 10)
     }
 
-    // MARK: Drive / Walk / Bike — swipeable paged cards
+    // MARK: Options row ("Now" departure · "Avoid" preferences)
 
-    private var pagedRouteCards: some View {
-        VStack(spacing: 8) {
-            TabView(selection: $pageIndex) {
-                ForEach(Array(viewModel.routeOptions.enumerated()), id: \.element.id) { index, option in
-                    DriveRouteCard(
-                        option: option,
-                        label: index == 0 ? "Fastest" : shortLabel(option),
-                        onGo: {
-                            viewModel.select(option)
-                            if viewModel.mode == .automobile || viewModel.mode == .walking || viewModel.mode == .cycling {
-                                onStartNavigation(option)
-                            } else {
-                                showingSteps = true
-                            }
-                        }
-                    )
-                    .padding(.horizontal, 2)
-                    .tag(index)
-                }
+    private var optionsRow: some View {
+        HStack(spacing: 10) {
+            Menu {
+                Text("Routes and ETAs use live traffic for right now. Scheduled departure isn't supported yet.")
+            } label: {
+                optionPill(title: "Now", isActive: false)
             }
-            .tabViewStyle(.page(indexDisplayMode: viewModel.routeOptions.count > 1 ? .always : .never))
-            .frame(height: 150)
 
-            Text("Route and ETA reflect current traffic. Live turn-by-turn guidance is an Apple-private system feature.")
-                .font(.caption2).foregroundStyle(.tertiary)
+            Menu {
+                Toggle("Tolls", isOn: $viewModel.avoidTolls)
+                Toggle("Highways", isOn: $viewModel.avoidHighways)
+                Toggle("Ferries", isOn: $viewModel.avoidFerries)
+                if viewModel.mode != .automobile {
+                    Section {
+                        Text("Avoid options apply to driving routes.")
+                    }
+                }
+            } label: {
+                optionPill(title: viewModel.avoidSummary, isActive: viewModel.hasAvoidPreferences)
+            }
+            .accessibilityIdentifier("avoidMenu")
+
+            Spacer()
         }
     }
 
-    private func shortLabel(_ option: RouteOption) -> String {
-        // Google descriptions look like "via Broadway and Bedford Ave"; keep them short.
-        option.summary.replacingOccurrences(of: "via ", with: "via ")
+    private func optionPill(title: String, isActive: Bool) -> some View {
+        HStack(spacing: 4) {
+            Text(title).font(.subheadline.weight(.medium))
+            Image(systemName: "chevron.down").font(.caption2)
+        }
+        .foregroundStyle(isActive ? Color.white : Color.primary)
+        .padding(.horizontal, 14).padding(.vertical, 7)
+        .background(isActive ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.thickMaterial), in: Capsule())
+    }
+
+    // MARK: Drive / Walk / Bike — selected-route summary bar
+
+    /// The bottom bar for the currently-selected route (chosen via the map's tappable time
+    /// bubbles). Big duration, ETA · distance, route label, and the GO button — like Apple Maps.
+    private func selectedRouteBar(_ option: RouteOption) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(option.shortDuration)
+                        .font(.title.weight(.bold))
+                        .foregroundStyle(option.hasTraffic ? .orange : .primary)
+                    if option.hasTraffic {
+                        Image(systemName: "car.side.and.exclamationmark").font(.caption).foregroundStyle(.orange)
+                    }
+                }
+                Text("\(option.formattedETA) ETA · \(option.formattedDistance)")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                Text(isFastest(option) ? "Fastest route, now" : option.summary)
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer()
+            GoButton {
+                viewModel.select(option)
+                onStartNavigation(option)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func isFastest(_ option: RouteOption) -> Bool {
+        viewModel.routeOptions.first?.id == option.id
     }
 
     // MARK: Transit — rich vertical list
@@ -158,7 +233,8 @@ struct DirectionsCard: View {
             }
             .padding(.bottom, 8)
         }
-        .frame(maxHeight: 360)
+        .frame(maxHeight: .infinity)
+        .scrollIndicators(.hidden)
     }
 
     private func errorView(_ message: String) -> some View {
@@ -167,37 +243,6 @@ struct DirectionsCard: View {
             Text(message).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity).padding(.vertical, 20)
-    }
-}
-
-// MARK: - Drive route card (one page)
-
-private struct DriveRouteCard: View {
-    let option: RouteOption
-    let label: String
-    let onGo: () -> Void
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(option.shortDuration)
-                        .font(.title.weight(.bold))
-                        .foregroundStyle(option.hasTraffic ? .orange : .primary)
-                    if option.hasTraffic {
-                        Image(systemName: "car.side.and.exclamationmark").font(.caption).foregroundStyle(.orange)
-                    }
-                }
-                Text("\(option.formattedETA) ETA · \(option.formattedDistance)")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                Text(label).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer()
-            GoButton(action: onGo)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
     }
 }
 
