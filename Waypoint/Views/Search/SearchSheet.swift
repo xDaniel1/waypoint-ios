@@ -44,34 +44,30 @@ struct SearchSheet: View {
                 }
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             } else {
-                // Apple nests the field and the avatar inside one outer glass capsule, so the
-                // two read as a single control rather than separate floating pills.
-                GlassEffectContainer(spacing: 6) {
-                    HStack(spacing: 6) {
-                        searchField
-                        if isSearching {
-                            Button("Cancel") {
-                                isFieldFocused = false
-                                isSearching = false
-                                viewModel.queryText = ""
-                            }
-                            .font(.body)
-                            .padding(.trailing, 6)
-                            .accessibilityIdentifier("cancelSearchButton")
-                        } else {
-                            profileButton
+                // The sheet's own background is the outer container (same as Apple Maps), so the
+                // field and avatar sit directly on it — adding another glass layer here would
+                // show as a second banner behind the bar.
+                HStack(spacing: 8) {
+                    searchField
+                    if isSearching {
+                        Button("Cancel") {
+                            isFieldFocused = false
+                            isSearching = false
+                            viewModel.queryText = ""
                         }
+                        .font(.body)
+                        .accessibilityIdentifier("cancelSearchButton")
+                    } else {
+                        profileButton
                     }
-                    .padding(5)
-                    .glassEffect(.regular, in: Capsule())
                 }
-                .padding(.horizontal)
-                .padding(.top, 8)
-                .padding(.bottom, 12)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
                 .onGeometryChange(for: CGFloat.self) { proxy in
                     proxy.size.height
                 } action: { newValue in
-                    collapsedHeight = newValue + 24
+                    // Hug the bar: just the row plus its own padding, no trailing dead space.
+                    collapsedHeight = newValue + 8
                 }
 
                 if isSearching {
