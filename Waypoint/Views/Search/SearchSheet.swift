@@ -19,6 +19,9 @@ struct SearchSheet: View {
     @Binding var sheetHeight: CGFloat
     let onStartNavigation: (RouteOption) -> Void
     @FocusState private var isFieldFocused: Bool
+    /// Stays true for the whole search session — scrolling dismisses the keyboard but must NOT
+    /// drop you back to the map, so the results list is driven by this, not by keyboard focus.
+    @State private var isSearching = false
     @State private var isShowingProfile = false
     @AppStorage("com.danielguzman.waypoint.hasDismissedVoiceSearchTip") private var hasDismissedTip = false
 
@@ -31,7 +34,7 @@ struct SearchSheet: View {
                     onStartNavigation: { route in onStartNavigation(route) }
                 )
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
-            } else if let selected = viewModel.selectedResult, !isFieldFocused {
+            } else if let selected = viewModel.selectedResult, !isSearching {
                 PlaceDetailContent(
                     result: selected,
                     currentLocation: currentLocation,
@@ -41,9 +44,26 @@ struct SearchSheet: View {
                 }
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             } else {
-                HStack(spacing: 10) {
-                    searchField
-                    profileButton
+                // Apple nests the field and the avatar inside one outer glass capsule, so the
+                // two read as a single control rather than separate floating pills.
+                GlassEffectContainer(spacing: 6) {
+                    HStack(spacing: 6) {
+                        searchField
+                        if isSearching {
+                            Button("Cancel") {
+                                isFieldFocused = false
+                                isSearching = false
+                                viewModel.queryText = ""
+                            }
+                            .font(.body)
+                            .padding(.trailing, 6)
+                            .accessibilityIdentifier("cancelSearchButton")
+                        } else {
+                            profileButton
+                        }
+                    }
+                    .padding(5)
+                    .glassEffect(.regular, in: Capsule())
                 }
                 .padding(.horizontal)
                 .padding(.top, 8)
@@ -54,7 +74,7 @@ struct SearchSheet: View {
                     collapsedHeight = newValue + 24
                 }
 
-                if isFieldFocused {
+                if isSearching {
                     List {
                         if viewModel.queryText.isEmpty {
                             tipSection
@@ -70,9 +90,9 @@ struct SearchSheet: View {
                         }
                     }
                     .listStyle(.plain)
-                    // Scrolling the results must not kick you out of search — the keyboard only
-                    // hides when you actually pick something or drag it away.
-                    .scrollDismissesKeyboard(.interactively)
+                    // Scrolling puts the keyboard away so you can read results, but the search
+                    // page itself stays up until you pick something or close it.
+                    .scrollDismissesKeyboard(.immediately)
                 } else {
                     Spacer(minLength: 0)
                 }
@@ -81,15 +101,23 @@ struct SearchSheet: View {
         .frame(maxHeight: .infinity, alignment: .top)
         .animation(.smooth(duration: 0.3), value: directionsViewModel.isActive)
         .animation(.smooth(duration: 0.3), value: viewModel.selectedResult)
-        .animation(.smooth(duration: 0.3), value: isFieldFocused)
+        .animation(.smooth(duration: 0.3), value: isSearching)
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.height
         } action: { newValue in
             sheetHeight = newValue
         }
         .onChange(of: isFieldFocused) { _, focused in
-            detent = focused ? .large : (viewModel.selectedResult == nil ? .height(collapsedHeight) : .medium)
-            if focused { viewModel.loadDiscover() }
+            // Gaining focus enters search mode; losing it (e.g. from scrolling) does not leave it.
+            guard focused else { return }
+            isSearching = true
+            detent = .large
+            viewModel.loadDiscover()
+        }
+        .onChange(of: isSearching) { _, searching in
+            if !searching {
+                detent = viewModel.selectedResult == nil ? .height(collapsedHeight) : .medium
+            }
         }
         .onChange(of: viewModel.selectedResult) { _, newValue in
             detent = newValue == nil ? .height(collapsedHeight) : .medium
@@ -284,6 +312,7 @@ struct SearchSheet: View {
 
     private func select(suggestion: MKLocalSearchCompletion) async {
         isFieldFocused = false
+        isSearching = false
         await viewModel.select(suggestion)
     }
 
@@ -291,6 +320,7 @@ struct SearchSheet: View {
     /// pill under the top search result, matching Apple Maps.
     private func selectAndRouteToDirections(suggestion: MKLocalSearchCompletion) async {
         isFieldFocused = false
+        isSearching = false
         await viewModel.select(suggestion)
         guard let result = viewModel.selectedResult else { return }
         directionsViewModel.start(destination: result.mapItem, from: currentLocation)
@@ -298,21 +328,25 @@ struct SearchSheet: View {
 
     private func select(recent: RecentSearch) {
         isFieldFocused = false
+        isSearching = false
         viewModel.selectRecent(recent)
     }
 
     private func select(nearby result: SearchResult) {
         isFieldFocused = false
+        isSearching = false
         viewModel.selectResult(result)
     }
 
     private func select(favorite: FavoritePlace) {
         isFieldFocused = false
+        isSearching = false
         viewModel.selectFavorite(favorite)
     }
 
     private func selectDiscover(_ place: GooglePlace) {
         isFieldFocused = false
+        isSearching = false
         viewModel.selectDiscover(place)
     }
 }

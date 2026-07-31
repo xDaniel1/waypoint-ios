@@ -68,6 +68,43 @@ private struct HeadingCone: Shape {
     }
 }
 
+/// The standard (non-navigating) location dot: solid blue core, white ring, soft shadow, and a
+/// translucent heading wedge — the same read as Apple Maps' blue dot.
+struct UserLocationDot: View {
+    /// Device heading in degrees; when nil the cone is hidden (no reliable compass fix yet).
+    var heading: Double?
+    var headingAccuracy: Double = 30
+
+    var body: some View {
+        ZStack {
+            if let heading {
+                HeadingCone(spread: min(max(headingAccuracy, 18), 70))
+                    .fill(
+                        RadialGradient(
+                            colors: [Color.blue.opacity(0.40), Color.blue.opacity(0.0)],
+                            center: .center,
+                            startRadius: 6,
+                            endRadius: 46
+                        )
+                    )
+                    .frame(width: 92, height: 92)
+                    .rotationEffect(.degrees(heading))
+                    .allowsHitTesting(false)
+            }
+
+            Circle()
+                .fill(.white)
+                .frame(width: 24, height: 24)
+                .shadow(color: .black.opacity(0.28), radius: 3, y: 1)
+
+            Circle()
+                .fill(Color.blue)
+                .frame(width: 18, height: 18)
+        }
+        .animation(.linear(duration: 0.25), value: heading)
+    }
+}
+
 /// Apple Maps' speed limit sign. Renders the US/regional variants shown during navigation.
 struct SpeedLimitSign: View {
     let speedLimit: Int

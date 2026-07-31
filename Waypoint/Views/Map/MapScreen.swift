@@ -37,14 +37,22 @@ struct MapScreen: View {
     var body: some View {
         ZStack {
             Map(position: $viewModel.cameraPosition, selection: $selectedMapFeature, scope: mapScope) {
-                // During navigation we draw our own puck (chevron + heading cone); outside of
-                // it MapKit's stock dot already matches iOS.
-                if navigationViewModel.isActive, let location = viewModel.currentLocation {
+                // We draw the location indicator ourselves so it reads like Apple's: a blue dot
+                // in a white ring with a heading wedge, and a chevron puck while navigating.
+                // MapKit's stock dot picks up the map tint and looks washed out.
+                if let location = viewModel.currentLocation {
                     Annotation("", coordinate: location.coordinate) {
-                        NavigationPuck(
-                            heading: viewModel.currentHeading ?? (location.course >= 0 ? location.course : 0),
-                            headingAccuracy: viewModel.currentHeadingAccuracy ?? 30
-                        )
+                        if navigationViewModel.isActive {
+                            NavigationPuck(
+                                heading: viewModel.currentHeading ?? (location.course >= 0 ? location.course : 0),
+                                headingAccuracy: viewModel.currentHeadingAccuracy ?? 30
+                            )
+                        } else {
+                            UserLocationDot(
+                                heading: viewModel.currentHeading,
+                                headingAccuracy: viewModel.currentHeadingAccuracy ?? 30
+                            )
+                        }
                     }
                     .annotationTitles(.hidden)
                 } else {

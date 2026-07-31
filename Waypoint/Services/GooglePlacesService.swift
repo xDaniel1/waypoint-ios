@@ -12,6 +12,8 @@ struct GooglePlacesService {
         "id", "displayName", "primaryTypeDisplayName", "formattedAddress",
         "internationalPhoneNumber", "websiteUri", "rating", "userRatingCount",
         "businessStatus", "currentOpeningHours", "photos", "reviews", "editorialSummary",
+        "location", "priceLevel", "googleMapsUri", "paymentOptions", "goodForChildren",
+        "restroom", "outdoorSeating", "servesVegetarianFood", "takeout", "delivery", "dineIn",
     ].joined(separator: ",")
 
     private let apiKey: String

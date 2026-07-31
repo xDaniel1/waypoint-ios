@@ -76,22 +76,22 @@ final class WaypointUITests: XCTestCase {
         XCTAssertTrue(app.buttons["closeDetailButton"].waitForExistence(timeout: 10), "Detail card should replace search UI")
         XCTAssertTrue(app.buttons["getDirectionsButton"].waitForExistence(timeout: 5))
 
-        // Tabbed layout: Reviews/Photos/Menu chips appear once Google data loads.
-        let reviewsTab = app.buttons["tab-Reviews"]
-        XCTAssertTrue(reviewsTab.waitForExistence(timeout: 20), "Reviews tab should appear once Google data loads")
-        attachScreenshot("04b-place-detail-overview")
+        // Apple-style single-scroll card: Google-sourced sections render inline (no tabs).
+        let aboutOrReviews = app.staticTexts["About"]
+        let ratings = app.staticTexts["Ratings & Reviews"]
+        let details = app.staticTexts["Details"]
+        // Any one of the Google-backed sections proves the card populated.
+        XCTAssertTrue(
+            aboutOrReviews.waitForExistence(timeout: 25)
+                || ratings.waitForExistence(timeout: 5)
+                || details.waitForExistence(timeout: 5),
+            "Google-sourced place sections should render on the card"
+        )
+        attachScreenshot("04b-place-detail-card")
 
-        reviewsTab.tap()
-        XCTAssertTrue(reviewsTab.isSelected, "Reviews tab should become selected")
-        attachScreenshot("04c-reviews-tab")
-
-        let photosTab = app.buttons["tab-Photos"]
-        XCTAssertTrue(photosTab.waitForExistence(timeout: 5), "Photos tab should exist")
-        photosTab.tap()
-        attachScreenshot("04d-photos-tab")
-
-        app.buttons["tab-Menu"].tap()
-        attachScreenshot("04e-menu-tab")
+        // The card scrolls vertically through its sections.
+        app.swipeUp()
+        attachScreenshot("04c-place-detail-scrolled")
 
         // Closing should return to the plain collapsed search bar.
         app.buttons["closeDetailButton"].tap()
