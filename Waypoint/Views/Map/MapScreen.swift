@@ -14,7 +14,7 @@ struct MapScreen: View {
     @State private var navigationViewModel = NavigationViewModel()
     @State private var weatherService = WeatherService()
     @State private var hasFetchedWeather = false
-    @State private var searchDetent: PresentationDetent = .height(90)
+    @State private var searchDetent: PresentationDetent = .home
     @State private var collapsedHeight: CGFloat = 90
     @State private var sheetHeight: CGFloat = 90
     @State private var mapStyle: MapStyle = .standard
@@ -62,12 +62,13 @@ struct MapScreen: View {
                     Marker(result.title, coordinate: result.coordinate)
                         .tint(.indigo)
                 }
-                // Draw alternates first (under), selected route last (on top).
+                // Draw alternates first (under), selected route last (on top). Alternates keep a
+                // muted blue rather than gray so every option reads as a route you can take.
                 ForEach(directionsViewModel.routeOptions) { option in
                     if option.id != directionsViewModel.selectedRoute?.id {
                         MapPolyline(option.polyline)
-                            .stroke(Color.gray.opacity(0.55),
-                                    style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                            .stroke(Color.blue.opacity(0.45),
+                                    style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
                     }
                 }
                 if let selected = directionsViewModel.selectedRoute {
@@ -235,14 +236,13 @@ struct MapScreen: View {
                     }
                 }
             )
-            // .height(190) is the collapsed-directions stop: header + GO bar stay reachable so
-            // the close button is never cut off, and dragging steps smoothly up to full height.
-            .presentationDetents(
-                [.height(collapsedHeight), .height(190), .height(400), .medium, .large],
-                selection: $searchDetent
-            )
+            .presentationDetents(sheetDetents, selection: $searchDetent)
             .presentationDragIndicator(.visible)
-            .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+            // Must name a detent that's actually in `sheetDetents` — otherwise the whole map
+            // behind the sheet stops receiving touches.
+            .presentationBackgroundInteraction(
+                .enabled(upThrough: directionsViewModel.isActive ? .medium : .home)
+            )
             .presentationSizing(.page)
             .presentationCornerRadius(28)
             .interactiveDismissDisabled(true)
@@ -261,6 +261,16 @@ struct MapScreen: View {
             searchViewModel.selectMapFeature(feature)
             selectedMapFeature = nil
         }
+    }
+
+    /// Apple Maps only ever offers three heights, so one pull from the resting card goes straight
+    /// to full screen. Directions swap the middle stop for a taller one that fits the whole card
+    /// (and a short one so the header/close button stays reachable when it's dragged down).
+    private var sheetDetents: Set<PresentationDetent> {
+        if directionsViewModel.isActive {
+            return [.height(190), .medium, .large]
+        }
+        return [.height(collapsedHeight), .home, .large]
     }
 
     /// Routes every programmatic camera move through one throttle so the GPS-fix path and the

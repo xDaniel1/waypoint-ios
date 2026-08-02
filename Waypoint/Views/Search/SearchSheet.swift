@@ -10,6 +10,12 @@ private let categories: [(title: String, symbol: String)] = [
     ("Hotels", "bed.double.fill"),
 ]
 
+extension PresentationDetent {
+    /// Where the card rests when the app opens: search bar, the Places row, and the top of
+    /// Recents — the same partial height Apple Maps starts at before you pull it up.
+    static let home = PresentationDetent.fraction(0.45)
+}
+
 struct SearchSheet: View {
     @Bindable var viewModel: SearchViewModel
     @Bindable var directionsViewModel: DirectionsViewModel
@@ -23,13 +29,22 @@ struct SearchSheet: View {
     /// drop you back to the map, so the results list is driven by this, not by keyboard focus.
     @State private var isSearching = false
     @State private var isShowingProfile = false
+    /// Which "see all" list the user opened from a section header chevron.
+    @State private var expandedList: HomeList?
     @AppStorage("com.danielguzman.waypoint.hasDismissedVoiceSearchTip") private var hasDismissedTip = false
+
+    enum HomeList: String, Identifiable {
+        case places, recents
+        var id: String { rawValue }
+        var title: String { self == .places ? "Places" : "Recents" }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             if directionsViewModel.isActive {
                 DirectionsCard(
                     viewModel: directionsViewModel,
+                    detent: $detent,
                     onClose: { directionsViewModel.stop() },
                     onStartNavigation: { route in onStartNavigation(route) }
                 )
@@ -90,7 +105,7 @@ struct SearchSheet: View {
                     // page itself stays up until you pick something or close it.
                     .scrollDismissesKeyboard(.immediately)
                 } else {
-                    Spacer(minLength: 0)
+                    homeContent
                 }
             }
         }
@@ -110,21 +125,21 @@ struct SearchSheet: View {
             detent = .large
             viewModel.loadDiscover()
         }
+        // The place card rests at the same partial height as the home card — Apple Maps reuses
+        // the one middle stop for both, so a single pull from either goes to full screen.
         .onChange(of: isSearching) { _, searching in
-            if !searching {
-                detent = viewModel.selectedResult == nil ? .height(collapsedHeight) : .medium
-            }
+            if !searching { detent = .home }
         }
-        .onChange(of: viewModel.selectedResult) { _, newValue in
-            detent = newValue == nil ? .height(collapsedHeight) : .medium
+        .onChange(of: viewModel.selectedResult) { _, _ in
+            detent = .home
         }
         .onChange(of: directionsViewModel.isActive) { _, active in
-            if active { detent = directionsViewModel.mode == .transit ? .large : .height(400) }
+            if active { detent = directionsViewModel.mode == .transit ? .large : .medium }
         }
         .onChange(of: directionsViewModel.mode) { _, newMode in
             guard directionsViewModel.isActive else { return }
             // Transit shows a scrollable list of options, so give it room; other modes stay compact.
-            detent = newMode == .transit ? .large : .height(400)
+            detent = newMode == .transit ? .large : .medium
         }
         .onChange(of: viewModel.speechService.transcript) { _, newValue in
             guard viewModel.speechService.isRecording else { return }
@@ -133,6 +148,154 @@ struct SearchSheet: View {
         .sheet(isPresented: $isShowingProfile) {
             ProfilePlaceholderSheet()
         }
+        .sheet(item: $expandedList) { list in
+            SavedListSheet(
+                list: list,
+                favorites: viewModel.favoritesStore.favorites,
+                recents: viewModel.recentsStore.recents,
+                distanceText: distanceText(to:),
+                onSelectFavorite: { favorite in
+                    expandedList = nil
+                    select(favorite: favorite)
+                },
+                onSelectRecent: { recent in
+                    expandedList = nil
+                    select(recent: recent)
+                },
+                onRemoveFavorite: { viewModel.favoritesStore.remove($0) },
+                onRemoveRecent: { viewModel.recentsStore.remove($0) }
+            )
+        }
+    }
+
+    // MARK: - Home card (no search, nothing selected)
+
+    /// What the card shows at rest: Places, Recents, and your saved collection. Scrolling it
+    /// pulls the sheet up to full height, exactly like Apple Maps' home card.
+    private var homeContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                placesRow
+                if !viewModel.recentsStore.recents.isEmpty {
+                    recentsCard
+                }
+                favoritesCollection
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 6)
+            .padding(.bottom, 36)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private func sectionHeader(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.primary)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var placesRow: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Places") { expandedList = .places }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 18) {
+                    ForEach(viewModel.favoritesStore.favorites) { favorite in
+                        PlaceCircle(
+                            title: favorite.title,
+                            subtitle: distanceText(to: favorite.coordinate),
+                            symbol: PlaceCategoryIcon.icon(for: favorite.title).symbol,
+                            tint: PlaceCategoryIcon.icon(for: favorite.title).color
+                        ) {
+                            select(favorite: favorite)
+                        }
+                    }
+                    PlaceCircle(
+                        title: "Add",
+                        subtitle: nil,
+                        symbol: "plus",
+                        tint: .secondary,
+                        isPlaceholder: true
+                    ) {
+                        isFieldFocused = true
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .scrollClipDisabled()
+        }
+    }
+
+    private var recentsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Recents") { expandedList = .recents }
+            let shown = Array(viewModel.recentsStore.recents.prefix(3))
+            VStack(spacing: 0) {
+                ForEach(Array(shown.enumerated()), id: \.element.id) { index, recent in
+                    HomeRecentRow(recent: recent) {
+                        select(recent: recent)
+                    } onRemove: {
+                        viewModel.recentsStore.remove(recent)
+                    }
+                    if index < shown.count - 1 {
+                        Divider().padding(.leading, 56)
+                    }
+                }
+            }
+            .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
+        }
+    }
+
+    /// Waypoint's equivalent of Apple's "Your Guides": the places you've saved on this device.
+    private var favoritesCollection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Your Places") { expandedList = .places }
+            Button {
+                expandedList = .places
+            } label: {
+                VStack(alignment: .leading, spacing: 0) {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 62))
+                        .foregroundStyle(.yellow.gradient)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Favorites")
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        Text(favoritesCountText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(14)
+                .frame(width: 190, height: 190, alignment: .bottomLeading)
+                .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 16))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var favoritesCountText: String {
+        let count = viewModel.favoritesStore.favorites.count
+        return count == 1 ? "1 place" : "\(count) places"
+    }
+
+    /// Straight-line distance — honest about what it is: it's not a routed driving distance.
+    private func distanceText(to coordinate: CLLocationCoordinate2D) -> String? {
+        guard let currentLocation else { return nil }
+        let meters = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            .distance(from: currentLocation)
+        return Measurement(value: meters, unit: UnitLength.meters)
+            .formatted(.measurement(width: .abbreviated, usage: .road))
     }
 
     private var searchField: some View {
@@ -344,6 +507,197 @@ struct SearchSheet: View {
         isFieldFocused = false
         isSearching = false
         viewModel.selectDiscover(place)
+    }
+}
+
+// MARK: - Home card pieces
+
+/// One circle in the Places row: a big tinted disc, the place name, and how far away it is.
+private struct PlaceCircle: View {
+    let title: String
+    let subtitle: String?
+    let symbol: String
+    let tint: Color
+    var isPlaceholder = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                ZStack {
+                    if isPlaceholder {
+                        Circle()
+                            .strokeBorder(Color.secondary.opacity(0.6), style: StrokeStyle(lineWidth: 2, dash: [5]))
+                    } else {
+                        Circle().fill(tint.gradient)
+                    }
+                    Image(systemName: symbol)
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundStyle(isPlaceholder ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(.white))
+                }
+                .frame(width: 68, height: 68)
+
+                Text(title)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(width: 78)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// A row inside the grouped Recents card on the home sheet.
+private struct HomeRecentRow: View {
+    let recent: RecentSearch
+    let onSelect: () -> Void
+    let onRemove: () -> Void
+
+    var body: some View {
+        let icon = PlaceCategoryIcon.icon(for: recent.title)
+        HStack(spacing: 12) {
+            Button(action: onSelect) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle().fill(icon.color.gradient).frame(width: 32, height: 32)
+                        Image(systemName: icon.symbol)
+                            .font(.caption)
+                            .foregroundStyle(.white)
+                    }
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(recent.title)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        if !recent.subtitle.isEmpty {
+                            Text(recent.subtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Menu {
+                Button(role: .destructive, action: onRemove) {
+                    Label("Remove", systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 30, height: 30)
+                    .contentShape(Rectangle())
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+}
+
+/// The full list behind a section header's chevron — every saved place or every recent.
+private struct SavedListSheet: View {
+    let list: SearchSheet.HomeList
+    let favorites: [FavoritePlace]
+    let recents: [RecentSearch]
+    let distanceText: (CLLocationCoordinate2D) -> String?
+    let onSelectFavorite: (FavoritePlace) -> Void
+    let onSelectRecent: (RecentSearch) -> Void
+    let onRemoveFavorite: (FavoritePlace) -> Void
+    let onRemoveRecent: (RecentSearch) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                switch list {
+                case .places:
+                    if favorites.isEmpty {
+                        emptyState("No saved places yet", detail: "Tap the star on any place to save it here.")
+                    }
+                    ForEach(favorites) { favorite in
+                        Button {
+                            onSelectFavorite(favorite)
+                        } label: {
+                            row(
+                                title: favorite.title,
+                                subtitle: distanceText(favorite.coordinate) ?? favorite.subtitle
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .swipeActions {
+                            Button(role: .destructive) { onRemoveFavorite(favorite) } label: {
+                                Label("Remove", systemImage: "trash")
+                            }
+                        }
+                    }
+                case .recents:
+                    if recents.isEmpty {
+                        emptyState("No recents yet", detail: "Places you look up show up here.")
+                    }
+                    ForEach(recents) { recent in
+                        Button {
+                            onSelectRecent(recent)
+                        } label: {
+                            row(title: recent.title, subtitle: recent.subtitle)
+                        }
+                        .buttonStyle(.plain)
+                        .swipeActions {
+                            Button(role: .destructive) { onRemoveRecent(recent) } label: {
+                                Label("Remove", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle(list.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func row(title: String, subtitle: String) -> some View {
+        let icon = PlaceCategoryIcon.icon(for: title)
+        return HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(icon.color.gradient).frame(width: 34, height: 34)
+                Image(systemName: icon.symbol).font(.caption).foregroundStyle(.white)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.body).foregroundStyle(.primary)
+                if !subtitle.isEmpty {
+                    Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+    }
+
+    private func emptyState(_ title: String, detail: String) -> some View {
+        VStack(spacing: 6) {
+            Text(title).font(.headline)
+            Text(detail).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+        .listRowSeparator(.hidden)
     }
 }
 

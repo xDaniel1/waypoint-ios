@@ -2,11 +2,16 @@ import SwiftUI
 
 struct DirectionsCard: View {
     @Bindable var viewModel: DirectionsViewModel
+    /// Read (not written) so the card knows whether it's been pulled to full height: at rest it
+    /// pages through routes one at a time, expanded it lists them all, like Apple Maps.
+    @Binding var detent: PresentationDetent
     let onClose: () -> Void
     let onStartNavigation: (RouteOption) -> Void
 
     @State private var showingSteps = false
     @Namespace private var modeNamespace
+
+    private var isExpanded: Bool { detent == .large }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -20,7 +25,6 @@ struct DirectionsCard: View {
                 VStack(spacing: 14) {
                     modePicker
                     endpointsCard
-                    optionsRow
 
                     if viewModel.isCalculating {
                         ProgressView()
@@ -31,8 +35,10 @@ struct DirectionsCard: View {
                     } else if !viewModel.routeOptions.isEmpty {
                         if viewModel.mode == .transit {
                             transitList
-                        } else if let selected = viewModel.selectedRoute {
-                            selectedRouteBar(selected)
+                        } else if isExpanded {
+                            routeList
+                        } else {
+                            pagedRoutes
                         }
                     }
                 }
@@ -45,6 +51,7 @@ struct DirectionsCard: View {
         .animation(.smooth(duration: 0.3), value: viewModel.mode)
         .animation(.smooth(duration: 0.3), value: viewModel.selectedRouteID)
         .animation(.smooth(duration: 0.3), value: viewModel.isCalculating)
+        .animation(.smooth(duration: 0.3), value: isExpanded)
         .sheet(isPresented: $showingSteps) {
             if let route = viewModel.selectedRoute {
                 RouteStepsSheet(destination: viewModel.destinationTitle, route: route)
@@ -68,12 +75,7 @@ struct DirectionsCard: View {
             VStack(spacing: 3) {
                 Text("Directions")
                     .font(.headline)
-                Text("Options")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.blue)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
-                    .background(.blue.opacity(0.15), in: Capsule())
+                optionsMenu
             }
             .fixedSize()
 
@@ -85,6 +87,29 @@ struct DirectionsCard: View {
             .buttonStyle(.plain)
             .accessibilityIdentifier("closeDirectionsButton")
         }
+    }
+
+    /// Apple keeps route preferences behind the "Options" chip under the title rather than as a
+    /// row in the card. The chip names the active preference so it's obvious when one is on.
+    private var optionsMenu: some View {
+        Menu {
+            Section("Avoid on driving routes") {
+                Toggle("Tolls", isOn: $viewModel.avoidTolls)
+                Toggle("Highways", isOn: $viewModel.avoidHighways)
+                Toggle("Ferries", isOn: $viewModel.avoidFerries)
+            }
+            Section {
+                Text("Routes and ETAs use live traffic for right now. Scheduled departure isn't supported yet.")
+            }
+        } label: {
+            Text(viewModel.hasAvoidPreferences ? viewModel.avoidSummary : "Options")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.blue)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 3)
+                .background(.blue.opacity(0.15), in: Capsule())
+        }
+        .accessibilityIdentifier("avoidMenu")
     }
 
     private func headerCircleIcon(_ systemName: String) -> some View {
@@ -144,49 +169,52 @@ struct DirectionsCard: View {
         .padding(.horizontal, 12).padding(.vertical, 10)
     }
 
-    // MARK: Options row ("Now" departure · "Avoid" preferences)
+    // MARK: Drive / Walk / Bike — route options
 
-    private var optionsRow: some View {
-        HStack(spacing: 10) {
-            Menu {
-                Text("Routes and ETAs use live traffic for right now. Scheduled departure isn't supported yet.")
-            } label: {
-                optionPill(title: "Now", isActive: false)
+    /// At rest the card shows one route at a time; swiping sideways moves through the
+    /// alternates and re-highlights the matching line on the map, like Apple Maps.
+    private var pagedRoutes: some View {
+        TabView(selection: pagedSelection) {
+            ForEach(viewModel.routeOptions) { option in
+                routeCard(option, isSelected: false)
+                    .padding(.bottom, 30) // room for the page dots
+                    .tag(option.id)
             }
+        }
+        .tabViewStyle(.page(indexDisplayMode: viewModel.routeOptions.count > 1 ? .always : .never))
+        .indexViewStyle(.page(backgroundDisplayMode: .interactive))
+        .frame(height: 158)
+        .accessibilityIdentifier("routePager")
+    }
 
-            Menu {
-                Toggle("Tolls", isOn: $viewModel.avoidTolls)
-                Toggle("Highways", isOn: $viewModel.avoidHighways)
-                Toggle("Ferries", isOn: $viewModel.avoidFerries)
-                if viewModel.mode != .automobile {
-                    Section {
-                        Text("Avoid options apply to driving routes.")
-                    }
+    /// Swiping the pager is the same act as picking that route, so it drives the map selection.
+    private var pagedSelection: Binding<RouteOption.ID> {
+        Binding(
+            get: { viewModel.selectedRoute?.id ?? viewModel.routeOptions.first?.id ?? UUID() },
+            set: { newValue in
+                guard let option = viewModel.routeOptions.first(where: { $0.id == newValue }) else { return }
+                viewModel.select(option)
+            }
+        )
+    }
+
+    /// Pulled to full height, every alternate is listed at once with the selected one outlined.
+    private var routeList: some View {
+        VStack(spacing: 12) {
+            ForEach(viewModel.routeOptions) { option in
+                Button {
+                    viewModel.select(option)
+                } label: {
+                    routeCard(option, isSelected: option.id == viewModel.selectedRoute?.id)
                 }
-            } label: {
-                optionPill(title: viewModel.avoidSummary, isActive: viewModel.hasAvoidPreferences)
+                .buttonStyle(.plain)
             }
-            .accessibilityIdentifier("avoidMenu")
-
-            Spacer()
         }
+        .accessibilityIdentifier("routeList")
     }
 
-    private func optionPill(title: String, isActive: Bool) -> some View {
-        HStack(spacing: 4) {
-            Text(title).font(.subheadline.weight(.medium))
-            Image(systemName: "chevron.down").font(.caption2)
-        }
-        .foregroundStyle(isActive ? Color.white : Color.primary)
-        .padding(.horizontal, 14).padding(.vertical, 7)
-        .background(isActive ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.thickMaterial), in: Capsule())
-    }
-
-    // MARK: Drive / Walk / Bike — selected-route summary bar
-
-    /// The bottom bar for the currently-selected route (chosen via the map's tappable time
-    /// bubbles). Big duration, ETA · distance, route label, and the GO button — like Apple Maps.
-    private func selectedRouteBar(_ option: RouteOption) -> some View {
+    /// Big duration, ETA · distance, route label, and the GO button — like Apple Maps.
+    private func routeCard(_ option: RouteOption, isSelected: Bool) -> some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
@@ -199,8 +227,13 @@ struct DirectionsCard: View {
                 }
                 Text("\(option.formattedETA) ETA · \(option.formattedDistance)")
                     .font(.subheadline).foregroundStyle(.secondary)
-                Text(isFastest(option) ? "Fastest route, now" : option.summary)
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                if isFastest(option) {
+                    Text("Fastest")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                } else if !option.summary.isEmpty {
+                    Text(option.summary)
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
             }
             Spacer()
             GoButton {
@@ -211,6 +244,10 @@ struct DirectionsCard: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(isSelected ? Color.blue : .clear, lineWidth: 2)
+        )
     }
 
     private func isFastest(_ option: RouteOption) -> Bool {

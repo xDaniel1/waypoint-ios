@@ -8,6 +8,17 @@ final class WaypointUITests: XCTestCase {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launch()
+        grantLocationPermissionIfAsked()
+    }
+
+    /// The location prompt belongs to SpringBoard, not the app, so it isn't dismissed by tapping
+    /// inside the app. Anything that needs an origin (directions, recenter) stalls without this.
+    private func grantLocationPermissionIfAsked() {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.buttons["Allow While Using App"]
+        if allow.waitForExistence(timeout: 8) {
+            allow.tap()
+        }
     }
 
     override func tearDownWithError() throws {
@@ -21,15 +32,28 @@ final class WaypointUITests: XCTestCase {
         add(attachment)
     }
 
-    // Collapsed sheet should show only the search bar — no categories, recents, or tip card.
-    func test01_collapsedStateShowsOnlySearchBar() throws {
+    // The app opens on the home card: search bar, Places row, and saved places — but none of
+    // the search-mode UI (categories, tip card) until the field is focused.
+    func test01_homeCardOnLaunch() throws {
         let searchField = app.textFields["searchField"]
         XCTAssertTrue(searchField.waitForExistence(timeout: 10), "Search field should exist")
+        XCTAssertTrue(app.staticTexts["Places"].waitForExistence(timeout: 5), "Home card should show the Places section")
+        XCTAssertTrue(app.staticTexts["Your Places"].exists, "Home card should show the saved-places section")
         XCTAssertFalse(app.buttons["Restaurants"].exists, "Category pills must be hidden until the field is focused")
         XCTAssertFalse(app.staticTexts["Try Voice Search"].exists, "Tip card must be hidden until the field is focused")
-        XCTAssertTrue(app.buttons["micButton"].exists, "Mic button should be visible in the collapsed bar")
-        XCTAssertTrue(app.buttons["profileButton"].exists, "Profile button should be visible in the collapsed bar")
-        attachScreenshot("01-collapsed")
+        XCTAssertTrue(app.buttons["micButton"].exists, "Mic button should be visible in the search bar")
+        XCTAssertTrue(app.buttons["profileButton"].exists, "Profile button should be visible in the search bar")
+        attachScreenshot("01a-home-card")
+
+        // One pull takes the card straight to full screen — there is no stop in between.
+        let grabber = app.buttons["Sheet Grabber"].firstMatch
+        XCTAssertTrue(grabber.exists, "Sheet should be draggable")
+        let restingHeight = grabber.value as? String
+        grabber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.4, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.04)))
+        XCTAssertTrue(app.staticTexts["Favorites"].waitForExistence(timeout: 5), "Expanded home card should show the Favorites collection")
+        XCTAssertNotEqual(grabber.value as? String, restingHeight, "One pull should move the card off its resting height")
+        attachScreenshot("01b-home-card-expanded")
     }
 
     // Focusing the field should expand the sheet and reveal the browse sections.
@@ -97,6 +121,45 @@ final class WaypointUITests: XCTestCase {
         app.buttons["closeDetailButton"].tap()
         XCTAssertTrue(searchField.waitForExistence(timeout: 5), "Search bar should return after closing the card")
         attachScreenshot("04f-closed")
+    }
+
+    // A long enough trip returns alternates: the card should page through them one at a time,
+    // and list them all once the sheet is pulled to full height.
+    func test09_routeAlternates() throws {
+        let searchField = app.textFields["searchField"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 10))
+        searchField.tap()
+        searchField.typeText("JFK Airport")
+
+        let suggestion = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'JFK' OR label CONTAINS[c] 'Kennedy'")).firstMatch
+        XCTAssertTrue(suggestion.waitForExistence(timeout: 10), "A JFK suggestion should appear")
+        suggestion.tap()
+
+        let getDirections = app.buttons["getDirectionsButton"]
+        XCTAssertTrue(getDirections.waitForExistence(timeout: 15))
+        getDirections.tap()
+
+        XCTAssertTrue(app.staticTexts["Fastest"].waitForExistence(timeout: 25), "A driving route should be calculated")
+        Thread.sleep(forTimeInterval: 1.5)
+        attachScreenshot("09a-alternates-paged")
+
+        // Only the current page's GO is reachable while paging.
+        let goButtons = app.buttons.matching(identifier: "goButton")
+        let hittableGoCount = { goButtons.allElementsBoundByIndex.filter { $0.isHittable }.count }
+        XCTAssertEqual(hittableGoCount(), 1, "Paged card shows one route at a time")
+
+        app.staticTexts["Fastest"].firstMatch.swipeLeft()
+        Thread.sleep(forTimeInterval: 1.5)
+        attachScreenshot("09b-alternates-swiped")
+
+        // Expand the sheet: the route section becomes a full list of alternates.
+        let grabber = app.buttons["Sheet Grabber"].firstMatch
+        XCTAssertTrue(grabber.exists)
+        grabber.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.4, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.04)))
+        Thread.sleep(forTimeInterval: 2.0)
+        attachScreenshot("09c-alternates-expanded-list")
+        XCTAssertGreaterThanOrEqual(hittableGoCount(), 2, "Expanded card should list every alternate at once")
     }
 
     // Profile button should present the honest accounts-not-built-yet sheet.
@@ -167,6 +230,27 @@ final class WaypointUITests: XCTestCase {
             "A route option should appear after driving calculation"
         )
         attachScreenshot("07a-directions-drive")
+
+        // At rest the card pages through one route at a time, so only that route's GO is reachable.
+        let goButtons = app.buttons.matching(identifier: "goButton")
+        let hittableGoCount = { goButtons.allElementsBoundByIndex.filter { $0.isHittable }.count }
+        XCTAssertEqual(hittableGoCount(), 1, "At rest the card should show one route at a time")
+        attachScreenshot("07e-route-pager")
+
+        // Swiping sideways across the route card moves to the alternate.
+        app.staticTexts["Fastest"].firstMatch.swipeLeft()
+        Thread.sleep(forTimeInterval: 1.5)
+        attachScreenshot("07f-route-swiped")
+
+        // Dragging the sheet to full height lists every alternate at once.
+        let grabber = app.buttons["Sheet Grabber"].firstMatch
+        XCTAssertTrue(grabber.exists, "Sheet should be draggable")
+        grabber.coordinate(withNormalizedOffset: .zero)
+            .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)))
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertGreaterThanOrEqual(hittableGoCount(), 1, "Expanded directions card should list routes")
+        XCTAssertTrue(app.buttons["closeDirectionsButton"].isHittable, "Close button stays reachable when expanded")
+        attachScreenshot("07g-route-list-expanded")
 
         // All four modes should be present (Drive/Walk/Transit/Bike).
         let driveButton = app.buttons["Drive"]
