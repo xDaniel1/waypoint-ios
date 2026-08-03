@@ -85,6 +85,13 @@ struct MapScreen: View {
                 if let selected = directionsViewModel.selectedRoute {
                     MapPolyline(selected.polyline)
                         .stroke(Color.blue, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                    // Colored on top of the base line wherever Google's live traffic data says
+                    // this stretch is actually slower than free-flow — not just the whole-route
+                    // "has traffic" badge.
+                    ForEach(selected.congestionSegments) { segment in
+                        MapPolyline(coordinates: segment.coordinates)
+                            .stroke(segment.severity.color, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                    }
                 }
                 ForEach(Array(directionsViewModel.routeOptions.enumerated()), id: \.element.id) { index, option in
                     if let mid = option.midCoordinate {
@@ -122,6 +129,12 @@ struct MapScreen: View {
                     if remaining.count > 1 {
                         MapPolyline(coordinates: remaining)
                             .stroke(Color.blue, style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
+                    }
+                    if let route = navigationViewModel.route {
+                        ForEach(route.congestionSegments) { segment in
+                            MapPolyline(coordinates: segment.coordinates)
+                                .stroke(segment.severity.color, style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
+                        }
                     }
                 }
             }

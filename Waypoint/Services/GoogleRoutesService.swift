@@ -45,7 +45,7 @@ struct GoogleRoutesService {
             [
                 "routes.duration", "routes.staticDuration", "routes.distanceMeters",
                 "routes.polyline.encodedPolyline", "routes.description",
-                "routes.travelAdvisory.transitFare",
+                "routes.travelAdvisory.transitFare", "routes.travelAdvisory.speedReadingIntervals",
                 "routes.legs.steps.navigationInstruction", "routes.legs.steps.distanceMeters",
                 "routes.legs.steps.travelMode", "routes.legs.steps.staticDuration",
                 "routes.legs.steps.transitDetails",
@@ -110,7 +110,10 @@ struct GoogleRoutesService {
                 summary: summary,
                 transitSteps: transit,
                 steps: steps,
-                hasTraffic: mode == .drive && seconds > staticSeconds + 60
+                hasTraffic: mode == .drive && seconds > staticSeconds + 60,
+                congestionSegments: mode == .drive
+                    ? Self.congestionSegments(from: route.travelAdvisory?.speedReadingIntervals, coordinates: coords)
+                    : []
             )
             if mode == .transit {
                 option.transitLegs = Self.transitLegs(from: route)
@@ -120,6 +123,29 @@ struct GoogleRoutesService {
             }
             return option
         }
+    }
+
+    /// Slices the route's coordinate array into colored overlay segments wherever Google marked
+    /// traffic as slower than free-flow. `NORMAL` (and unset) intervals are dropped — there's
+    /// nothing worth drawing over the base route line for those.
+    private static func congestionSegments(
+        from intervals: [RoutesResponse.SpeedReadingInterval]?, coordinates: [CLLocationCoordinate2D]
+    ) -> [CongestionSegment] {
+        guard let intervals, !coordinates.isEmpty else { return [] }
+        var segments: [CongestionSegment] = []
+        for interval in intervals {
+            let severity: CongestionSegment.Severity
+            switch interval.speed {
+            case "SLOW": severity = .slow
+            case "TRAFFIC_JAM": severity = .jam
+            default: continue
+            }
+            let start = max(0, interval.startPolylinePointIndex ?? 0)
+            let end = min(coordinates.count - 1, interval.endPolylinePointIndex ?? coordinates.count - 1)
+            guard start < end else { continue }
+            segments.append(CongestionSegment(coordinates: Array(coordinates[start...end]), severity: severity))
+        }
+        return segments
     }
 
     private static func parseDuration(_ value: String?) -> TimeInterval {
@@ -259,6 +285,17 @@ private struct RoutesResponse: Codable {
 
     struct TravelAdvisory: Codable {
         let transitFare: Fare?
+        let speedReadingIntervals: [SpeedReadingInterval]?
+    }
+
+    /// A [startPolylinePointIndex, endPolylinePointIndex) slice of the route's polyline and how
+    /// fast traffic is actually moving through it. Google omits `startPolylinePointIndex` when
+    /// an interval starts at the beginning of the polyline, and `speed` when unset defaults to
+    /// normal (nothing worth drawing).
+    struct SpeedReadingInterval: Codable {
+        let startPolylinePointIndex: Int?
+        let endPolylinePointIndex: Int?
+        let speed: String?
     }
 
     struct Fare: Codable {
