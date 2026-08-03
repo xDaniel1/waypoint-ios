@@ -12,7 +12,6 @@ struct NavigationBottomBar: View {
     var isMuted: Bool = false
     let onEndRoute: () -> Void
     var onAddStop: () -> Void = {}
-    var onShareETA: () -> Void = {}
     var onReportIncident: () -> Void = {}
     var onToggleMute: () -> Void = {}
     /// Reports the card's rendered height so the floating map buttons can sit right above it.
@@ -23,11 +22,23 @@ struct NavigationBottomBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Capsule()
-                .fill(.secondary.opacity(0.5))
-                .frame(width: 40, height: 5)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
+            // A real Button, not just a tappable capsule graphic: the tap/drag gestures on the
+            // card below are convenient for sighted users, but VoiceOver and XCUITest both need
+            // an actual control with a real activate action — a bare .onTapGesture on a shape
+            // isn't reliably exposed as one.
+            Button {
+                withAnimation(.smooth(duration: 0.35)) { isExpanded.toggle() }
+            } label: {
+                Capsule()
+                    .fill(.secondary.opacity(0.5))
+                    .frame(width: 40, height: 5)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isExpanded ? "Collapse" : "Expand")
+            .accessibilityIdentifier("navigationBottomBarToggle")
 
             summaryRow
                 .padding(.horizontal, 24)
@@ -48,7 +59,11 @@ struct NavigationBottomBar: View {
         .onTapGesture {
             withAnimation(.smooth(duration: 0.35)) { isExpanded.toggle() }
         }
-        .gesture(
+        // simultaneousGesture, not gesture: chaining a plain .gesture(DragGesture(...)) after
+        // .onTapGesture on the same view lets the two recognizers compete instead of coexist,
+        // which made a tap sometimes get eaten trying to resolve against the drag's
+        // minimumDistance — the same class of bug fixed in the search bar's glass capsule.
+        .simultaneousGesture(
             DragGesture(minimumDistance: 8)
                 .onChanged { value in dragTranslation = value.translation.height }
                 .onEnded { value in
@@ -95,7 +110,7 @@ struct NavigationBottomBar: View {
             VStack(spacing: 0) {
                 actionRow(icon: "plus", tint: .blue, title: "Add Stop", action: onAddStop)
                 Divider().padding(.leading, 56)
-                actionRow(icon: "person.crop.circle.badge.plus", tint: .green, title: "Share ETA", action: onShareETA)
+                shareETARow
                 Divider().padding(.leading, 56)
                 actionRow(icon: "exclamationmark.bubble.fill", tint: .red, title: "Report an Incident", action: onReportIncident)
                 Divider().padding(.leading, 56)
@@ -146,6 +161,33 @@ struct NavigationBottomBar: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    /// Real system share sheet with a one-time ETA snapshot — not the continuous live-location
+    /// tracking Apple Maps' own Share ETA does, which needs a backend service and deep Messages
+    /// integration we don't have. This shares where you're headed and when you'll get there,
+    /// once, same as sharing any other piece of text.
+    private var shareETARow: some View {
+        ShareLink(item: shareText) {
+            HStack(spacing: 14) {
+                Image(systemName: "person.crop.circle.badge.plus")
+                    .font(.system(size: 20))
+                    .foregroundStyle(.green)
+                    .frame(width: 30)
+                Text("Share ETA")
+                    .font(.title3)
+                    .foregroundStyle(.primary)
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var shareText: String {
+        "On my way to \(destinationName). ETA \(arrival) (\(minutes) min)."
     }
 
     private func actionRow(icon: String, tint: Color, title: String, action: @escaping () -> Void) -> some View {

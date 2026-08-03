@@ -16,6 +16,10 @@ struct MapScreen: View {
     @State private var hasFetchedWeather = false
     @State private var searchDetent: PresentationDetent = .home
     @State private var collapsedHeight: CGFloat = 90
+    /// Measured live from DirectionsCard's actual content so the sheet hugs it exactly instead
+    /// of leaving dead space the way a fixed `.medium` fraction did. 420 is just a first-frame
+    /// placeholder before any measurement has come back.
+    @State private var directionsCardHeight: CGFloat = 420
     @State private var sheetHeight: CGFloat = 90
     @State private var mapStyle: MapStyle = .standard
     @State private var mapCenter: CLLocationCoordinate2D?
@@ -29,6 +33,8 @@ struct MapScreen: View {
     @State private var voiceGuidance = VoiceGuidanceService()
     @State private var isRerouting = false
     @State private var isSearchingAlongRoute = false
+    @State private var isAddingNavStop = false
+    @State private var isReportingIncident = false
     /// Set when the user pans/zooms/rotates. While true, nothing programmatically moves the
     /// camera — they stay wherever they dragged to until they tap re-center.
     @State private var isCameraUserControlled = false
@@ -67,6 +73,16 @@ struct MapScreen: View {
                 ForEach(directionsViewModel.stops) { stop in
                     Marker(stop.title, coordinate: stop.coordinate)
                         .tint(.orange)
+                }
+                ForEach(navigationViewModel.reportedIncidents) { incident in
+                    Annotation(incident.kind.rawValue, coordinate: incident.coordinate) {
+                        Image(systemName: incident.kind.symbol)
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(incident.kind.iconColor)
+                            .padding(6)
+                            .background(incident.kind.tint, in: Circle())
+                    }
+                    .annotationTitles(.hidden)
                 }
                 // Draw alternates first (under), selected route last (on top). Alternates keep a
                 // muted blue rather than gray so every option reads as a route you can take.
@@ -203,12 +219,16 @@ struct MapScreen: View {
             }
             navigationViewModel.onAnnouncement = { text in
                 voiceGuidance.speak(text)
+                // A tap alongside the voice cue so a turn still registers over road noise or
+                // when muted — Apple Maps does the same on the Watch and CarPlay.
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             }
             // The view model can tell us we've drifted off the path, or that a stop was added
             // mid-trip via search-along-route — either way it doesn't fetch routes itself,
             // that's recomputeActiveRoute()'s job.
             navigationViewModel.onOffRoute = { recomputeActiveRoute() }
             navigationViewModel.onStopAdded = { recomputeActiveRoute() }
+            navigationViewModel.onIncidentReported = { recomputeActiveRoute() }
             await viewModel.start()
         }
         // Compass-driven camera rotation ONLY applies once the user explicitly opts in via the
@@ -230,6 +250,7 @@ struct MapScreen: View {
                 detent: $searchDetent,
                 collapsedHeight: $collapsedHeight,
                 sheetHeight: $sheetHeight,
+                directionsHeight: $directionsCardHeight,
                 onStartNavigation: { route in
                     let name = searchViewModel.selectedResult?.title ?? directionsViewModel.destinationTitle
                     // The route's own endpoint is the most reliable destination coordinate —
@@ -267,7 +288,7 @@ struct MapScreen: View {
             // Must name a detent that's actually in `sheetDetents` — otherwise the whole map
             // behind the sheet stops receiving touches.
             .presentationBackgroundInteraction(
-                .enabled(upThrough: directionsViewModel.isActive ? .medium : .home)
+                .enabled(upThrough: directionsViewModel.isActive ? .height(directionsCardHeight) : .home)
             )
             .presentationSizing(.page)
             .presentationCornerRadius(28)
@@ -295,11 +316,14 @@ struct MapScreen: View {
     }
 
     /// Apple Maps only ever offers three heights, so one pull from the resting card goes straight
-    /// to full screen. Directions swap the middle stop for a taller one that fits the whole card
-    /// (and a short one so the header/close button stays reachable when it's dragged down).
+    /// to full screen. Directions swap the middle stop for one measured to the card's actual
+    /// content (so there's no dead space below it) plus a short one so the header/close button
+    /// stays reachable when it's dragged down. `.medium` stays in the set too as the one-frame
+    /// placeholder used before the real measurement lands — selecting a detent that isn't a
+    /// member of this set is silently ignored, so both have to be present.
     private var sheetDetents: Set<PresentationDetent> {
         if directionsViewModel.isActive {
-            return [.height(190), .medium, .large]
+            return [.height(190), .medium, .height(directionsCardHeight), .large]
         }
         return [.height(collapsedHeight), .home, .large]
     }
@@ -440,18 +464,23 @@ struct MapScreen: View {
             VStack {
                 NavigationBanner(
                     currentInstruction: navigationViewModel.currentStep?.instruction ?? "Head to \(navigationViewModel.destinationName)",
-                    nextInstruction: navigationViewModel.nextStep?.instruction
+                    nextInstruction: navigationViewModel.nextStep?.instruction,
+                    currentManeuverIcon: navigationViewModel.currentStep?.maneuverIcon ?? "arrow.up",
+                    nextManeuverIcon: navigationViewModel.nextStep?.maneuverIcon ?? "arrow.up"
                 )
                 .padding(.top, 4)
 
                 if let limit = speedLimitService.display {
-                    HStack {
+                    HStack(spacing: 10) {
                         SpeedLimitSign(speedLimit: limit.value, unitLabel: limit.unit)
-                            .padding(.leading, 16)
-                            .padding(.top, 6)
-                            .transition(.scale.combined(with: .opacity))
+                        if let speed = currentSpeedValue(matching: limit.unit) {
+                            CurrentSpeedReadout(speed: speed, unit: limit.unit, isOverLimit: speed > limit.value + 3)
+                        }
                         Spacer()
                     }
+                    .padding(.leading, 16)
+                    .padding(.top, 6)
+                    .transition(.scale.combined(with: .opacity))
                 }
                 Spacer()
             }
@@ -469,11 +498,50 @@ struct MapScreen: View {
                         navigationViewModel.end()
                         speedLimitService.reset()
                     },
+                    onAddStop: { isAddingNavStop = true },
+                    onReportIncident: { isReportingIncident = true },
                     onToggleMute: { voiceGuidance.isMuted.toggle() },
                     onHeightChange: { navBarHeight = $0 }
                 )
             }
         }
+        .sheet(isPresented: $isAddingNavStop) {
+            AddStopSheet(currentRegion: originRegionForAddStop) { item in
+                navigationViewModel.addStop(item.placemark.coordinate)
+            }
+        }
+        .confirmationDialog("Report an Incident", isPresented: $isReportingIncident, titleVisibility: .visible) {
+            ForEach(ReportedIncident.Kind.allCases, id: \.self) { kind in
+                Button(kind.rawValue) {
+                    guard let coordinate = viewModel.currentLocation?.coordinate else { return }
+                    navigationViewModel.reportIncident(kind, at: coordinate)
+                }
+            }
+        } message: {
+            Text("This marks the spot for this trip and checks for a better route. It isn't shared with other drivers or with Apple/Google traffic data.")
+        }
+        // Apple Maps forces a dark nav theme at night regardless of the device's own light/dark
+        // setting — glare from a bright map at 11pm is the actual reason, not aesthetics. Only
+        // overrides while actively driving; browsing the map any other time follows the system.
+        .preferredColorScheme(navigationViewModel.isActive && isNightTime ? .dark : nil)
+    }
+
+    private var isNightTime: Bool {
+        let hour = Calendar.current.component(.hour, from: Date())
+        return hour >= 20 || hour < 6
+    }
+
+    private var originRegionForAddStop: MKCoordinateRegion? {
+        guard let coordinate = viewModel.currentLocation?.coordinate else { return nil }
+        return MKCoordinateRegion(center: coordinate, latitudinalMeters: 8000, longitudinalMeters: 8000)
+    }
+
+    /// CLLocation reports speed in m/s (negative when invalid); converted to whichever unit
+    /// the speed limit sign is already using so the two numbers are directly comparable.
+    private func currentSpeedValue(matching unit: String) -> Int? {
+        guard let speed = viewModel.currentLocation?.speed, speed >= 0 else { return nil }
+        let converted = unit == "mph" ? speed * 2.23694 : speed * 3.6
+        return Int(converted.rounded())
     }
 
     /// Route-overview / mute / report stack on the right, matching Apple Maps' nav controls.

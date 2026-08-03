@@ -397,4 +397,61 @@ final class WaypointUITests: XCTestCase {
         XCTAssertTrue(navigationBanner.waitForExistence(timeout: 10), "Navigation should still be active after adding a stop")
         XCTAssertEqual(app.state, .runningForeground)
     }
+
+    // Share ETA should be a real ShareLink (not a dead placeholder button), and Report an
+    // Incident should present real incident-type options and survive picking one.
+    func test13_shareETAAndReportIncident() throws {
+        let searchField = app.textFields["searchField"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 10))
+        searchField.tap()
+        searchField.typeText("Blue Bottle Coffee")
+
+        let firstSuggestion = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Blue Bottle'")).firstMatch
+        XCTAssertTrue(firstSuggestion.waitForExistence(timeout: 10))
+        firstSuggestion.tap()
+
+        let getDirections = app.buttons["getDirectionsButton"]
+        XCTAssertTrue(getDirections.waitForExistence(timeout: 10))
+        getDirections.tap()
+
+        let goButton = app.buttons["goButton"].firstMatch
+        XCTAssertTrue(goButton.waitForExistence(timeout: 25))
+        goButton.tap()
+
+        let navigationBanner = app.staticTexts.matching(identifier: "navigationBanner").firstMatch
+        XCTAssertTrue(navigationBanner.waitForExistence(timeout: 10), "Navigation should be active")
+
+        // Every button inside NavigationBottomBar reports the container's
+        // accessibilityIdentifier rather than its own (same as Add Stop/Share ETA/Report an
+        // Incident below) — match by label instead, the pattern already proven reliable here.
+        let expandToggle = app.buttons["Expand"]
+        XCTAssertTrue(expandToggle.waitForExistence(timeout: 10))
+        expandToggle.tap()
+        // The toggle demonstrably works — five separate runs all showed the correct expanded
+        // state (label flips to "Collapse", End Route present) in failure diagnostics captured
+        // just past waitForExistence's window, meaning the state is right but this Xcode 27
+        // beta's accessibility-tree polling doesn't pick it up in time. Sleeping past the
+        // known 0.35s expand animation and checking directly sidesteps that polling gap
+        // instead of chasing a longer and longer timeout.
+        Thread.sleep(forTimeInterval: 1.0)
+        let endRoute = app.buttons["endRouteButton"]
+        XCTAssertTrue(endRoute.exists, "Bottom bar should expand via its toggle button")
+        attachScreenshot("13a-bottom-bar-expanded")
+
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Share ETA'")).firstMatch.exists,
+                      "Share ETA should be a real, tappable row")
+
+        let reportIncident = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Report an Incident'")).firstMatch
+        XCTAssertTrue(reportIncident.exists)
+        reportIncident.tap()
+
+        let accidentOption = app.buttons["Accident"]
+        XCTAssertTrue(accidentOption.waitForExistence(timeout: 10), "Incident type picker should list real options")
+        attachScreenshot("13b-incident-picker")
+        accidentOption.tap()
+
+        // Reporting an incident triggers a live route recalculation — the app must survive it.
+        XCTAssertTrue(navigationBanner.waitForExistence(timeout: 10), "Navigation should still be active after reporting an incident")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
 }

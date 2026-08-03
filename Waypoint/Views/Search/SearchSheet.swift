@@ -23,6 +23,7 @@ struct SearchSheet: View {
     @Binding var detent: PresentationDetent
     @Binding var collapsedHeight: CGFloat
     @Binding var sheetHeight: CGFloat
+    @Binding var directionsHeight: CGFloat
     let onStartNavigation: (RouteOption) -> Void
     @FocusState private var isFieldFocused: Bool
     /// Stays true for the whole search session — scrolling dismisses the keyboard but must NOT
@@ -45,6 +46,7 @@ struct SearchSheet: View {
                 DirectionsCard(
                     viewModel: directionsViewModel,
                     detent: $detent,
+                    contentHeight: $directionsHeight,
                     onClose: { directionsViewModel.stop() },
                     onStartNavigation: { route in onStartNavigation(route) }
                 )
@@ -134,12 +136,20 @@ struct SearchSheet: View {
             detent = .home
         }
         .onChange(of: directionsViewModel.isActive) { _, active in
+            // Content height isn't measured yet on the very first frame the card appears, so
+            // .medium is a reasonable placeholder until DirectionsCard reports its real height
+            // and this re-fires — the .height(directionsHeight) below then takes over.
             if active { detent = directionsViewModel.mode == .transit ? .large : .medium }
         }
         .onChange(of: directionsViewModel.mode) { _, newMode in
             guard directionsViewModel.isActive else { return }
-            // Transit shows a scrollable list of options, so give it room; other modes stay compact.
-            detent = newMode == .transit ? .large : .medium
+            // Transit shows a scrollable list of options, so give it room; other modes size to
+            // the card's own measured content instead of a fixed fraction of the screen.
+            detent = newMode == .transit ? .large : .height(directionsHeight)
+        }
+        .onChange(of: directionsHeight) { _, newValue in
+            guard directionsViewModel.isActive, directionsViewModel.mode != .transit, detent != .large else { return }
+            detent = .height(newValue)
         }
         .onChange(of: viewModel.speechService.transcript) { _, newValue in
             guard viewModel.speechService.isRecording else { return }

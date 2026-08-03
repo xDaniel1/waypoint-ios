@@ -1,6 +1,51 @@
 import CoreLocation
 import MapKit
 import Observation
+import SwiftUI
+
+/// Something the driver flagged at their current location during a trip — a local note, not a
+/// report to Apple/Google's crowdsourced traffic data (that's private infrastructure we don't
+/// have access to). It doesn't route around its own coordinate either; Google's Routes API has
+/// no avoid-this-exact-spot primitive. It's a marker for this trip, plus a nudge to recheck the
+/// route in case Google's live-traffic model already knows about something better.
+struct ReportedIncident: Identifiable {
+    enum Kind: String, CaseIterable {
+        case accident = "Accident"
+        case hazard = "Hazard"
+        case roadClosed = "Road Closed"
+        case slowTraffic = "Slow Traffic"
+
+        var symbol: String {
+            switch self {
+            case .accident: "car.side.rear.and.exclamationmark"
+            case .hazard: "exclamationmark.triangle.fill"
+            case .roadClosed: "road.lanes"
+            case .slowTraffic: "clock.badge.exclamationmark.fill"
+            }
+        }
+
+        /// Pin background color, matching the Apple/Waze convention of yellow for congestion
+        /// vs. red for things that actually block the road.
+        var tint: Color {
+            switch self {
+            case .accident: .red
+            case .hazard: .orange
+            case .roadClosed: .black
+            case .slowTraffic: .yellow
+            }
+        }
+
+        /// White reads fine on every tint except the yellow congestion pin, which needs a dark
+        /// icon for contrast.
+        var iconColor: Color {
+            self == .slowTraffic ? .black : .white
+        }
+    }
+
+    let id = UUID()
+    let kind: Kind
+    let coordinate: CLLocationCoordinate2D
+}
 
 /// Drives in-app turn-by-turn navigation: follow-camera, live ETA countdown,
 /// current maneuver banner, step advancement, spoken announcements, and automatic
@@ -14,6 +59,7 @@ final class NavigationViewModel {
     /// Carried over so a reroute (drifting off path) recalculates through the same stops the
     /// trip started with — including ones already passed, since this doesn't track visit state.
     private(set) var intermediateStops: [CLLocationCoordinate2D] = []
+    private(set) var reportedIncidents: [ReportedIncident] = []
     private(set) var currentStepIndex: Int = 0
     private(set) var remainingTime: TimeInterval = 0
     private(set) var remainingDistance: Double = 0
@@ -28,6 +74,7 @@ final class NavigationViewModel {
     /// just signals the need; the caller supplies the new route via `reroute(to:)`.
     var onOffRoute: (() -> Void)?
     var onStopAdded: (() -> Void)?
+    var onIncidentReported: (() -> Void)?
 
     private var announcedUpcomingForStep: Int?
     private var announcedImmediateForStep = -1
@@ -85,6 +132,7 @@ final class NavigationViewModel {
         self.destinationName = destinationName
         self.destinationCoordinate = destinationCoordinate
         self.intermediateStops = intermediateStops
+        reportedIncidents = []
         currentStepIndex = 0
         progressIndex = 0
         remainingTime = route.travelTime
@@ -101,6 +149,7 @@ final class NavigationViewModel {
         route = nil
         destinationName = ""
         intermediateStops = []
+        reportedIncidents = []
         currentStepIndex = 0
         progressIndex = 0
         remainingTime = 0
@@ -129,6 +178,16 @@ final class NavigationViewModel {
     func addStop(_ coordinate: CLLocationCoordinate2D) {
         intermediateStops.append(coordinate)
         onStopAdded?()
+    }
+
+    /// Records a local marker for this trip and asks the caller to recheck the route — this
+    /// doesn't feed Apple/Google's traffic data (private infrastructure) and doesn't route
+    /// around the exact coordinate (Google's Routes API has no avoid-this-spot primitive), so
+    /// it's honest to think of it as "note this, and see if there's a better path" rather than
+    /// "avoid this road."
+    func reportIncident(_ kind: ReportedIncident.Kind, at coordinate: CLLocationCoordinate2D) {
+        reportedIncidents.append(ReportedIncident(kind: kind, coordinate: coordinate))
+        onIncidentReported?()
     }
 
     private func announceFirstStep(of route: RouteOption) {

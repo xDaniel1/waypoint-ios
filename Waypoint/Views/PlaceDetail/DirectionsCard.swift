@@ -6,6 +6,10 @@ struct DirectionsCard: View {
     /// Read (not written) so the card knows whether it's been pulled to full height: at rest it
     /// pages through routes one at a time, expanded it lists them all, like Apple Maps.
     @Binding var detent: PresentationDetent
+    /// Reports the card's actual content height so the sheet's middle detent can hug it exactly
+    /// — Apple's own directions card ends right where its content does, with no dead space
+    /// below the page dots the way a fixed `.medium` fraction would leave.
+    @Binding var contentHeight: CGFloat
     let onClose: () -> Void
     let onStartNavigation: (RouteOption) -> Void
 
@@ -23,32 +27,25 @@ struct DirectionsCard: View {
                 .padding(.top, 20)
                 .padding(.bottom, 12)
 
-            ScrollView {
-                VStack(spacing: 14) {
-                    modePicker
-                    endpointsCard
-
-                    if viewModel.isCalculating {
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 20)
-                    } else if let errorMessage = viewModel.errorMessage {
-                        errorView(errorMessage)
-                    } else if !viewModel.routeOptions.isEmpty {
-                        if viewModel.mode == .transit {
-                            transitList
-                        } else if isExpanded {
-                            routeList
-                        } else {
-                            pagedRoutes
-                        }
-                    }
+            // A ScrollView always fills its container regardless of how tall its content
+            // actually is — that's what left dead space below the route card at rest. Only
+            // scroll once genuinely expanded (a long alternates/transit list can overflow);
+            // at rest the content sizes itself and the sheet detent is measured to match it.
+            if isExpanded {
+                ScrollView {
+                    contentStack
                 }
-                .padding(.horizontal)
-                .padding(.bottom, 16)
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.basedOnSize)
+            } else {
+                contentStack
             }
-            .scrollIndicators(.hidden)
-            .scrollBounceBehavior(.basedOnSize)
+        }
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { newValue in
+            guard !isExpanded else { return }
+            contentHeight = newValue
         }
         .animation(.smooth(duration: 0.3), value: viewModel.mode)
         .animation(.smooth(duration: 0.3), value: viewModel.selectedRouteID)
@@ -64,6 +61,31 @@ struct DirectionsCard: View {
                 viewModel.addStop(item)
             }
         }
+    }
+
+    private var contentStack: some View {
+        VStack(spacing: 14) {
+            modePicker
+            endpointsCard
+
+            if viewModel.isCalculating {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 20)
+            } else if let errorMessage = viewModel.errorMessage {
+                errorView(errorMessage)
+            } else if !viewModel.routeOptions.isEmpty {
+                if viewModel.mode == .transit {
+                    transitList
+                } else if isExpanded {
+                    routeList
+                } else {
+                    pagedRoutes
+                }
+            }
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 16)
     }
 
     // MARK: Header
