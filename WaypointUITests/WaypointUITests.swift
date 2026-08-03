@@ -169,6 +169,10 @@ final class WaypointUITests: XCTestCase {
         profileButton.tap()
 
         XCTAssertTrue(app.staticTexts["Accounts aren't built yet"].waitForExistence(timeout: 5))
+        // Real diagnostics (CrashReportingService), not a placeholder — every fresh launch should
+        // at least show the Diagnostics section with a last-session status row.
+        XCTAssertTrue(app.staticTexts["Diagnostics"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Last Session"].exists)
         attachScreenshot("05-profile-sheet")
         app.buttons["Done"].tap()
         XCTAssertTrue(app.textFields["searchField"].waitForExistence(timeout: 5))

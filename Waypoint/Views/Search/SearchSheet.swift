@@ -1131,6 +1131,7 @@ private struct AddFavoriteCircle: View {
 
 private struct ProfilePlaceholderSheet: View {
     @Environment(\.dismiss) private var dismiss
+    private let diagnostics = CrashReportingService.shared
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
@@ -1138,23 +1139,34 @@ private struct ProfilePlaceholderSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 64))
-                    .foregroundStyle(.secondary)
-                Text("Accounts aren't built yet")
-                    .font(.headline)
-                Text("Sign-in and synced favorites are planned for a later version of Waypoint. Recents and favorites are stored on this device only for now.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-                Spacer()
-                Text("Waypoint v\(appVersion)")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+            List {
+                Section {
+                    VStack(spacing: 12) {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 56))
+                            .foregroundStyle(.secondary)
+                        Text("Accounts aren't built yet")
+                            .font(.headline)
+                        Text("Sign-in isn't available yet, but Favorites and Recents already sync across your devices via iCloud — no account needed for that part.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .listRowSeparator(.hidden)
+                }
+
+                diagnosticsSection
+
+                Section {
+                    Text("Waypoint v\(appVersion)")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity)
+                        .listRowSeparator(.hidden)
+                }
             }
-            .padding(.top, 40)
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1163,6 +1175,74 @@ private struct ProfilePlaceholderSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
+    }
+
+    private var diagnosticsSection: some View {
+        Section {
+            HStack(spacing: 10) {
+                Image(systemName: lastRunSymbol)
+                    .foregroundStyle(lastRunTint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Last Session").font(.subheadline.weight(.medium))
+                    Text(lastRunDescription).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            if diagnostics.reports.isEmpty {
+                Text("No crash or hang reports recorded.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(diagnostics.reports) { report in
+                    HStack(spacing: 10) {
+                        Image(systemName: report.kind.symbol).foregroundStyle(.red).frame(width: 20)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(report.kind.label).font(.subheadline.weight(.medium))
+                            Text(report.summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            Text("\(report.date.formatted(date: .abbreviated, time: .shortened)) · v\(report.appVersion) · iOS \(report.osVersion)")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+                Button("Clear Reports", role: .destructive) { diagnostics.clearReports() }
+                    .font(.caption)
+            }
+
+            if !diagnostics.isDetailedReportingAvailable {
+                Text("Detailed crash/hang diagnostics need iOS 27 or later. The last-session status above still works on this OS version.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        } header: {
+            Text("Diagnostics")
+        } footer: {
+            Text("Collected on-device via MetricKit — nothing is sent off this phone.")
+        }
+    }
+
+    private var lastRunSymbol: String {
+        switch diagnostics.lastRunEndedCleanly {
+        case .some(true): "checkmark.circle.fill"
+        case .some(false): "exclamationmark.triangle.fill"
+        case nil: "questionmark.circle"
+        }
+    }
+
+    private var lastRunTint: Color {
+        switch diagnostics.lastRunEndedCleanly {
+        case .some(true): .green
+        case .some(false): .orange
+        case nil: .secondary
+        }
+    }
+
+    private var lastRunDescription: String {
+        switch diagnostics.lastRunEndedCleanly {
+        case .some(true): "Ended normally"
+        case .some(false): "Didn't shut down normally — may have crashed or been force-quit"
+        case nil: "Not enough history yet"
+        }
     }
 }
