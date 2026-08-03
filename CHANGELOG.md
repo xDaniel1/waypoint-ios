@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Google API cost exposure: `PlaceDetailViewModel.load(for:)` fired a fresh Text Search + full Place Details call (Contact + Atmosphere fields, the priciest tier) on every single place-card open, including reopening the exact same favorite/recent/search result. Added an in-memory `PlaceDetailsCache` (1-hour TTL, keyed by name+coordinate and by Google's place ID) shared across `GooglePlacesService` instances, so repeat views of an already-seen place cost zero additional calls within the hour. Also fixed `DirectionsViewModel.scheduleCalculation()`: cancelling the in-flight `Task` when a mode/avoid-preference changes only took effect after the network response came back, so rapid toggling (e.g. flipping two "Avoid" switches back to back) still billed one Routes API call per toggle. Added a 350ms debounce with a cancellation check before the request goes out, so rapid changes collapse into one call.
+
 ### Added
 - Apple-Maps-style home card: the app now opens with the sheet resting at a partial height showing the search bar, a "Places" row of saved-place circles with straight-line distances, a grouped "Recents" card, and a "Your Places"/Favorites collection tile. Scrolling the card pulls the sheet to full height. Each section header's chevron opens the full list (`SavedListSheet`) with swipe-to-remove. Apple's Home/Work entries and the curated "Guides We Love" shelf are editorial/private data we have no source for, so this shows only places you've actually saved on the device.
 - Swipeable route alternates in the directions card: at rest the card pages horizontally through one route at a time with page dots, and swiping re-highlights the matching line on the map; pulled to full height it lists every alternate at once with the selected one outlined in blue — matching Apple Maps' collapsed/expanded directions card.

@@ -125,9 +125,18 @@ final class DirectionsViewModel {
         onRoutesChanged?([], nil)
     }
 
+    /// Debounced so rapid changes (toggling two "Avoid" switches back to back, flicking through
+    /// modes) collapse into one Routes API call instead of one per change. Cancelling the Task
+    /// after a request is already in flight doesn't stop it or refund it — the cancellation check
+    /// only ever runs after the response comes back — so the guard has to sit before the request
+    /// goes out, not after.
     private func scheduleCalculation() {
         calcTask?.cancel()
-        calcTask = Task { await calculateRoutes() }
+        calcTask = Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            await calculateRoutes()
+        }
     }
 
     func select(_ option: RouteOption) {

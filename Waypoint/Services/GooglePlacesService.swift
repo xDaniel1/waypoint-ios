@@ -7,6 +7,53 @@ enum GooglePlacesError: Error {
     case requestFailed(Int)
 }
 
+/// Caches resolved place details in memory so reopening the same place — a favorite, a recent,
+/// the same search result twice — costs zero additional Places API calls within the TTL. Google's
+/// Place Details (New) with Contact + Atmosphere fields is the priciest tier we call, and without
+/// this every re-tap of an already-seen place was a fresh Text Search + Details round trip.
+private actor PlaceDetailsCache {
+    static let shared = PlaceDetailsCache()
+
+    private struct Entry {
+        let place: GooglePlace
+        let cachedAt: Date
+    }
+
+    /// An hour is long enough to absorb repeat taps in a session, short enough that hours/ratings
+    /// don't go stale for a place someone keeps coming back to across a longer session.
+    private let ttl: TimeInterval = 3600
+    private var entriesByKey: [String: Entry] = [:]
+    private var entriesByPlaceID: [String: Entry] = [:]
+
+    func place(forKey key: String) -> GooglePlace? {
+        guard let entry = entriesByKey[key], isFresh(entry) else { return nil }
+        return entry.place
+    }
+
+    func place(forID id: String) -> GooglePlace? {
+        guard let entry = entriesByPlaceID[id], isFresh(entry) else { return nil }
+        return entry.place
+    }
+
+    func store(_ place: GooglePlace, forKey key: String?) {
+        let entry = Entry(place: place, cachedAt: Date())
+        entriesByPlaceID[place.id] = entry
+        if let key { entriesByKey[key] = entry }
+    }
+
+    private func isFresh(_ entry: Entry) -> Bool {
+        Date().timeIntervalSince(entry.cachedAt) < ttl
+    }
+
+    /// Name + coordinate rounded to ~11m — the same resolution used for the Text Search bias
+    /// radius, so two lookups of the same real-world place land on the same cache key.
+    static func lookupKey(name: String, coordinate: CLLocationCoordinate2D) -> String {
+        let lat = (coordinate.latitude * 10_000).rounded() / 10_000
+        let lng = (coordinate.longitude * 10_000).rounded() / 10_000
+        return "\(name.lowercased())|\(lat)|\(lng)"
+    }
+}
+
 struct GooglePlacesService {
     private static let detailFields = [
         "id", "displayName", "primaryTypeDisplayName", "formattedAddress",
@@ -29,6 +76,9 @@ struct GooglePlacesService {
     func findPlace(name: String, coordinate: CLLocationCoordinate2D) async throws -> GooglePlace {
         guard !apiKey.isEmpty else { throw GooglePlacesError.missingAPIKey }
 
+        let key = PlaceDetailsCache.lookupKey(name: name, coordinate: coordinate)
+        if let cached = await PlaceDetailsCache.shared.place(forKey: key) { return cached }
+
         var request = URLRequest(url: URL(string: "https://places.googleapis.com/v1/places:searchText")!)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
@@ -50,7 +100,9 @@ struct GooglePlacesService {
         guard let placeId = decoded.places?.first?.id else {
             throw GooglePlacesError.noMatch
         }
-        return try await placeDetails(placeId: placeId)
+        let place = try await placeDetails(placeId: placeId)
+        await PlaceDetailsCache.shared.store(place, forKey: key)
+        return place
     }
 
     /// Nearby Search (New), ranked by popularity. Used for Trending/Suggested discovery sections.
@@ -91,13 +143,17 @@ struct GooglePlacesService {
     func placeDetails(placeId: String) async throws -> GooglePlace {
         guard !apiKey.isEmpty else { throw GooglePlacesError.missingAPIKey }
 
+        if let cached = await PlaceDetailsCache.shared.place(forID: placeId) { return cached }
+
         var request = URLRequest(url: URL(string: "https://places.googleapis.com/v1/places/\(placeId)")!)
         request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
         request.setValue(Self.detailFields, forHTTPHeaderField: "X-Goog-FieldMask")
 
         let (data, response) = try await session.data(for: request)
         try Self.validate(response)
-        return try JSONDecoder().decode(GooglePlace.self, from: data)
+        let place = try JSONDecoder().decode(GooglePlace.self, from: data)
+        await PlaceDetailsCache.shared.store(place, forKey: nil)
+        return place
     }
 
     func photoURL(photoName: String, maxWidthPx: Int = 800) -> URL? {
