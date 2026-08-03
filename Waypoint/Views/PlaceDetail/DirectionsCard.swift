@@ -1,3 +1,4 @@
+import MapKit
 import SwiftUI
 
 struct DirectionsCard: View {
@@ -9,6 +10,7 @@ struct DirectionsCard: View {
     let onStartNavigation: (RouteOption) -> Void
 
     @State private var showingSteps = false
+    @State private var isAddingStop = false
     @Namespace private var modeNamespace
 
     private var isExpanded: Bool { detent == .large }
@@ -55,6 +57,11 @@ struct DirectionsCard: View {
         .sheet(isPresented: $showingSteps) {
             if let route = viewModel.selectedRoute {
                 RouteStepsSheet(destination: viewModel.destinationTitle, route: route)
+            }
+        }
+        .sheet(isPresented: $isAddingStop) {
+            AddStopSheet(currentRegion: originRegion) { item in
+                viewModel.addStop(item)
             }
         }
     }
@@ -120,6 +127,11 @@ struct DirectionsCard: View {
             .background(.thickMaterial, in: Circle())
     }
 
+    private var originRegion: MKCoordinateRegion? {
+        guard let coordinate = viewModel.originCoordinate else { return nil }
+        return MKCoordinateRegion(center: coordinate, latitudinalMeters: 8000, longitudinalMeters: 8000)
+    }
+
     private var shareSummary: String {
         if let route = viewModel.selectedRoute {
             return "\(viewModel.destinationTitle) — \(route.shortDuration), \(route.formattedDistance)"
@@ -147,16 +159,29 @@ struct DirectionsCard: View {
     private var endpointsCard: some View {
         VStack(spacing: 0) {
             endpointRow(icon: "location.fill", tint: .blue, text: "My Location", isPlaceholder: false)
+            ForEach(viewModel.stops) { stop in
+                Divider().padding(.leading, 44)
+                endpointRow(icon: "mappin.circle.fill", tint: .orange, text: stop.title, isPlaceholder: false) {
+                    viewModel.removeStop(stop)
+                }
+            }
             Divider().padding(.leading, 44)
             endpointRow(icon: "mappin.circle.fill", tint: .red, text: viewModel.destinationTitle, isPlaceholder: false)
             Divider().padding(.leading, 44)
-            endpointRow(icon: "plus.circle.fill", tint: .blue, text: "Add Stop", isPlaceholder: true)
+            Button {
+                isAddingStop = true
+            } label: {
+                endpointRow(icon: "plus.circle.fill", tint: .blue, text: "Add Stop", isPlaceholder: true)
+            }
+            .buttonStyle(.plain)
         }
         .padding(.vertical, 6)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 
-    private func endpointRow(icon: String, tint: Color, text: String, isPlaceholder: Bool) -> some View {
+    private func endpointRow(
+        icon: String, tint: Color, text: String, isPlaceholder: Bool, onRemove: (() -> Void)? = nil
+    ) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.title3).foregroundStyle(tint).frame(width: 32)
@@ -165,6 +190,13 @@ struct DirectionsCard: View {
                 .foregroundStyle(isPlaceholder ? .blue : .primary)
                 .lineLimit(1)
             Spacer()
+            if let onRemove {
+                Button(action: onRemove) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
     }
@@ -453,7 +485,7 @@ private struct RouteStepsSheet: View {
                     }
                 }
                 Section {
-                    Text("Waypoint shows the full step list and live-traffic ETA in-app. Spoken turn-by-turn guidance is an Apple-private system feature.")
+                    Text("Tap GO to start turn-by-turn navigation with spoken directions.")
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
             }

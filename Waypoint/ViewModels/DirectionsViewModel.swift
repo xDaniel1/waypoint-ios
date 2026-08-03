@@ -82,9 +82,13 @@ final class DirectionsViewModel {
     private(set) var selectedRouteID: RouteOption.ID?
     private(set) var isCalculating = false
     private(set) var errorMessage: String?
+    /// Waypoints the route must pass through, in order, between origin and destination.
+    private(set) var stops: [RouteStop] = []
 
     var isActive: Bool { destination != nil }
     var destinationTitle: String { destination?.name ?? "Destination" }
+    /// Biases the Add Stop search toward the trip rather than the whole map.
+    var originCoordinate: CLLocationCoordinate2D? { origin?.coordinate }
 
     var selectedRoute: RouteOption? {
         routeOptions.first { $0.id == selectedRouteID } ?? routeOptions.first
@@ -119,10 +123,26 @@ final class DirectionsViewModel {
         calcTask?.cancel()
         destination = nil
         origin = nil
+        stops = []
         routeOptions = []
         selectedRouteID = nil
         errorMessage = nil
         onRoutesChanged?([], nil)
+    }
+
+    func addStop(_ item: MKMapItem) {
+        stops.append(RouteStop(mapItem: item))
+        scheduleCalculation()
+    }
+
+    func removeStop(_ stop: RouteStop) {
+        stops.removeAll { $0.id == stop.id }
+        scheduleCalculation()
+    }
+
+    func moveStops(fromOffsets: IndexSet, toOffset: Int) {
+        stops.move(fromOffsets: fromOffsets, toOffset: toOffset)
+        scheduleCalculation()
     }
 
     /// Debounced so rapid changes (toggling two "Avoid" switches back to back, flicking through
@@ -156,7 +176,10 @@ final class DirectionsViewModel {
         selectedRouteID = nil
         onRoutesChanged?([], nil)
 
-        // Prefer Google (traffic-aware, alternates, transit/bike); fall back to MapKit for drive/walk.
+        // Prefer Google (traffic-aware, alternates, transit/bike, stops); fall back to MapKit
+        // for drive/walk, but only with no stops — MapKit has no multi-waypoint routing API,
+        // and chaining separate leg-by-leg requests would silently drop live-traffic accuracy
+        // across the whole trip, so it's more honest to just say so than to fake it.
         let googleOptions = await tryGoogleRoutes(
             origin: origin.coordinate,
             destination: destination.placemark.coordinate
@@ -164,10 +187,12 @@ final class DirectionsViewModel {
         if Task.isCancelled { return }
         if let googleOptions, !googleOptions.isEmpty {
             applyOptions(googleOptions, emptyMessage: "No \(mode.label.lowercased()) route found.")
-        } else if mode.mapKitCanRoute {
+        } else if mode.mapKitCanRoute, stops.isEmpty {
             await calculateMapKitRoutes(origin: origin.coordinate, destination: destination)
         } else if errorMessage == nil {
-            errorMessage = "No \(mode.label.lowercased()) route found."
+            errorMessage = stops.isEmpty
+                ? "No \(mode.label.lowercased()) route found."
+                : "Couldn't calculate a route with stops. Enable the Google Routes API on your Cloud project."
         }
 
         if Task.isCancelled { return }
@@ -186,7 +211,8 @@ final class DirectionsViewModel {
                 mode: mode.googleMode,
                 avoidTolls: avoidTolls,
                 avoidHighways: avoidHighways,
-                avoidFerries: avoidFerries
+                avoidFerries: avoidFerries,
+                intermediates: stops.map(\.coordinate)
             )
         } catch GoogleRoutesError.apiNotEnabled {
             if !mode.mapKitCanRoute {

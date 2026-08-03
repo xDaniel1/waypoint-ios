@@ -314,4 +314,45 @@ final class WaypointUITests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground, "Unmuting mid-navigation should not crash the app")
         attachScreenshot("10b-mute-toggled")
     }
+
+    // Add Stop should insert a real waypoint the route is recalculated through, not just a
+    // placeholder row.
+    func test11_multiStopRouting() throws {
+        let searchField = app.textFields["searchField"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 10))
+        searchField.tap()
+        searchField.typeText("Blue Bottle Coffee")
+
+        let firstSuggestion = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Blue Bottle'")).firstMatch
+        XCTAssertTrue(firstSuggestion.waitForExistence(timeout: 10))
+        firstSuggestion.tap()
+
+        let getDirections = app.buttons["getDirectionsButton"]
+        XCTAssertTrue(getDirections.waitForExistence(timeout: 10))
+        getDirections.tap()
+
+        XCTAssertTrue(app.staticTexts["Fastest"].waitForExistence(timeout: 25), "A driving route should be calculated")
+
+        let addStop = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Add Stop'")).firstMatch
+        XCTAssertTrue(addStop.waitForExistence(timeout: 5))
+        addStop.tap()
+
+        let stopSearchField = app.searchFields.firstMatch
+        XCTAssertTrue(stopSearchField.waitForExistence(timeout: 5), "Add Stop sheet should present a search field")
+        stopSearchField.tap()
+        stopSearchField.typeText("Starbucks")
+
+        let stopSuggestion = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Starbucks'")).firstMatch
+        XCTAssertTrue(stopSuggestion.waitForExistence(timeout: 10), "Add Stop sheet should show live suggestions")
+        stopSuggestion.tap()
+
+        // Sheet dismisses and the added stop shows up as its own row in the directions card,
+        // proving it became a real waypoint rather than just closing the sheet.
+        XCTAssertFalse(stopSearchField.waitForExistence(timeout: 3), "Add Stop sheet should dismiss after picking a result")
+        let stopRow = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'Starbucks'")).firstMatch
+        XCTAssertTrue(stopRow.waitForExistence(timeout: 10), "The stop should appear as a row in the directions card")
+        attachScreenshot("11a-stop-added")
+
+        app.buttons["closeDirectionsButton"].tap()
+    }
 }

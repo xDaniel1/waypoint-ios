@@ -63,6 +63,10 @@ struct MapScreen: View {
                     Marker(result.title, coordinate: result.coordinate)
                         .tint(.indigo)
                 }
+                ForEach(directionsViewModel.stops) { stop in
+                    Marker(stop.title, coordinate: stop.coordinate)
+                        .tint(.orange)
+                }
                 // Draw alternates first (under), selected route last (on top). Alternates keep a
                 // muted blue rather than gray so every option reads as a route you can take.
                 ForEach(directionsViewModel.routeOptions) { option in
@@ -215,7 +219,8 @@ struct MapScreen: View {
                         mode: .drive,
                         avoidTolls: directionsViewModel.avoidTolls,
                         avoidHighways: directionsViewModel.avoidHighways,
-                        avoidFerries: directionsViewModel.avoidFerries
+                        avoidFerries: directionsViewModel.avoidFerries,
+                        intermediates: navigationViewModel.intermediateStops
                     ), let newRoute = options.first else { return }
                     navigationViewModel.reroute(to: newRoute)
                 }
@@ -250,7 +255,12 @@ struct MapScreen: View {
                         ?? searchViewModel.selectedResult?.coordinate
                         ?? viewModel.currentLocation?.coordinate
                         ?? CLLocationCoordinate2D()
-                    navigationViewModel.start(route: route, destinationName: name, destinationCoordinate: destinationCoordinate)
+                    navigationViewModel.start(
+                        route: route,
+                        destinationName: name,
+                        destinationCoordinate: destinationCoordinate,
+                        intermediateStops: directionsViewModel.stops.map(\.coordinate)
+                    )
                     directionsViewModel.stop()
                     // Starting navigation always takes the camera back, even if the user had
                     // panned away while choosing a route.

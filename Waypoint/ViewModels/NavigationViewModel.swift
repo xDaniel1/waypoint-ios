@@ -11,6 +11,9 @@ final class NavigationViewModel {
     private(set) var route: RouteOption?
     private(set) var destinationName: String = ""
     private(set) var destinationCoordinate: CLLocationCoordinate2D = CLLocationCoordinate2D()
+    /// Carried over so a reroute (drifting off path) recalculates through the same stops the
+    /// trip started with — including ones already passed, since this doesn't track visit state.
+    private(set) var intermediateStops: [CLLocationCoordinate2D] = []
     private(set) var currentStepIndex: Int = 0
     private(set) var remainingTime: TimeInterval = 0
     private(set) var remainingDistance: Double = 0
@@ -71,10 +74,16 @@ final class NavigationViewModel {
             .formatted(.measurement(width: .abbreviated, usage: .road))
     }
 
-    func start(route: RouteOption, destinationName: String, destinationCoordinate: CLLocationCoordinate2D) {
+    func start(
+        route: RouteOption,
+        destinationName: String,
+        destinationCoordinate: CLLocationCoordinate2D,
+        intermediateStops: [CLLocationCoordinate2D] = []
+    ) {
         self.route = route
         self.destinationName = destinationName
         self.destinationCoordinate = destinationCoordinate
+        self.intermediateStops = intermediateStops
         currentStepIndex = 0
         progressIndex = 0
         remainingTime = route.travelTime
@@ -90,6 +99,7 @@ final class NavigationViewModel {
     func end() {
         route = nil
         destinationName = ""
+        intermediateStops = []
         currentStepIndex = 0
         progressIndex = 0
         remainingTime = 0

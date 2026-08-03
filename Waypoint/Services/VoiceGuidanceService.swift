@@ -23,7 +23,10 @@ final class VoiceGuidanceService {
         try? AVAudioSession.sharedInstance().setActive(true)
 
         let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: Locale.current.identifier)
+        // `Locale.current.identifier` is underscore-separated ("en_US") and doesn't reliably
+        // match a voice; `currentLanguageCode()` returns the properly formatted BCP-47 tag
+        // ("en-US") for the device's active speech language.
+        utterance.voice = AVSpeechSynthesisVoice(language: AVSpeechSynthesisVoice.currentLanguageCode())
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         synthesizer.speak(utterance)
     }

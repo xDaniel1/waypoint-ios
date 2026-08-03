@@ -33,7 +33,8 @@ struct GoogleRoutesService {
         mode: Mode,
         avoidTolls: Bool = false,
         avoidHighways: Bool = false,
-        avoidFerries: Bool = false
+        avoidFerries: Bool = false,
+        intermediates: [CLLocationCoordinate2D] = []
     ) async throws -> [RouteOption] {
         guard !apiKey.isEmpty else { throw GoogleRoutesError.missingAPIKey }
 
@@ -59,8 +60,15 @@ struct GoogleRoutesService {
             "destination": ["location": ["latLng": ["latitude": destination.latitude, "longitude": destination.longitude]]],
             "travelMode": mode.rawValue,
             "polylineQuality": "HIGH_QUALITY",
-            "computeAlternativeRoutes": true,
+            // Alternates and waypoints don't mix in Google's API — a route through required
+            // stops has exactly one shape, so alternates only make sense with zero stops.
+            "computeAlternativeRoutes": intermediates.isEmpty,
         ]
+        if !intermediates.isEmpty {
+            body["intermediates"] = intermediates.map {
+                ["location": ["latLng": ["latitude": $0.latitude, "longitude": $0.longitude]]]
+            }
+        }
         if mode == .drive {
             // Live-traffic-aware routing so ETAs reflect current congestion and closures.
             body["routingPreference"] = "TRAFFIC_AWARE_OPTIMAL"

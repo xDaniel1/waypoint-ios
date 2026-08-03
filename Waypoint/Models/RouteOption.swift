@@ -125,6 +125,16 @@ struct NamedStop: Identifiable {
     let coordinate: CLLocationCoordinate2D
 }
 
+/// A waypoint the driver added to a trip — "Add Stop" in the directions card — distinct from
+/// `NamedStop`, which is a transit line's own stops.
+struct RouteStop: Identifiable {
+    let id = UUID()
+    let mapItem: MKMapItem
+
+    var title: String { mapItem.name ?? "Stop" }
+    var coordinate: CLLocationCoordinate2D { mapItem.placemark.coordinate }
+}
+
 extension MKRoute {
     var coordinates: [CLLocationCoordinate2D] {
         let pointCount = polyline.pointCount
