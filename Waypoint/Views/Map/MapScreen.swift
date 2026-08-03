@@ -28,6 +28,7 @@ struct MapScreen: View {
     @State private var navBarHeight: CGFloat = 120
     @State private var voiceGuidance = VoiceGuidanceService()
     @State private var isRerouting = false
+    @State private var isSearchingAlongRoute = false
     /// Set when the user pans/zooms/rotates. While true, nothing programmatically moves the
     /// camera — they stay wherever they dragged to until they tap re-center.
     @State private var isCameraUserControlled = false
@@ -203,28 +204,11 @@ struct MapScreen: View {
             navigationViewModel.onAnnouncement = { text in
                 voiceGuidance.speak(text)
             }
-            // The view model can tell us we've drifted off the path, but it doesn't fetch
-            // routes itself — that's this closure's job, using the same avoid preferences the
-            // driver already set for the trip.
-            navigationViewModel.onOffRoute = {
-                guard !isRerouting else { return }
-                isRerouting = true
-                Task {
-                    defer { isRerouting = false }
-                    guard let location = viewModel.currentLocation else { return }
-                    let destination = navigationViewModel.destinationCoordinate
-                    guard let options = try? await GoogleRoutesService().computeRoutes(
-                        from: location.coordinate,
-                        to: destination,
-                        mode: .drive,
-                        avoidTolls: directionsViewModel.avoidTolls,
-                        avoidHighways: directionsViewModel.avoidHighways,
-                        avoidFerries: directionsViewModel.avoidFerries,
-                        intermediates: navigationViewModel.intermediateStops
-                    ), let newRoute = options.first else { return }
-                    navigationViewModel.reroute(to: newRoute)
-                }
-            }
+            // The view model can tell us we've drifted off the path, or that a stop was added
+            // mid-trip via search-along-route — either way it doesn't fetch routes itself,
+            // that's recomputeActiveRoute()'s job.
+            navigationViewModel.onOffRoute = { recomputeActiveRoute() }
+            navigationViewModel.onStopAdded = { recomputeActiveRoute() }
             await viewModel.start()
         }
         // Compass-driven camera rotation ONLY applies once the user explicitly opts in via the
@@ -289,6 +273,11 @@ struct MapScreen: View {
             .presentationCornerRadius(28)
             .interactiveDismissDisabled(true)
         }
+        .sheet(isPresented: $isSearchingAlongRoute) {
+            SearchAlongRouteSheet(remainingCoordinates: navigationViewModel.remainingCoordinates) { coordinate in
+                navigationViewModel.addStop(coordinate)
+            }
+        }
         .onChange(of: searchViewModel.selectedResult) { _, newValue in
             guard let newValue else { return }
             viewModel.centerCamera(on: newValue.coordinate)
@@ -313,6 +302,29 @@ struct MapScreen: View {
             return [.height(190), .medium, .large]
         }
         return [.height(collapsedHeight), .home, .large]
+    }
+
+    /// Recomputes the active navigation route from wherever the driver currently is to the
+    /// destination, through whatever stops are on file — used both for drifting off the
+    /// original path and for a stop added mid-trip via search-along-route, since both are "the
+    /// route changed, get a new one" the same way.
+    private func recomputeActiveRoute() {
+        guard !isRerouting else { return }
+        isRerouting = true
+        Task {
+            defer { isRerouting = false }
+            guard let location = viewModel.currentLocation else { return }
+            guard let options = try? await GoogleRoutesService().computeRoutes(
+                from: location.coordinate,
+                to: navigationViewModel.destinationCoordinate,
+                mode: .drive,
+                avoidTolls: directionsViewModel.avoidTolls,
+                avoidHighways: directionsViewModel.avoidHighways,
+                avoidFerries: directionsViewModel.avoidFerries,
+                intermediates: navigationViewModel.intermediateStops
+            ), let newRoute = options.first else { return }
+            navigationViewModel.reroute(to: newRoute)
+        }
     }
 
     /// Routes every programmatic camera move through one throttle so the GPS-fix path and the
@@ -478,6 +490,16 @@ struct MapScreen: View {
                     navSideIcon("point.topleft.down.to.point.bottomright.curvepath")
                 }
                 .buttonStyle(.plain)
+
+                Divider().frame(width: 30).overlay(Color.primary.opacity(0.15))
+
+                Button {
+                    isSearchingAlongRoute = true
+                } label: {
+                    navSideIcon("magnifyingglass")
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("searchAlongRouteButton")
 
                 Divider().frame(width: 30).overlay(Color.primary.opacity(0.15))
 

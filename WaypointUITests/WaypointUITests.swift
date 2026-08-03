@@ -355,4 +355,46 @@ final class WaypointUITests: XCTestCase {
 
         app.buttons["closeDirectionsButton"].tap()
     }
+
+    // During active navigation, search-along-route should surface real Google results for a
+    // category and let you add one as a stop without crashing the active trip.
+    func test12_searchAlongRoute() throws {
+        let searchField = app.textFields["searchField"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 10))
+        searchField.tap()
+        searchField.typeText("Blue Bottle Coffee")
+
+        let firstSuggestion = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Blue Bottle'")).firstMatch
+        XCTAssertTrue(firstSuggestion.waitForExistence(timeout: 10))
+        firstSuggestion.tap()
+
+        let getDirections = app.buttons["getDirectionsButton"]
+        XCTAssertTrue(getDirections.waitForExistence(timeout: 10))
+        getDirections.tap()
+
+        let goButton = app.buttons["goButton"].firstMatch
+        XCTAssertTrue(goButton.waitForExistence(timeout: 25))
+        goButton.tap()
+
+        let navigationBanner = app.staticTexts.matching(identifier: "navigationBanner").firstMatch
+        XCTAssertTrue(navigationBanner.waitForExistence(timeout: 10), "Navigation should be active")
+
+        let searchAlongRoute = app.buttons["searchAlongRouteButton"]
+        XCTAssertTrue(searchAlongRoute.waitForExistence(timeout: 5))
+        searchAlongRoute.tap()
+
+        let gasCategory = app.buttons["alongRouteCategory-gas"]
+        XCTAssertTrue(gasCategory.waitForExistence(timeout: 5), "Category chips should appear")
+        gasCategory.tap()
+
+        let addButton = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'addAlongRouteStop-'")).firstMatch
+        XCTAssertTrue(addButton.waitForExistence(timeout: 15), "A gas station result should load from Google along the route")
+        attachScreenshot("12a-along-route-results")
+        addButton.tap()
+
+        // Adding a stop dismisses the sheet and recomputes the active route in place — the app
+        // must stay in-app and foregrounded through that recalculation.
+        XCTAssertTrue(navigationBanner.waitForExistence(timeout: 10), "Navigation should still be active after adding a stop")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
 }

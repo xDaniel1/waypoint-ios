@@ -23,10 +23,11 @@ final class NavigationViewModel {
     /// speech service stays a dumb "speak this string" wrapper.
     var onAnnouncement: ((String) -> Void)?
     /// Fired when the driver has drifted far enough from the route that it should be
-    /// recalculated. This view model doesn't know how to compute a new route itself — that's
-    /// Google Routes' job — so it just signals the need; the caller supplies the new route
-    /// via `reroute(to:)`.
+    /// recalculated, or a stop was added mid-trip via search-along-route. Either way this view
+    /// model doesn't know how to compute a new route itself — that's Google Routes' job — so it
+    /// just signals the need; the caller supplies the new route via `reroute(to:)`.
     var onOffRoute: (() -> Void)?
+    var onStopAdded: (() -> Void)?
 
     private var announcedUpcomingForStep: Int?
     private var announcedImmediateForStep = -1
@@ -119,6 +120,15 @@ final class NavigationViewModel {
         announcedImmediateForStep = -1
         onAnnouncement?("Rerouting")
         announceFirstStep(of: newRoute)
+    }
+
+    /// Inserts a stop found via search-along-route and asks the caller to recompute the path
+    /// through it. Appended to the end of `intermediateStops` — since results are only ever
+    /// surfaced from points ahead of the driver on the remaining route, a new stop is always
+    /// further along than any earlier ones.
+    func addStop(_ coordinate: CLLocationCoordinate2D) {
+        intermediateStops.append(coordinate)
+        onStopAdded?()
     }
 
     private func announceFirstStep(of route: RouteOption) {
