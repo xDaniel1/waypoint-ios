@@ -36,6 +36,33 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    dependencies:
+      - target: WaypointWidgetsExtension
+        embed: true
+
+  WaypointWidgetsExtension:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: WaypointWidgets
+        excludes:
+          - Info.plist
+      # Shared with the main app target so the extension can encode/decode the same Live
+      # Activity attributes and read the same App Group snapshot the app writes — not
+      # duplicated on disk, just compiled into both targets.
+      - path: Waypoint/Models/NavigationActivityAttributes.swift
+      - path: Waypoint/Services/NavigationWidgetDataStore.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.danielguzman.waypoint.widgets
+        CODE_SIGN_ENTITLEMENTS: WaypointWidgets/WaypointWidgets.entitlements
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: Q9AGJR7SC5
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: WaypointWidgets/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_EMIT_LOC_STRINGS: YES
 
   WaypointTests:
     type: bundle.unit-test
