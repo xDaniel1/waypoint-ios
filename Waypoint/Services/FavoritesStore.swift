@@ -62,6 +62,17 @@ final class FavoritesStore {
         save()
     }
 
+    /// Applies a rename and/or custom emoji/color from the edit sheet. `title` empty or
+    /// unchanged from the original clears the override rather than storing a redundant copy.
+    func update(_ favorite: FavoritePlace, title: String, emoji: String?, colorHex: String?) {
+        guard let index = favorites.firstIndex(where: { $0.id == favorite.id }) else { return }
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        favorites[index].customTitle = (trimmedTitle.isEmpty || trimmedTitle == favorites[index].title) ? nil : trimmedTitle
+        favorites[index].emoji = emoji
+        favorites[index].colorHex = colorHex
+        save()
+    }
+
     private func load() {
         guard let data = store.data(forKey: defaultsKey),
               let decoded = try? JSONDecoder().decode([FavoritePlace].self, from: data) else { return }

@@ -51,6 +51,40 @@ struct FavoritesStoreTests {
         store.remove(favorite)
         #expect(store.favorites.isEmpty)
     }
+
+    @Test func updateSetsCustomTitleEmojiAndColorAndPersists() throws {
+        let backing = InMemoryKeyValueStore()
+        let store = FavoritesStore(store: backing)
+        store.toggle(makeResult(title: "Whole Foods Market"))
+        let favorite = try #require(store.favorites.first)
+
+        store.update(favorite, title: "Groceries", emoji: "🛒", colorHex: "#FF8800")
+
+        let updated = try #require(store.favorites.first)
+        #expect(updated.displayTitle == "Groceries")
+        #expect(updated.title == "Whole Foods Market", "the real place name must survive a rename — it's what place lookups search by")
+        #expect(updated.emoji == "🛒")
+        #expect(updated.colorHex == "#FF8800")
+
+        // Should sync like any other write.
+        let reloaded = FavoritesStore(store: backing)
+        #expect(reloaded.favorites.first?.displayTitle == "Groceries")
+    }
+
+    @Test func updateWithBlankOrUnchangedTitleClearsOverride() throws {
+        let store = FavoritesStore(store: InMemoryKeyValueStore())
+        store.toggle(makeResult(title: "Whole Foods Market"))
+        let favorite = try #require(store.favorites.first)
+
+        store.update(favorite, title: "Groceries", emoji: nil, colorHex: nil)
+        let renamed = try #require(store.favorites.first)
+        #expect(renamed.customTitle == "Groceries")
+
+        store.update(renamed, title: "  ", emoji: nil, colorHex: nil)
+        let cleared = try #require(store.favorites.first)
+        #expect(cleared.customTitle == nil)
+        #expect(cleared.displayTitle == "Whole Foods Market")
+    }
 }
 
 struct RecentSearchesStoreTests {

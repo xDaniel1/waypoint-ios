@@ -31,6 +31,10 @@ struct SearchSheet: View {
     @State private var isShowingProfile = false
     /// Which "see all" list the user opened from a section header chevron.
     @State private var expandedList: HomeList?
+    /// The favorite currently open in the rename/emoji/color editor, from either the home row
+    /// or a search-results circle — `SavedListSheet` has its own copy of this for edits started
+    /// from the full list, since that's a separate presented sheet.
+    @State private var editingFavorite: FavoritePlace?
     @AppStorage("com.danielguzman.waypoint.hasDismissedVoiceSearchTip") private var hasDismissedTip = false
 
     enum HomeList: String, Identifiable {
@@ -53,7 +57,8 @@ struct SearchSheet: View {
                 PlaceDetailContent(
                     result: selected,
                     currentLocation: currentLocation,
-                    directionsViewModel: directionsViewModel
+                    directionsViewModel: directionsViewModel,
+                    favoritesStore: viewModel.favoritesStore
                 ) {
                     viewModel.clearSelection()
                 }
@@ -163,8 +168,16 @@ struct SearchSheet: View {
                     select(recent: recent)
                 },
                 onRemoveFavorite: { viewModel.favoritesStore.remove($0) },
-                onRemoveRecent: { viewModel.recentsStore.remove($0) }
+                onRemoveRecent: { viewModel.recentsStore.remove($0) },
+                onUpdateFavorite: { favorite, title, emoji, colorHex in
+                    viewModel.favoritesStore.update(favorite, title: title, emoji: emoji, colorHex: colorHex)
+                }
             )
+        }
+        .sheet(item: $editingFavorite) { favorite in
+            EditFavoriteSheet(favorite: favorite) { title, emoji, colorHex in
+                viewModel.favoritesStore.update(favorite, title: title, emoji: emoji, colorHex: colorHex)
+            }
         }
     }
 
@@ -211,10 +224,12 @@ struct SearchSheet: View {
                 HStack(alignment: .top, spacing: 18) {
                     ForEach(viewModel.favoritesStore.favorites) { favorite in
                         PlaceCircle(
-                            title: favorite.title,
+                            title: favorite.displayTitle,
                             subtitle: distanceText(to: favorite.coordinate),
                             symbol: PlaceCategoryIcon.icon(for: favorite.title).symbol,
-                            tint: PlaceCategoryIcon.icon(for: favorite.title).color
+                            tint: Color(hex: favorite.colorHex) ?? PlaceCategoryIcon.icon(for: favorite.title).color,
+                            emoji: favorite.emoji,
+                            onEdit: { editingFavorite = favorite }
                         ) {
                             select(favorite: favorite)
                         }
@@ -281,6 +296,7 @@ struct SearchSheet: View {
                 .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 16))
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("yourPlacesTile")
         }
     }
 
@@ -386,7 +402,7 @@ struct SearchSheet: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 16) {
                         ForEach(viewModel.favoritesStore.favorites) { favorite in
-                            FavoriteCircle(favorite: favorite) {
+                            FavoriteCircle(favorite: favorite, onEdit: { editingFavorite = favorite }) {
                                 select(favorite: favorite)
                             }
                         }
@@ -523,7 +539,9 @@ private struct PlaceCircle: View {
     let subtitle: String?
     let symbol: String
     let tint: Color
+    var emoji: String? = nil
     var isPlaceholder = false
+    var onEdit: (() -> Void)? = nil
     let action: () -> Void
 
     var body: some View {
@@ -536,9 +554,13 @@ private struct PlaceCircle: View {
                     } else {
                         Circle().fill(tint.gradient)
                     }
-                    Image(systemName: symbol)
-                        .font(.system(size: 28, weight: .semibold))
-                        .foregroundStyle(isPlaceholder ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(.white))
+                    if let emoji, !emoji.isEmpty {
+                        Text(emoji).font(.system(size: 28))
+                    } else {
+                        Image(systemName: symbol)
+                            .font(.system(size: 28, weight: .semibold))
+                            .foregroundStyle(isPlaceholder ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(.white))
+                    }
                 }
                 .frame(width: 68, height: 68)
 
@@ -557,6 +579,13 @@ private struct PlaceCircle: View {
             .frame(width: 78)
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            if let onEdit {
+                Button(action: onEdit) {
+                    Label("Edit", systemImage: "pencil")
+                }
+            }
+        }
     }
 }
 
@@ -621,7 +650,9 @@ private struct SavedListSheet: View {
     let onSelectRecent: (RecentSearch) -> Void
     let onRemoveFavorite: (FavoritePlace) -> Void
     let onRemoveRecent: (RecentSearch) -> Void
+    let onUpdateFavorite: (FavoritePlace, String, String?, String?) -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var editingFavorite: FavoritePlace?
 
     var body: some View {
         NavigationStack {
@@ -636,8 +667,10 @@ private struct SavedListSheet: View {
                             onSelectFavorite(favorite)
                         } label: {
                             row(
-                                title: favorite.title,
-                                subtitle: distanceText(favorite.coordinate) ?? favorite.subtitle
+                                title: favorite.displayTitle,
+                                subtitle: distanceText(favorite.coordinate) ?? favorite.subtitle,
+                                emoji: favorite.emoji,
+                                colorOverride: Color(hex: favorite.colorHex)
                             )
                         }
                         .buttonStyle(.plain)
@@ -645,6 +678,10 @@ private struct SavedListSheet: View {
                             Button(role: .destructive) { onRemoveFavorite(favorite) } label: {
                                 Label("Remove", systemImage: "trash")
                             }
+                            Button { editingFavorite = favorite } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .tint(.blue)
                         }
                     }
                 case .recents:
@@ -675,14 +712,23 @@ private struct SavedListSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .sheet(item: $editingFavorite) { favorite in
+            EditFavoriteSheet(favorite: favorite) { title, emoji, colorHex in
+                onUpdateFavorite(favorite, title, emoji, colorHex)
+            }
+        }
     }
 
-    private func row(title: String, subtitle: String) -> some View {
+    private func row(title: String, subtitle: String, emoji: String? = nil, colorOverride: Color? = nil) -> some View {
         let icon = PlaceCategoryIcon.icon(for: title)
         return HStack(spacing: 12) {
             ZStack {
-                Circle().fill(icon.color.gradient).frame(width: 34, height: 34)
-                Image(systemName: icon.symbol).font(.caption).foregroundStyle(.white)
+                Circle().fill((colorOverride ?? icon.color).gradient).frame(width: 34, height: 34)
+                if let emoji, !emoji.isEmpty {
+                    Text(emoji).font(.caption)
+                } else {
+                    Image(systemName: icon.symbol).font(.caption).foregroundStyle(.white)
+                }
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.body).foregroundStyle(.primary)
@@ -887,26 +933,38 @@ private struct NearbyRow: View {
 
 private struct FavoriteCircle: View {
     let favorite: FavoritePlace
+    var onEdit: (() -> Void)? = nil
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Circle()
-                    .fill(Color.indigo.gradient)
+                    .fill((Color(hex: favorite.colorHex) ?? .indigo).gradient)
                     .frame(width: 44, height: 44)
                     .overlay {
-                        Text(favorite.title.prefix(1))
-                            .font(.headline)
-                            .foregroundStyle(.white)
+                        if let emoji = favorite.emoji, !emoji.isEmpty {
+                            Text(emoji).font(.callout)
+                        } else {
+                            Text(favorite.title.prefix(1))
+                                .font(.headline)
+                                .foregroundStyle(.white)
+                        }
                     }
-                Text(favorite.title)
+                Text(favorite.displayTitle)
                     .font(.caption2)
                     .lineLimit(1)
                     .frame(width: 60)
             }
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            if let onEdit {
+                Button(action: onEdit) {
+                    Label("Edit", systemImage: "pencil")
+                }
+            }
+        }
     }
 }
 
@@ -929,6 +987,7 @@ private struct AddFavoriteCircle: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("addFavoriteButton")
     }
 }
 
