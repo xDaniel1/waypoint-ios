@@ -35,6 +35,7 @@ struct SearchSheet: View {
     /// or a search-results circle — `SavedListSheet` has its own copy of this for edits started
     /// from the full list, since that's a separate presented sheet.
     @State private var editingFavorite: FavoritePlace?
+    @State private var aroundMe = AroundMeViewModel()
     @AppStorage("com.danielguzman.waypoint.hasDismissedVoiceSearchTip") private var hasDismissedTip = false
 
     enum HomeList: String, Identifiable {
@@ -189,6 +190,7 @@ struct SearchSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 placesRow
+                aroundMeSection
                 if !viewModel.recentsStore.recents.isEmpty {
                     recentsCard
                 }
@@ -248,6 +250,68 @@ struct SearchSheet: View {
             }
             .scrollClipDisabled()
         }
+    }
+
+    /// Quick-category shortcuts (Gas, Food, EV Charging) — tapping one runs a real Google
+    /// Places Nearby Search around the user's current location and expands into a result strip,
+    /// rather than just filling the search query like the pills inside the results list do.
+    private var aroundMeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeaderText("Around Me")
+            HStack(spacing: 10) {
+                ForEach(AroundMeViewModel.Category.allCases) { category in
+                    AroundMeChip(
+                        category: category,
+                        isSelected: aroundMe.selectedCategory == category
+                    ) {
+                        guard let coordinate = currentLocation?.coordinate else { return }
+                        aroundMe.select(category, near: coordinate)
+                    }
+                }
+            }
+            if let category = aroundMe.selectedCategory {
+                aroundMeResults(for: category)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func aroundMeResults(for category: AroundMeViewModel.Category) -> some View {
+        if aroundMe.isLoading {
+            ProgressView()
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 8)
+        } else if let errorMessage = aroundMe.errorMessage {
+            Text(errorMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if aroundMe.results.isEmpty {
+            Text("No \(category.title.lowercased()) found nearby.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(aroundMe.results) { place in
+                        AroundMeResultCard(
+                            place: place,
+                            imageURL: aroundMe.photoURL(for: place),
+                            distanceText: place.coordinate.map { distanceText(to: $0) ?? "" }
+                        ) {
+                            selectDiscover(place)
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .scrollClipDisabled()
+        }
+    }
+
+    private func sectionHeaderText(_ title: String) -> some View {
+        Text(title)
+            .font(.title3.weight(.bold))
+            .foregroundStyle(.primary)
     }
 
     private var recentsCard: some View {
@@ -928,6 +992,80 @@ private struct NearbyRow: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+private struct AroundMeChip: View {
+    let category: AroundMeViewModel.Category
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: category.symbol)
+                Text(category.title)
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(isSelected ? .white : .primary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.quaternary.opacity(0.6)),
+                in: Capsule()
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("aroundMeCategory-\(category.rawValue)")
+    }
+}
+
+private struct AroundMeResultCard: View {
+    let place: GooglePlace
+    let imageURL: URL?
+    let distanceText: String?
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10).fill(.quaternary.opacity(0.6))
+                    if let imageURL {
+                        AsyncImage(url: imageURL) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
+                            Color.clear
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    } else {
+                        Image(systemName: "mappin.circle.fill").foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: 56, height: 56)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(place.displayName?.text ?? "Place")
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        if let rating = place.rating {
+                            Image(systemName: "star.fill").font(.caption2).foregroundStyle(.orange)
+                            Text(String(format: "%.1f", rating)).font(.caption).foregroundStyle(.secondary)
+                        }
+                        if let distanceText {
+                            if place.rating != nil { Text("·").font(.caption).foregroundStyle(.secondary) }
+                            Text(distanceText).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .frame(width: 140, alignment: .leading)
+            }
+            .padding(10)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("aroundMeResult-\(place.id)")
     }
 }
 

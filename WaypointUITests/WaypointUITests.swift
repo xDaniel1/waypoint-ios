@@ -443,4 +443,31 @@ final class WaypointUITests: XCTestCase {
         XCTAssertTrue(renamedRow.waitForExistence(timeout: 5), "The renamed favorite should show its custom title in the list")
         attachScreenshot("13c-renamed")
     }
+
+    // The home card's "Around Me" grid should run a real Google Places Nearby Search around the
+    // user's current location, not just fill the search query like the pills elsewhere do.
+    func test14_aroundMeGrid() throws {
+        let searchField = app.textFields["searchField"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Around Me"].waitForExistence(timeout: 5), "Home card should show the Around Me section")
+
+        let foodChip = app.buttons["aroundMeCategory-food"]
+        XCTAssertTrue(foodChip.waitForExistence(timeout: 5))
+        foodChip.tap()
+
+        let firstResult = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'aroundMeResult-'")).firstMatch
+        XCTAssertTrue(firstResult.waitForExistence(timeout: 15), "A real nearby restaurant should load from Google")
+        attachScreenshot("14a-around-me-results")
+
+        // Tapping the same chip again should collapse the strip back down.
+        foodChip.tap()
+        XCTAssertFalse(firstResult.exists, "Tapping the same category again should collapse the results")
+
+        foodChip.tap()
+        XCTAssertTrue(firstResult.waitForExistence(timeout: 15))
+        firstResult.tap()
+
+        XCTAssertTrue(app.buttons["closeDetailButton"].waitForExistence(timeout: 10), "Tapping a result should open the real place detail card")
+        attachScreenshot("14b-around-me-place-detail")
+    }
 }
