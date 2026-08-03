@@ -64,6 +64,7 @@ struct NavigationBottomBar: View {
         } action: { newValue in
             onHeightChange(newValue)
         }
+        .accessibilityIdentifier("navigationBottomBar")
     }
 
     private var summaryRow: some View {

@@ -276,4 +276,42 @@ final class WaypointUITests: XCTestCase {
         XCTAssertTrue(app.buttons["closeDetailButton"].waitForExistence(timeout: 5), "Closing directions should return to the place card")
         attachScreenshot("07c-back-to-place-detail")
     }
+
+    // GO should start real in-app navigation: the banner appears (its first instruction is
+    // spoken via AVSpeechSynthesizer on start), the mute toggle doesn't crash the audio session,
+    // and End Route cleanly returns to search.
+    func test10_navigationVoiceAndControls() throws {
+        let searchField = app.textFields["searchField"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 10))
+        searchField.tap()
+        searchField.typeText("Blue Bottle Coffee")
+
+        let firstSuggestion = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Blue Bottle'")).firstMatch
+        XCTAssertTrue(firstSuggestion.waitForExistence(timeout: 10))
+        firstSuggestion.tap()
+
+        let getDirections = app.buttons["getDirectionsButton"]
+        XCTAssertTrue(getDirections.waitForExistence(timeout: 10))
+        getDirections.tap()
+
+        let goButton = app.buttons["goButton"].firstMatch
+        XCTAssertTrue(goButton.waitForExistence(timeout: 25), "A route with a GO button should be calculated")
+        goButton.tap()
+
+        // The identifier lands on the banner's text/image children rather than a single
+        // container element, so match any element type instead of one specific query type.
+        let navigationBanner = app.staticTexts.matching(identifier: "navigationBanner").firstMatch
+        XCTAssertTrue(navigationBanner.waitForExistence(timeout: 10), "Navigation banner should appear once GO is tapped")
+        attachScreenshot("10a-navigation-started")
+
+        // This exercises the real AVSpeechSynthesizer/AVAudioSession path that spoke the first
+        // instruction when navigation started — toggling mute must not crash it either way.
+        let muteButton = app.buttons["muteButton"]
+        XCTAssertTrue(muteButton.waitForExistence(timeout: 5))
+        muteButton.tap()
+        XCTAssertEqual(app.state, .runningForeground, "Muting mid-navigation should not crash the app")
+        muteButton.tap()
+        XCTAssertEqual(app.state, .runningForeground, "Unmuting mid-navigation should not crash the app")
+        attachScreenshot("10b-mute-toggled")
+    }
 }

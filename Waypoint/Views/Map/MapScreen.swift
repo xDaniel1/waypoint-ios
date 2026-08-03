@@ -26,7 +26,8 @@ struct MapScreen: View {
     @State private var lastCameraAnimation: Date = .distantPast
     @State private var speedLimitService = SpeedLimitService()
     @State private var navBarHeight: CGFloat = 120
-    @State private var isVoiceMuted = false
+    @State private var voiceGuidance = VoiceGuidanceService()
+    @State private var isRerouting = false
     /// Set when the user pans/zooms/rotates. While true, nothing programmatically moves the
     /// camera — they stay wherever they dragged to until they tap re-center.
     @State private var isCameraUserControlled = false
@@ -195,6 +196,30 @@ struct MapScreen: View {
                     viewModel.fitCamera(toRoute: selected.boundingMapRect)
                 }
             }
+            navigationViewModel.onAnnouncement = { text in
+                voiceGuidance.speak(text)
+            }
+            // The view model can tell us we've drifted off the path, but it doesn't fetch
+            // routes itself — that's this closure's job, using the same avoid preferences the
+            // driver already set for the trip.
+            navigationViewModel.onOffRoute = {
+                guard !isRerouting else { return }
+                isRerouting = true
+                Task {
+                    defer { isRerouting = false }
+                    guard let location = viewModel.currentLocation else { return }
+                    let destination = navigationViewModel.destinationCoordinate
+                    guard let options = try? await GoogleRoutesService().computeRoutes(
+                        from: location.coordinate,
+                        to: destination,
+                        mode: .drive,
+                        avoidTolls: directionsViewModel.avoidTolls,
+                        avoidHighways: directionsViewModel.avoidHighways,
+                        avoidFerries: directionsViewModel.avoidFerries
+                    ), let newRoute = options.first else { return }
+                    navigationViewModel.reroute(to: newRoute)
+                }
+            }
             await viewModel.start()
         }
         // Compass-driven camera rotation ONLY applies once the user explicitly opts in via the
@@ -218,7 +243,14 @@ struct MapScreen: View {
                 sheetHeight: $sheetHeight,
                 onStartNavigation: { route in
                     let name = searchViewModel.selectedResult?.title ?? directionsViewModel.destinationTitle
-                    navigationViewModel.start(route: route, destinationName: name)
+                    // The route's own endpoint is the most reliable destination coordinate —
+                    // it's guaranteed to exist for any route that was actually computed, unlike
+                    // the search selection, which directionsViewModel.stop() clears right below.
+                    let destinationCoordinate = route.coordinates.last
+                        ?? searchViewModel.selectedResult?.coordinate
+                        ?? viewModel.currentLocation?.coordinate
+                        ?? CLLocationCoordinate2D()
+                    navigationViewModel.start(route: route, destinationName: name, destinationCoordinate: destinationCoordinate)
                     directionsViewModel.stop()
                     // Starting navigation always takes the camera back, even if the user had
                     // panned away while choosing a route.
@@ -410,12 +442,12 @@ struct MapScreen: View {
                     minutes: navigationViewModel.formattedRemainingMinutes,
                     distance: navigationViewModel.formattedRemainingDistance,
                     destinationName: navigationViewModel.destinationName,
-                    isMuted: isVoiceMuted,
+                    isMuted: voiceGuidance.isMuted,
                     onEndRoute: {
                         navigationViewModel.end()
                         speedLimitService.reset()
                     },
-                    onToggleMute: { isVoiceMuted.toggle() },
+                    onToggleMute: { voiceGuidance.isMuted.toggle() },
                     onHeightChange: { navBarHeight = $0 }
                 )
             }
@@ -440,11 +472,12 @@ struct MapScreen: View {
                 Divider().frame(width: 30).overlay(Color.primary.opacity(0.15))
 
                 Button {
-                    isVoiceMuted.toggle()
+                    voiceGuidance.isMuted.toggle()
                 } label: {
-                    navSideIcon(isVoiceMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    navSideIcon(voiceGuidance.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("muteButton")
             }
             .glassEffect(.clear.interactive(), in: Capsule())
         }

@@ -46,5 +46,6 @@ struct NavigationBanner: View {
         .transition(.move(edge: .top).combined(with: .opacity))
         .animation(.smooth(duration: 0.3), value: currentInstruction)
         .animation(.smooth(duration: 0.3), value: nextInstruction)
+        .accessibilityIdentifier("navigationBanner")
     }
 }

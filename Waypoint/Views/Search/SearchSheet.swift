@@ -325,6 +325,11 @@ struct SearchSheet: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .glassEffect(.regular.interactive(), in: Capsule())
+        // The glass capsule's own interactive touch-tracking wins the first tap for its press
+        // animation, so the TextField only picks up first-responder on a second tap. A
+        // simultaneous gesture fires alongside that (never blocking it) and sets focus directly,
+        // so the keyboard appears on the very first tap.
+        .simultaneousGesture(TapGesture().onEnded { isFieldFocused = true })
     }
 
     private var profileButton: some View {
