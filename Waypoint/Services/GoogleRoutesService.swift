@@ -41,6 +41,7 @@ struct GoogleRoutesService {
         var request = URLRequest(url: URL(string: "https://routes.googleapis.com/directions/v2:computeRoutes")!)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
+        GoogleAPIRequest.addBundleIdentifierHeader(to: &request)
         request.setValue(
             [
                 "routes.duration", "routes.staticDuration", "routes.distanceMeters",

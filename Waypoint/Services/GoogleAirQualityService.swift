@@ -28,6 +28,7 @@ struct GoogleAirQualityService {
         var request = URLRequest(url: URL(string: "https://airquality.googleapis.com/v1/currentConditions:lookup?key=\(apiKey)")!)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        GoogleAPIRequest.addBundleIdentifierHeader(to: &request)
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "location": ["latitude": coordinate.latitude, "longitude": coordinate.longitude],
             "universalAqi": true,

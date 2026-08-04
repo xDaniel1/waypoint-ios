@@ -128,7 +128,7 @@ private struct TrendingCard: View {
 
 @ViewBuilder
 private func placeThumbnail(_ url: URL?, size: CGFloat?, cornerRadius: CGFloat) -> some View {
-    AsyncImage(url: url) { phase in
+    GooglePhotoImage(url: url) { phase in
         switch phase {
         case .success(let image):
             image.resizable().aspectRatio(contentMode: .fill)

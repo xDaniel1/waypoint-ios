@@ -96,7 +96,7 @@ private struct ZoomablePhoto: View {
 
     var body: some View {
         GeometryReader { proxy in
-            AsyncImage(url: url) { phase in
+            GooglePhotoImage(url: url) { phase in
                 switch phase {
                 case .success(let image):
                     image

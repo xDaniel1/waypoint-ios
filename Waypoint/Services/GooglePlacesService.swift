@@ -82,6 +82,7 @@ struct GooglePlacesService {
         var request = URLRequest(url: URL(string: "https://places.googleapis.com/v1/places:searchText")!)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
+        GoogleAPIRequest.addBundleIdentifierHeader(to: &request)
         request.setValue("places.id", forHTTPHeaderField: "X-Goog-FieldMask")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
@@ -117,6 +118,7 @@ struct GooglePlacesService {
         var request = URLRequest(url: URL(string: "https://places.googleapis.com/v1/places:searchNearby")!)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
+        GoogleAPIRequest.addBundleIdentifierHeader(to: &request)
         request.setValue(
             "places.id,places.displayName,places.primaryTypeDisplayName,places.rating,places.userRatingCount,places.photos,places.formattedAddress,places.location,places.currentOpeningHours.openNow",
             forHTTPHeaderField: "X-Goog-FieldMask"
@@ -147,6 +149,7 @@ struct GooglePlacesService {
 
         var request = URLRequest(url: URL(string: "https://places.googleapis.com/v1/places/\(placeId)")!)
         request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
+        GoogleAPIRequest.addBundleIdentifierHeader(to: &request)
         request.setValue(Self.detailFields, forHTTPHeaderField: "X-Goog-FieldMask")
 
         let (data, response) = try await session.data(for: request)

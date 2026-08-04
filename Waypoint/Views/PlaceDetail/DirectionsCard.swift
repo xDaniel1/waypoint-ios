@@ -41,6 +41,10 @@ struct DirectionsCard: View {
                             routeList
                         } else {
                             pagedRoutes
+                                // The page dots sit near the bottom of the pager's own fixed
+                                // frame, so without this they read as jammed against the sheet's
+                                // bottom edge — Apple Maps leaves real breathing room below them.
+                                .padding(.bottom, 24)
                         }
                     }
                 }

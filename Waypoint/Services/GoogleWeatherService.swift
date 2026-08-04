@@ -34,6 +34,7 @@ struct GoogleWeatherService {
         ]
         var request = URLRequest(url: components.url!)
         request.timeoutInterval = 12
+        GoogleAPIRequest.addBundleIdentifierHeader(to: &request)
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {

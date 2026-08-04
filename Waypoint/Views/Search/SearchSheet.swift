@@ -1032,7 +1032,7 @@ private struct AroundMeResultCard: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10).fill(.quaternary.opacity(0.6))
                     if let imageURL {
-                        AsyncImage(url: imageURL) { image in
+                        GooglePhotoImage(url: imageURL) { image in
                             image.resizable().scaledToFill()
                         } placeholder: {
                             Color.clear

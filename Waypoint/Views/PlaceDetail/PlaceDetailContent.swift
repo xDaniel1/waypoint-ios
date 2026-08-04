@@ -439,7 +439,7 @@ struct PlaceDetailContent: View {
     private func photoImage(_ photo: GooglePlace.Photo, contentMode: ContentMode) -> some View {
         Group {
             if let url = viewModel.photoURL(for: photo) {
-                AsyncImage(url: url) { phase in
+                GooglePhotoImage(url: url) { phase in
                     switch phase {
                     case .success(let image):
                         image.resizable().aspectRatio(contentMode: contentMode)
