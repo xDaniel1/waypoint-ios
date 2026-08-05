@@ -34,10 +34,16 @@
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Waypoint uses your location to center the map and show places near you.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Waypoint uses your location in the background to keep tracking your trip and reroute you if you drift off course while another app is open.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Waypoint uses the microphone for voice search.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Waypoint uses speech recognition to turn your voice into a search query.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 	<key>GOOGLE_PLACES_API_KEY</key>
 	<string>$(GOOGLE_PLACES_API_KEY)</string>
 	<key>NSSupportsLiveActivities</key>
