@@ -10,7 +10,6 @@ struct PlaceDetailContent: View {
     let onClose: () -> Void
 
     @State private var viewModel = PlaceDetailViewModel()
-    @State private var favoritesStore = FavoritesStore()
     @State private var lightbox: LightboxSelection?
 
     var body: some View {

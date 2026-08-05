@@ -654,6 +654,7 @@ struct MapScreen: View {
                             onHeightChange: { navBarHeight = $0 }
                         )
                     }
+                }
             }
             .sheet(isPresented: $showingTransitDetails) {
                 if let route = navigationViewModel.route {
@@ -714,6 +715,14 @@ struct MapScreen: View {
     private var originRegionForAddStop: MKCoordinateRegion? {
         guard let coordinate = viewModel.currentLocation?.coordinate else { return nil }
         return MKCoordinateRegion(center: coordinate, latitudinalMeters: 8000, longitudinalMeters: 8000)
+    }
+
+    /// CLLocation reports speed in m/s (negative when invalid); converted to whichever unit
+    /// the speed limit sign is already using so the two numbers are directly comparable.
+    private func currentSpeedValue(matching unit: String) -> Int? {
+        guard let speed = viewModel.currentLocation?.speed, speed >= 0 else { return nil }
+        let converted = unit == "mph" ? speed * 2.23694 : speed * 3.6
+        return Int(converted.rounded())
     }
 
 
