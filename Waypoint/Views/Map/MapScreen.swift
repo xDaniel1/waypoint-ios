@@ -31,6 +31,7 @@ struct MapScreen: View {
     @State private var speedLimitService = SpeedLimitService()
     @State private var navBarHeight: CGFloat = 120
     @State private var voiceGuidance = VoiceGuidanceService()
+    @State private var navigationNotifications = NavigationNotificationService()
     @State private var isRerouting = false
     @State private var isSearchingAlongRoute = false
     @State private var isAddingNavStop = false
@@ -222,6 +223,9 @@ struct MapScreen: View {
                 // A tap alongside the voice cue so a turn still registers over road noise or
                 // when muted — Apple Maps does the same on the Watch and CarPlay.
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                // No-op unless the app is actually backgrounded — see
+                // NavigationNotificationService for why this isn't real push.
+                navigationNotifications.postNextTurn(text)
             }
             // The view model can tell us we've drifted off the path, or that a stop was added
             // mid-trip via search-along-route — either way it doesn't fetch routes itself,
@@ -267,6 +271,10 @@ struct MapScreen: View {
                         intermediateStops: directionsViewModel.stops.map(\.coordinate)
                     )
                     directionsViewModel.stop()
+                    // Contextual, not upfront: this is the moment background tracking actually
+                    // becomes useful, which is exactly when Apple expects an Always-location ask.
+                    viewModel.beginBackgroundTracking()
+                    Task { await navigationNotifications.requestAuthorization() }
                     // Starting navigation always takes the camera back, even if the user had
                     // panned away while choosing a route.
                     isCameraUserControlled = false
@@ -464,23 +472,18 @@ struct MapScreen: View {
             VStack {
                 NavigationBanner(
                     currentInstruction: navigationViewModel.currentStep?.instruction ?? "Head to \(navigationViewModel.destinationName)",
-                    nextInstruction: navigationViewModel.nextStep?.instruction,
-                    currentManeuverIcon: navigationViewModel.currentStep?.maneuverIcon ?? "arrow.up",
-                    nextManeuverIcon: navigationViewModel.nextStep?.maneuverIcon ?? "arrow.up"
+                    nextInstruction: navigationViewModel.nextStep?.instruction
                 )
                 .padding(.top, 4)
 
                 if let limit = speedLimitService.display {
-                    HStack(spacing: 10) {
+                    HStack {
                         SpeedLimitSign(speedLimit: limit.value, unitLabel: limit.unit)
-                        if let speed = currentSpeedValue(matching: limit.unit) {
-                            CurrentSpeedReadout(speed: speed, unit: limit.unit, isOverLimit: speed > limit.value + 3)
-                        }
+                            .padding(.leading, 16)
+                            .padding(.top, 6)
+                            .transition(.scale.combined(with: .opacity))
                         Spacer()
                     }
-                    .padding(.leading, 16)
-                    .padding(.top, 6)
-                    .transition(.scale.combined(with: .opacity))
                 }
                 Spacer()
             }
@@ -497,6 +500,8 @@ struct MapScreen: View {
                     onEndRoute: {
                         navigationViewModel.end()
                         speedLimitService.reset()
+                        viewModel.endBackgroundTracking()
+                        navigationNotifications.clear()
                     },
                     onAddStop: { isAddingNavStop = true },
                     onReportIncident: { isReportingIncident = true },
@@ -536,13 +541,6 @@ struct MapScreen: View {
         return MKCoordinateRegion(center: coordinate, latitudinalMeters: 8000, longitudinalMeters: 8000)
     }
 
-    /// CLLocation reports speed in m/s (negative when invalid); converted to whichever unit
-    /// the speed limit sign is already using so the two numbers are directly comparable.
-    private func currentSpeedValue(matching unit: String) -> Int? {
-        guard let speed = viewModel.currentLocation?.speed, speed >= 0 else { return nil }
-        let converted = unit == "mph" ? speed * 2.23694 : speed * 3.6
-        return Int(converted.rounded())
-    }
 
     /// Route-overview / mute / report stack on the right, matching Apple Maps' nav controls.
     private var navigationSideButtons: some View {

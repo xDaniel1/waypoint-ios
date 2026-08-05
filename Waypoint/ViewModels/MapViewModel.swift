@@ -44,6 +44,20 @@ final class MapViewModel {
         }
     }
 
+    /// Called when turn-by-turn navigation starts — the contextually-right moment to ask for
+    /// Always authorization (Apple rejects apps that ask upfront) and to let updates keep
+    /// flowing if the driver backgrounds the app mid-trip.
+    func beginBackgroundTracking() {
+        locationManager.requestAlwaysPermission()
+        locationManager.setBackgroundUpdatesEnabled(true)
+    }
+
+    /// Called when navigation ends, so the app isn't tracking location in the background once
+    /// there's no active trip to track.
+    func endBackgroundTracking() {
+        locationManager.setBackgroundUpdatesEnabled(false)
+    }
+
     func centerCamera(on coordinate: CLLocationCoordinate2D) {
         cameraPosition = .region(
             MKCoordinateRegion(

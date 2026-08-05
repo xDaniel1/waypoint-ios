@@ -4,6 +4,10 @@ Keeping track of what I've added/changed/fixed as I go. Loosely follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+- Background location during active navigation: requests "Always" authorization contextually (only when a trip actually starts, not on launch — Apple rejects apps that ask upfront) and lets location updates keep flowing if the app is backgrounded mid-drive, so rerouting/ETA stay accurate. Turned back off when the trip ends.
+- Local notifications for the next turn when the app is backgrounded during navigation, using the same phrasing as the in-app voice guidance. This is honestly *local*, not push — there's no backend server to send anything from, so true remote/silent push isn't something this app can build without one.
+
 ## [0.2.0] - 2026-08-02
 
 ### Fixed
