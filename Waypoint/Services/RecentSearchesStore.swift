@@ -1,16 +1,35 @@
 import Foundation
 import Observation
 
+/// See `FavoritesStore`'s doc comment for why `NSUbiquitousKeyValueStore` and not `UserDefaults`,
+/// and its last-write-wins-per-key sync caveat — same tradeoff applies here.
 @Observable
 final class RecentSearchesStore {
     private(set) var recents: [RecentSearch] = []
 
     private let defaultsKey = "com.danielguzman.waypoint.recentSearches"
     private let maxCount = 10
-    private let defaults: UserDefaults
+    private let store: KeyValueStore
 
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
+    init(store: KeyValueStore = NSUbiquitousKeyValueStore.default) {
+        self.store = store
+        load()
+        if let ubiquitousStore = store as? NSUbiquitousKeyValueStore {
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(externalChange),
+                name: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
+                object: ubiquitousStore
+            )
+            ubiquitousStore.synchronize()
+        }
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func externalChange() {
         load()
     }
 
@@ -42,13 +61,14 @@ final class RecentSearchesStore {
     }
 
     private func load() {
-        guard let data = defaults.data(forKey: defaultsKey),
+        guard let data = store.data(forKey: defaultsKey),
               let decoded = try? JSONDecoder().decode([RecentSearch].self, from: data) else { return }
         recents = decoded
     }
 
     private func save() {
         guard let data = try? JSONEncoder().encode(recents) else { return }
-        defaults.set(data, forKey: defaultsKey)
+        store.set(data, forKey: defaultsKey)
+        (store as? NSUbiquitousKeyValueStore)?.synchronize()
     }
 }

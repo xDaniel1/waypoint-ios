@@ -62,6 +62,7 @@ struct GoogleAirQualityService {
         request.httpMethod = "POST"
         request.setValue(Bundle.main.bundleIdentifier ?? "com.danielguzman.waypoint", forHTTPHeaderField: "X-Ios-Bundle-Identifier")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        GoogleAPIRequest.addBundleIdentifierHeader(to: &request)
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "location": ["latitude": coordinate.latitude, "longitude": coordinate.longitude],
             "universalAqi": true,

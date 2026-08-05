@@ -63,6 +63,7 @@ final class SpeedLimitService {
         ]
         var request = URLRequest(url: components.url!)
         request.timeoutInterval = 8
+        GoogleAPIRequest.addBundleIdentifierHeader(to: &request)
 
         do {
             let (data, response) = try await session.data(for: request)

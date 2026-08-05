@@ -105,6 +105,9 @@ final class SearchViewModel {
     }
 
     func selectFavorite(_ favorite: FavoritePlace) {
+        // Deliberately searches by `favorite.title` (the real place name), not `displayTitle` —
+        // a custom nickname like "Mom's House" would go straight into Google's text search and
+        // fail to resolve. The nickname is a label for browsing the Favorites list, not a query.
         selectedResult = syntheticResult(title: favorite.title, coordinate: favorite.coordinate)
         queryText = favorite.title
     }

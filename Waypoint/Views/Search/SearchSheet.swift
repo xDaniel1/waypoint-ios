@@ -38,6 +38,11 @@ struct SearchSheet: View {
     @State private var isAddingFavorite = false
     /// Which "see all" list the user opened from a section header chevron.
     @State private var expandedList: HomeList?
+    /// The favorite currently open in the rename/emoji/color editor, from either the home row
+    /// or a search-results circle — `SavedListSheet` has its own copy of this for edits started
+    /// from the full list, since that's a separate presented sheet.
+    @State private var editingFavorite: FavoritePlace?
+    @State private var aroundMe = AroundMeViewModel()
     @AppStorage("com.danielguzman.waypoint.hasDismissedVoiceSearchTip") private var hasDismissedTip = false
 
     enum HomeList: String, Identifiable {
@@ -63,7 +68,8 @@ struct SearchSheet: View {
                 PlaceDetailContent(
                     result: selected,
                     currentLocation: currentLocation,
-                    directionsViewModel: directionsViewModel
+                    directionsViewModel: directionsViewModel,
+                    favoritesStore: viewModel.favoritesStore
                 ) {
                     viewModel.clearSelection()
                 }
@@ -189,8 +195,16 @@ struct SearchSheet: View {
                     select(recent: recent)
                 },
                 onRemoveFavorite: { viewModel.favoritesStore.remove($0) },
-                onRemoveRecent: { viewModel.recentsStore.remove($0) }
+                onRemoveRecent: { viewModel.recentsStore.remove($0) },
+                onUpdateFavorite: { favorite, title, emoji, colorHex in
+                    viewModel.favoritesStore.update(favorite, title: title, emoji: emoji, colorHex: colorHex)
+                }
             )
+        }
+        .sheet(item: $editingFavorite) { favorite in
+            EditFavoriteSheet(favorite: favorite) { title, emoji, colorHex in
+                viewModel.favoritesStore.update(favorite, title: title, emoji: emoji, colorHex: colorHex)
+            }
         }
     }
 
@@ -202,6 +216,7 @@ struct SearchSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 placesRow
+                aroundMeSection
                 if !viewModel.recentsStore.recents.isEmpty {
                     recentsCard
                 }
@@ -237,10 +252,12 @@ struct SearchSheet: View {
                 HStack(alignment: .top, spacing: 18) {
                     ForEach(viewModel.favoritesStore.favorites) { favorite in
                         PlaceCircle(
-                            title: favorite.title,
+                            title: favorite.displayTitle,
                             subtitle: distanceText(to: favorite.coordinate),
                             symbol: PlaceCategoryIcon.icon(for: favorite.title).symbol,
-                            tint: PlaceCategoryIcon.icon(for: favorite.title).color
+                            tint: Color(hex: favorite.colorHex) ?? PlaceCategoryIcon.icon(for: favorite.title).color,
+                            emoji: favorite.emoji,
+                            onEdit: { editingFavorite = favorite }
                         ) {
                             select(favorite: favorite)
                         }
@@ -261,6 +278,68 @@ struct SearchSheet: View {
             }
             .scrollClipDisabled()
         }
+    }
+
+    /// Quick-category shortcuts (Gas, Food, EV Charging) — tapping one runs a real Google
+    /// Places Nearby Search around the user's current location and expands into a result strip,
+    /// rather than just filling the search query like the pills inside the results list do.
+    private var aroundMeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeaderText("Around Me")
+            HStack(spacing: 10) {
+                ForEach(AroundMeViewModel.Category.allCases) { category in
+                    AroundMeChip(
+                        category: category,
+                        isSelected: aroundMe.selectedCategory == category
+                    ) {
+                        guard let coordinate = currentLocation?.coordinate else { return }
+                        aroundMe.select(category, near: coordinate)
+                    }
+                }
+            }
+            if let category = aroundMe.selectedCategory {
+                aroundMeResults(for: category)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func aroundMeResults(for category: AroundMeViewModel.Category) -> some View {
+        if aroundMe.isLoading {
+            ProgressView()
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 8)
+        } else if let errorMessage = aroundMe.errorMessage {
+            Text(errorMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if aroundMe.results.isEmpty {
+            Text("No \(category.title.lowercased()) found nearby.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(aroundMe.results) { place in
+                        AroundMeResultCard(
+                            place: place,
+                            imageURL: aroundMe.photoURL(for: place),
+                            distanceText: place.coordinate.map { distanceText(to: $0) ?? "" }
+                        ) {
+                            selectDiscover(place)
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .scrollClipDisabled()
+        }
+    }
+
+    private func sectionHeaderText(_ title: String) -> some View {
+        Text(title)
+            .font(.title3.weight(.bold))
+            .foregroundStyle(.primary)
     }
 
     private var recentsCard: some View {
@@ -309,6 +388,7 @@ struct SearchSheet: View {
                 .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 16))
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("yourPlacesTile")
         }
     }
 
@@ -414,7 +494,7 @@ struct SearchSheet: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 16) {
                         ForEach(viewModel.favoritesStore.favorites) { favorite in
-                            FavoriteCircle(favorite: favorite) {
+                            FavoriteCircle(favorite: favorite, onEdit: { editingFavorite = favorite }) {
                                 select(favorite: favorite)
                             }
                         }
@@ -628,7 +708,9 @@ private struct PlaceCircle: View {
     let subtitle: String?
     let symbol: String
     let tint: Color
+    var emoji: String? = nil
     var isPlaceholder = false
+    var onEdit: (() -> Void)? = nil
     let action: () -> Void
 
     var body: some View {
@@ -641,9 +723,13 @@ private struct PlaceCircle: View {
                     } else {
                         Circle().fill(tint.gradient)
                     }
-                    Image(systemName: symbol)
-                        .font(.system(size: 28, weight: .semibold))
-                        .foregroundStyle(isPlaceholder ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(.white))
+                    if let emoji, !emoji.isEmpty {
+                        Text(emoji).font(.system(size: 28))
+                    } else {
+                        Image(systemName: symbol)
+                            .font(.system(size: 28, weight: .semibold))
+                            .foregroundStyle(isPlaceholder ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(.white))
+                    }
                 }
                 .frame(width: 68, height: 68)
 
@@ -662,6 +748,13 @@ private struct PlaceCircle: View {
             .frame(width: 78)
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            if let onEdit {
+                Button(action: onEdit) {
+                    Label("Edit", systemImage: "pencil")
+                }
+            }
+        }
     }
 }
 
@@ -726,7 +819,9 @@ private struct SavedListSheet: View {
     let onSelectRecent: (RecentSearch) -> Void
     let onRemoveFavorite: (FavoritePlace) -> Void
     let onRemoveRecent: (RecentSearch) -> Void
+    let onUpdateFavorite: (FavoritePlace, String, String?, String?) -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var editingFavorite: FavoritePlace?
 
     var body: some View {
         NavigationStack {
@@ -741,8 +836,10 @@ private struct SavedListSheet: View {
                             onSelectFavorite(favorite)
                         } label: {
                             row(
-                                title: favorite.title,
-                                subtitle: distanceText(favorite.coordinate) ?? favorite.subtitle
+                                title: favorite.displayTitle,
+                                subtitle: distanceText(favorite.coordinate) ?? favorite.subtitle,
+                                emoji: favorite.emoji,
+                                colorOverride: Color(hex: favorite.colorHex)
                             )
                         }
                         .buttonStyle(.plain)
@@ -750,6 +847,10 @@ private struct SavedListSheet: View {
                             Button(role: .destructive) { onRemoveFavorite(favorite) } label: {
                                 Label("Remove", systemImage: "trash")
                             }
+                            Button { editingFavorite = favorite } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            .tint(.blue)
                         }
                     }
                 case .recents:
@@ -780,14 +881,23 @@ private struct SavedListSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .sheet(item: $editingFavorite) { favorite in
+            EditFavoriteSheet(favorite: favorite) { title, emoji, colorHex in
+                onUpdateFavorite(favorite, title, emoji, colorHex)
+            }
+        }
     }
 
-    private func row(title: String, subtitle: String) -> some View {
+    private func row(title: String, subtitle: String, emoji: String? = nil, colorOverride: Color? = nil) -> some View {
         let icon = PlaceCategoryIcon.icon(for: title)
         return HStack(spacing: 12) {
             ZStack {
-                Circle().fill(icon.color.gradient).frame(width: 34, height: 34)
-                Image(systemName: icon.symbol).font(.caption).foregroundStyle(.white)
+                Circle().fill((colorOverride ?? icon.color).gradient).frame(width: 34, height: 34)
+                if let emoji, !emoji.isEmpty {
+                    Text(emoji).font(.caption)
+                } else {
+                    Image(systemName: icon.symbol).font(.caption).foregroundStyle(.white)
+                }
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.body).foregroundStyle(.primary)
@@ -990,28 +1100,114 @@ private struct NearbyRow: View {
     }
 }
 
+private struct AroundMeChip: View {
+    let category: AroundMeViewModel.Category
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: category.symbol)
+                Text(category.title)
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(isSelected ? .white : .primary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.quaternary.opacity(0.6)),
+                in: Capsule()
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("aroundMeCategory-\(category.rawValue)")
+    }
+}
+
+private struct AroundMeResultCard: View {
+    let place: GooglePlace
+    let imageURL: URL?
+    let distanceText: String?
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10).fill(.quaternary.opacity(0.6))
+                    if let imageURL {
+                        GooglePhotoImage(url: imageURL) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
+                            Color.clear
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    } else {
+                        Image(systemName: "mappin.circle.fill").foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: 56, height: 56)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(place.displayName?.text ?? "Place")
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        if let rating = place.rating {
+                            Image(systemName: "star.fill").font(.caption2).foregroundStyle(.orange)
+                            Text(String(format: "%.1f", rating)).font(.caption).foregroundStyle(.secondary)
+                        }
+                        if let distanceText {
+                            if place.rating != nil { Text("·").font(.caption).foregroundStyle(.secondary) }
+                            Text(distanceText).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .frame(width: 140, alignment: .leading)
+            }
+            .padding(10)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("aroundMeResult-\(place.id)")
+    }
+}
+
 private struct FavoriteCircle: View {
     let favorite: FavoritePlace
+    var onEdit: (() -> Void)? = nil
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Circle()
-                    .fill(Color.indigo.gradient)
+                    .fill((Color(hex: favorite.colorHex) ?? .indigo).gradient)
                     .frame(width: 44, height: 44)
                     .overlay {
-                        Text(favorite.title.prefix(1))
-                            .font(.headline)
-                            .foregroundStyle(.white)
+                        if let emoji = favorite.emoji, !emoji.isEmpty {
+                            Text(emoji).font(.callout)
+                        } else {
+                            Text(favorite.title.prefix(1))
+                                .font(.headline)
+                                .foregroundStyle(.white)
+                        }
                     }
-                Text(favorite.title)
+                Text(favorite.displayTitle)
                     .font(.caption2)
                     .lineLimit(1)
                     .frame(width: 60)
             }
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            if let onEdit {
+                Button(action: onEdit) {
+                    Label("Edit", systemImage: "pencil")
+                }
+            }
+        }
     }
 }
 
@@ -1034,11 +1230,13 @@ private struct AddFavoriteCircle: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("addFavoriteButton")
     }
 }
 
 private struct ProfilePlaceholderSheet: View {
     @Environment(\.dismiss) private var dismiss
+    private let diagnostics = CrashReportingService.shared
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
@@ -1046,23 +1244,34 @@ private struct ProfilePlaceholderSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 64))
-                    .foregroundStyle(.secondary)
-                Text("Accounts aren't built yet")
-                    .font(.headline)
-                Text("Sign-in and synced favorites are planned for a later version of Waypoint. Recents and favorites are stored on this device only for now.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-                Spacer()
-                Text("Waypoint v\(appVersion)")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+            List {
+                Section {
+                    VStack(spacing: 12) {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 56))
+                            .foregroundStyle(.secondary)
+                        Text("Accounts aren't built yet")
+                            .font(.headline)
+                        Text("Sign-in isn't available yet, but Favorites and Recents already sync across your devices via iCloud — no account needed for that part.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .listRowSeparator(.hidden)
+                }
+
+                diagnosticsSection
+
+                Section {
+                    Text("Waypoint v\(appVersion)")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity)
+                        .listRowSeparator(.hidden)
+                }
             }
-            .padding(.top, 40)
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1071,6 +1280,74 @@ private struct ProfilePlaceholderSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
+    }
+
+    private var diagnosticsSection: some View {
+        Section {
+            HStack(spacing: 10) {
+                Image(systemName: lastRunSymbol)
+                    .foregroundStyle(lastRunTint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Last Session").font(.subheadline.weight(.medium))
+                    Text(lastRunDescription).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            if diagnostics.reports.isEmpty {
+                Text("No crash or hang reports recorded.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(diagnostics.reports) { report in
+                    HStack(spacing: 10) {
+                        Image(systemName: report.kind.symbol).foregroundStyle(.red).frame(width: 20)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(report.kind.label).font(.subheadline.weight(.medium))
+                            Text(report.summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            Text("\(report.date.formatted(date: .abbreviated, time: .shortened)) · v\(report.appVersion) · iOS \(report.osVersion)")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+                Button("Clear Reports", role: .destructive) { diagnostics.clearReports() }
+                    .font(.caption)
+            }
+
+            if !diagnostics.isDetailedReportingAvailable {
+                Text("Detailed crash/hang diagnostics need iOS 27 or later. The last-session status above still works on this OS version.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        } header: {
+            Text("Diagnostics")
+        } footer: {
+            Text("Collected on-device via MetricKit — nothing is sent off this phone.")
+        }
+    }
+
+    private var lastRunSymbol: String {
+        switch diagnostics.lastRunEndedCleanly {
+        case .some(true): "checkmark.circle.fill"
+        case .some(false): "exclamationmark.triangle.fill"
+        case nil: "questionmark.circle"
+        }
+    }
+
+    private var lastRunTint: Color {
+        switch diagnostics.lastRunEndedCleanly {
+        case .some(true): .green
+        case .some(false): .orange
+        case nil: .secondary
+        }
+    }
+
+    private var lastRunDescription: String {
+        switch diagnostics.lastRunEndedCleanly {
+        case .some(true): "Ended normally"
+        case .some(false): "Didn't shut down normally — may have crashed or been force-quit"
+        case nil: "Not enough history yet"
+        }
     }
 }

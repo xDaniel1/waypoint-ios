@@ -41,6 +41,11 @@ struct MapScreen: View {
     @State private var stepsRoute: RouteOption?
     @State private var isReportingIncident = false
     @State private var showingTransitDetails = false
+    @State private var liveActivity = LiveActivityService()
+    /// Live Activity updates are rate-limited by the system and cost real battery, so this
+    /// throttles how often a GPS-fix-driven update actually pushes new content — a step-advance
+    /// mid-window still feels responsive since the banner/voice already reacted to it.
+    @State private var lastLiveActivityUpdate: Date = .distantPast
     /// Set when the user pans/zooms/rotates. While true, nothing programmatically moves the
     /// camera — they stay wherever they dragged to until they tap re-center.
     @State private var isCameraUserControlled = false
@@ -102,6 +107,13 @@ struct MapScreen: View {
                 if let selected = directionsViewModel.selectedRoute {
                     MapPolyline(selected.polyline)
                         .stroke(Color.blue, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                    // Colored on top of the base line wherever Google's live traffic data says
+                    // this stretch is actually slower than free-flow — not just the whole-route
+                    // "has traffic" badge.
+                    ForEach(selected.congestionSegments) { segment in
+                        MapPolyline(coordinates: segment.coordinates)
+                            .stroke(segment.severity.color, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                    }
                 }
                 ForEach(Array(directionsViewModel.routeOptions.enumerated()), id: \.element.id) { index, option in
                     routeTimeBubbleAnnotation(index: index, option: option)
@@ -128,6 +140,12 @@ struct MapScreen: View {
                     if remaining.count > 1 {
                         MapPolyline(coordinates: remaining)
                             .stroke(Color.blue, style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
+                    }
+                    if let route = navigationViewModel.route {
+                        ForEach(route.congestionSegments) { segment in
+                            MapPolyline(coordinates: segment.coordinates)
+                                .stroke(segment.severity.color, style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
+                        }
                     }
                 }
             }
@@ -186,6 +204,20 @@ struct MapScreen: View {
                 if navigationViewModel.isActive {
                     navigationViewModel.update(with: location)
                     Task { await speedLimitService.refreshIfNeeded(at: location) }
+                    if Date().timeIntervalSince(lastLiveActivityUpdate) > 20 {
+                        lastLiveActivityUpdate = Date()
+                        let arrival = Date().addingTimeInterval(navigationViewModel.remainingTime)
+                        let minutes = max(1, Int((navigationViewModel.remainingTime / 60).rounded()))
+                        liveActivity.update(
+                            instruction: navigationViewModel.currentStep?.instruction ?? navigationViewModel.destinationName,
+                            remainingMinutes: minutes,
+                            remainingDistanceText: navigationViewModel.formattedRemainingDistance,
+                            arrivalDate: arrival
+                        )
+                        NavigationWidgetDataStore.publish(
+                            .init(destinationName: navigationViewModel.destinationName, arrivalDate: arrival, remainingMinutes: minutes)
+                        )
+                    }
                     // Once the user has panned the map themselves, stop dragging the camera
                     // back to them — they regain control until they tap re-center.
                     guard !isCameraUserControlled else { return }
@@ -261,6 +293,17 @@ struct MapScreen: View {
                         destinationCoordinate: destinationCoordinate,
                         intermediateStops: directionsViewModel.stops.map(\.coordinate)
                     )
+                    let arrival = Date().addingTimeInterval(route.travelTime)
+                    let minutes = max(1, Int((route.travelTime / 60).rounded()))
+                    liveActivity.start(
+                        destinationName: name,
+                        instruction: navigationViewModel.currentStep?.instruction ?? "Head to \(name)",
+                        remainingMinutes: minutes,
+                        remainingDistanceText: navigationViewModel.formattedRemainingDistance,
+                        arrivalDate: arrival
+                    )
+                    NavigationWidgetDataStore.publish(.init(destinationName: name, arrivalDate: arrival, remainingMinutes: minutes))
+                    lastLiveActivityUpdate = Date()
                     directionsViewModel.stop()
                     // Starting navigation always takes the camera back, even if the user had
                     // panned away while choosing a route.
@@ -369,6 +412,20 @@ struct MapScreen: View {
                 intermediates: navigationViewModel.intermediateStops
             ), let newRoute = options.first else { return }
             navigationViewModel.reroute(to: newRoute)
+            // A reroute changes the ETA/instruction enough that it's worth refreshing right
+            // away rather than waiting out the normal GPS-driven throttle window.
+            let arrival = Date().addingTimeInterval(newRoute.travelTime)
+            let minutes = max(1, Int((newRoute.travelTime / 60).rounded()))
+            liveActivity.update(
+                instruction: navigationViewModel.currentStep?.instruction ?? navigationViewModel.destinationName,
+                remainingMinutes: minutes,
+                remainingDistanceText: navigationViewModel.formattedRemainingDistance,
+                arrivalDate: arrival
+            )
+            NavigationWidgetDataStore.publish(
+                .init(destinationName: navigationViewModel.destinationName, arrivalDate: arrival, remainingMinutes: minutes)
+            )
+            lastLiveActivityUpdate = Date()
         }
     }
 
@@ -578,6 +635,8 @@ struct MapScreen: View {
                             onEndRoute: {
                                 navigationViewModel.end()
                                 speedLimitService.reset()
+                                liveActivity.end()
+                                NavigationWidgetDataStore.clear()
                             },
                             onAddStop: { isAddingNavStop = true },
                             onReportIncident: { isReportingIncident = true },

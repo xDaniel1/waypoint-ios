@@ -1,6 +1,7 @@
 import CoreLocation
 import Foundation
 import MapKit
+import SwiftUI
 
 /// A single route alternative, unified across MapKit (drive/walk) and Google Routes (transit/bike),
 /// so the directions UI can present and draw them the same way.
@@ -13,6 +14,10 @@ struct RouteOption: Identifiable {
     let transitSteps: [TransitStep]
     var steps: [RouteStep] = []
     var hasTraffic: Bool = false
+    /// Slow/jammed stretches of this route, for drawing colored segments on the map instead of
+    /// just the whole-route `hasTraffic` badge. Empty for transit/walk/bike — Google only
+    /// returns this for traffic-aware driving routes.
+    var congestionSegments: [CongestionSegment] = []
     /// Ordered walk/transit legs for the transit card's icon sequence.
     var transitLegs: [DirectionsLeg] = []
     /// e.g. "$3.00"
@@ -64,6 +69,28 @@ struct RouteOption: Identifiable {
         formatter.dateFormat = "h:mm"
         return formatter.string(from: arrival)
     }
+}
+
+/// A stretch of a route Google's live traffic data marks as slower than free-flow — drawn as a
+/// colored overlay on top of the base route line, the way Apple/Google Maps color congested
+/// roads. Not a discrete incident (accident, closure, construction): Google's Routes API only
+/// exposes per-segment *speed*, not incident type/location, so that stays a real gap rather
+/// than something faked here.
+struct CongestionSegment: Identifiable {
+    enum Severity {
+        case slow, jam
+
+        var color: Color {
+            switch self {
+            case .slow: .orange
+            case .jam: .red
+            }
+        }
+    }
+
+    let id = UUID()
+    let coordinates: [CLLocationCoordinate2D]
+    let severity: Severity
 }
 
 struct RouteStep: Identifiable {

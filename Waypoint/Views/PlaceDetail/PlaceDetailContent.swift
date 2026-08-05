@@ -6,6 +6,7 @@ struct PlaceDetailContent: View {
     let result: SearchResult
     let currentLocation: CLLocation?
     let directionsViewModel: DirectionsViewModel
+    let favoritesStore: FavoritesStore
     let onClose: () -> Void
 
     @State private var viewModel = PlaceDetailViewModel()
@@ -100,6 +101,13 @@ struct PlaceDetailContent: View {
             }
             .buttonStyle(.plain)
             Spacer()
+            Button {
+                favoritesStore.toggle(result)
+            } label: {
+                floatingCircle(isFavorite ? "star.fill" : "star", tint: isFavorite ? .yellow : .primary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("favoriteButton")
             Button(action: onClose) {
                 floatingCircle("xmark")
             }
@@ -110,10 +118,14 @@ struct PlaceDetailContent: View {
         .padding(.top, 12)
     }
 
-    private func floatingCircle(_ systemName: String) -> some View {
+    private var isFavorite: Bool {
+        favoritesStore.isFavorite(result)
+    }
+
+    private func floatingCircle(_ systemName: String, tint: Color = .primary) -> some View {
         Image(systemName: systemName)
             .font(.system(size: 15, weight: .bold))
-            .foregroundStyle(.primary)
+            .foregroundStyle(tint)
             .frame(width: 34, height: 34)
             .background(.regularMaterial, in: Circle())
     }
@@ -442,7 +454,21 @@ struct PlaceDetailContent: View {
     // MARK: Shared
 
     private func photoImage(_ photo: GooglePlace.Photo, contentMode: ContentMode) -> some View {
-        GooglePlacePhotoView(photoName: photo.name, maxWidthPx: 1200, contentMode: contentMode)
+        Group {
+            if let url = viewModel.photoURL(for: photo) {
+                GooglePhotoImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().aspectRatio(contentMode: contentMode)
+                    default:
+                        Rectangle().fill(.quaternary)
+                    }
+                }
+            } else {
+                Rectangle().fill(.quaternary)
+            }
+        }
+        .clipped()
     }
 
     private func openDirections() {

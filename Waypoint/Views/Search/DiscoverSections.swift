@@ -53,7 +53,7 @@ private struct SuggestedCard: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                placeThumbnail(place.photos?.first?.name, size: 56, cornerRadius: 12)
+                placeThumbnail(imageURL, size: 56, cornerRadius: 12)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(place.displayName?.text ?? "Place")
                         .font(.subheadline.weight(.semibold))
@@ -91,7 +91,7 @@ private struct TrendingCard: View {
         Button(action: action) {
             ZStack(alignment: .topTrailing) {
                 ZStack(alignment: .bottomLeading) {
-                    placeThumbnail(place.photos?.first?.name, size: nil, cornerRadius: 18)
+                    placeThumbnail(imageURL, size: nil, cornerRadius: 18)
                         .frame(width: 240, height: 155)
                         .clipShape(RoundedRectangle(cornerRadius: 18))
 
@@ -141,11 +141,19 @@ private struct TrendingCard: View {
 }
 
 @ViewBuilder
-private func placeThumbnail(_ photoName: String?, size: CGFloat?, cornerRadius: CGFloat) -> some View {
-    GooglePlacePhotoView(photoName: photoName, maxWidthPx: 600, contentMode: .fill)
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-        .clipped()
+private func placeThumbnail(_ url: URL?, size: CGFloat?, cornerRadius: CGFloat) -> some View {
+    GooglePhotoImage(url: url) { phase in
+        switch phase {
+        case .success(let image):
+            image.resizable().aspectRatio(contentMode: .fill)
+        default:
+            Rectangle().fill(.quaternary)
+                .overlay(Image(systemName: "photo").foregroundStyle(.secondary))
+        }
+    }
+    .frame(width: size, height: size)
+    .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+    .clipped()
 }
 
 @ViewBuilder

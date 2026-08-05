@@ -175,6 +175,10 @@ final class WaypointUITests: XCTestCase {
         profileButton.tap()
 
         XCTAssertTrue(app.staticTexts["Accounts aren't built yet"].waitForExistence(timeout: 5))
+        // Real diagnostics (CrashReportingService), not a placeholder — every fresh launch should
+        // at least show the Diagnostics section with a last-session status row.
+        XCTAssertTrue(app.staticTexts["Diagnostics"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Last Session"].exists)
         attachScreenshot("05-profile-sheet")
         app.buttons["Done"].tap()
         XCTAssertTrue(app.textFields["searchField"].waitForExistence(timeout: 5))
@@ -459,5 +463,78 @@ final class WaypointUITests: XCTestCase {
         // Reporting an incident triggers a live route recalculation — the app must survive it.
         XCTAssertTrue(navigationBanner.waitForExistence(timeout: 10), "Navigation should still be active after reporting an incident")
         XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    // The home card's "Around Me" grid should run a real Google Places Nearby Search around the
+    // user's current location, not just fill the search query like the pills elsewhere do.
+    func test14_aroundMeGrid() throws {
+        let searchField = app.textFields["searchField"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Around Me"].waitForExistence(timeout: 5), "Home card should show the Around Me section")
+
+        let foodChip = app.buttons["aroundMeCategory-food"]
+        XCTAssertTrue(foodChip.waitForExistence(timeout: 5))
+        foodChip.tap()
+
+        let firstResult = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'aroundMeResult-'")).firstMatch
+        XCTAssertTrue(firstResult.waitForExistence(timeout: 15), "A real nearby restaurant should load from Google")
+        attachScreenshot("14a-around-me-results")
+
+        // Tapping the same chip again should collapse the strip back down.
+        foodChip.tap()
+        XCTAssertFalse(firstResult.exists, "Tapping the same category again should collapse the results")
+
+        foodChip.tap()
+        XCTAssertTrue(firstResult.waitForExistence(timeout: 15))
+        firstResult.tap()
+
+        XCTAssertTrue(app.buttons["closeDetailButton"].waitForExistence(timeout: 10), "Tapping a result should open the real place detail card")
+        attachScreenshot("14b-around-me-place-detail")
+    }
+
+    // The star on a place card is the only way to create a favorite, since "Add" in the search
+    // results list is unreachable through normal navigation. Then verifies the rename/emoji/color
+    // editor (opened via swipe on the full Favorites list) actually persists into the list row.
+    func test15_editableFavorites() throws {
+        let searchField = app.textFields["searchField"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 10))
+        searchField.tap()
+        searchField.typeText("Blue Bottle Coffee")
+
+        let firstSuggestion = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Blue Bottle'")).firstMatch
+        XCTAssertTrue(firstSuggestion.waitForExistence(timeout: 10))
+        firstSuggestion.tap()
+
+        let favoriteButton = app.buttons["favoriteButton"]
+        XCTAssertTrue(favoriteButton.waitForExistence(timeout: 10), "Place detail card should show a favorite star")
+        favoriteButton.tap()
+        attachScreenshot("13a-favorited")
+
+        app.buttons["closeDetailButton"].tap()
+        XCTAssertTrue(searchField.waitForExistence(timeout: 5), "Should return to the home/search bar")
+
+        let yourPlacesTile = app.buttons["yourPlacesTile"]
+        XCTAssertTrue(yourPlacesTile.waitForExistence(timeout: 5), "Your Places tile should appear once a favorite exists")
+        yourPlacesTile.tap()
+
+        let favoriteRow = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'Blue Bottle'")).firstMatch
+        XCTAssertTrue(favoriteRow.waitForExistence(timeout: 5), "The new favorite should appear in the full list")
+        favoriteRow.swipeLeft()
+
+        let editAction = app.buttons["Edit"]
+        XCTAssertTrue(editAction.waitForExistence(timeout: 5), "Swiping a favorite row should reveal an Edit action")
+        editAction.tap()
+
+        let titleField = app.textFields["editFavoriteTitleField"]
+        XCTAssertTrue(titleField.waitForExistence(timeout: 5), "Edit sheet should present a name field")
+        titleField.tap()
+        titleField.typeText(" (Favorite)")
+        attachScreenshot("13b-editing-favorite")
+
+        app.buttons["Save"].tap()
+
+        let renamedRow = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] '(Favorite)'")).firstMatch
+        XCTAssertTrue(renamedRow.waitForExistence(timeout: 5), "The renamed favorite should show its custom title in the list")
+        attachScreenshot("13c-renamed")
     }
 }
