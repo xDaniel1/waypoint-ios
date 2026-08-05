@@ -133,3 +133,30 @@ struct SpeedLimitSign: View {
         .accessibilityLabel("Speed limit \(speedLimit) \(unitLabel)")
     }
 }
+
+/// The driver's live speed, paired next to the posted limit sign the way Google Maps/Waze do
+/// (Apple Maps doesn't show one, but the red-when-speeding alert is what people expect from
+/// every other nav app). Turns red only once actually over the limit, not just close to it.
+struct CurrentSpeedReadout: View {
+    let speed: Int
+    let unit: String
+    let isOverLimit: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text("\(speed)")
+                .font(.system(size: 22, weight: .heavy))
+            Text(unit)
+                .font(.system(size: 9, weight: .semibold))
+        }
+        .foregroundStyle(isOverLimit ? .white : .primary)
+        .frame(width: 54, height: 54)
+        .background(isOverLimit ? Color.red : Color(.systemBackground), in: Circle())
+        .overlay(
+            Circle().stroke(isOverLimit ? Color.red : Color.secondary.opacity(0.3), lineWidth: 2)
+        )
+        .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+        .animation(.easeInOut(duration: 0.2), value: isOverLimit)
+        .accessibilityLabel(isOverLimit ? "Speeding, \(speed) \(unit)" : "Current speed \(speed) \(unit)")
+    }
+}

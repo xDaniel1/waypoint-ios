@@ -11,16 +11,14 @@ struct LightboxSelection: Identifiable {
 struct PhotoLightbox: View {
     let photos: [GooglePlace.Photo]
     let startIndex: Int
-    let urlProvider: (GooglePlace.Photo) -> URL?
 
     @Environment(\.dismiss) private var dismiss
     @State private var index: Int
     @State private var dragOffset: CGFloat = 0
 
-    init(photos: [GooglePlace.Photo], startIndex: Int, urlProvider: @escaping (GooglePlace.Photo) -> URL?) {
+    init(photos: [GooglePlace.Photo], startIndex: Int, urlProvider: ((GooglePlace.Photo) -> URL?)? = nil) {
         self.photos = photos
         self.startIndex = startIndex
-        self.urlProvider = urlProvider
         _index = State(initialValue: startIndex)
     }
 
@@ -32,7 +30,7 @@ struct PhotoLightbox: View {
 
             TabView(selection: $index) {
                 ForEach(Array(photos.enumerated()), id: \.element.id) { i, photo in
-                    ZoomablePhoto(url: urlProvider(photo))
+                    ZoomablePhoto(photoName: photo.name)
                         .tag(i)
                 }
             }
@@ -89,42 +87,54 @@ struct PhotoLightbox: View {
 
 /// A single photo that supports pinch-to-zoom and double-tap-to-toggle-zoom.
 private struct ZoomablePhoto: View {
-    let url: URL?
-
+    let photoName: String
+    @State private var directURL: URL?
     @State private var scale: CGFloat = 1
     @GestureState private var pinch: CGFloat = 1
+    private let service = GooglePlacesService()
 
     var body: some View {
         GeometryReader { proxy in
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFit()
-                        .scaleEffect(scale * pinch)
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                        .gesture(
-                            MagnifyGesture()
-                                .updating($pinch) { value, state, _ in state = value.magnification }
-                                .onEnded { value in
-                                    scale = min(max(scale * value.magnification, 1), 4)
+            Group {
+                if let directURL {
+                    AsyncImage(url: directURL) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFit()
+                                .scaleEffect(scale * pinch)
+                                .frame(width: proxy.size.width, height: proxy.size.height)
+                                .gesture(
+                                    MagnifyGesture()
+                                        .updating($pinch) { value, state, _ in state = value.magnification }
+                                        .onEnded { value in
+                                            scale = min(max(scale * value.magnification, 1), 4)
+                                        }
+                                )
+                                .onTapGesture(count: 2) {
+                                    withAnimation(.smooth(duration: 0.25)) {
+                                        scale = scale > 1 ? 1 : 2.5
+                                    }
                                 }
-                        )
-                        .onTapGesture(count: 2) {
-                            withAnimation(.smooth(duration: 0.25)) {
-                                scale = scale > 1 ? 1 : 2.5
-                            }
+                        case .failure:
+                            Image(systemName: "photo")
+                                .font(.largeTitle)
+                                .foregroundStyle(.white.opacity(0.5))
+                                .frame(width: proxy.size.width, height: proxy.size.height)
+                        default:
+                            ProgressView()
+                                .tint(.white)
+                                .frame(width: proxy.size.width, height: proxy.size.height)
                         }
-                case .failure:
-                    Image(systemName: "photo")
-                        .font(.largeTitle)
-                        .foregroundStyle(.white.opacity(0.5))
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                default:
+                    }
+                } else {
                     ProgressView()
                         .tint(.white)
                         .frame(width: proxy.size.width, height: proxy.size.height)
+                        .task(id: photoName) {
+                            directURL = await service.fetchPhotoURL(photoName: photoName, maxWidthPx: 1600)
+                        }
                 }
             }
         }

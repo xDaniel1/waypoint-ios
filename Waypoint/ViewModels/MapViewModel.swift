@@ -71,6 +71,19 @@ final class MapViewModel {
         )
     }
 
+    /// Resets pitch to flat 2D when exiting directions or navigation.
+    func resetTo2D(from camera: MapCamera?) {
+        guard let camera, camera.pitch > 1 else { return }
+        cameraPosition = .camera(
+            MapCamera(
+                centerCoordinate: camera.centerCoordinate,
+                distance: camera.distance,
+                heading: camera.heading,
+                pitch: 0
+            )
+        )
+    }
+
     func recenterOnUser() {
         guard let location = currentLocation else { return }
         centerCamera(on: location.coordinate)

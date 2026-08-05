@@ -107,6 +107,18 @@ final class NavigationViewModel {
         return route.steps[currentStepIndex + 1]
     }
 
+    private(set) var currentLocation: CLLocation?
+    
+    var formattedDistanceToNextStep: String? {
+        guard let route, route.steps.indices.contains(currentStepIndex + 1),
+              let nextStart = polylineCoord(forStep: currentStepIndex + 1, in: route),
+              let location = currentLocation else { return nil }
+        let distance = location.distance(from: CLLocation(latitude: nextStart.latitude, longitude: nextStart.longitude))
+        guard distance > 5 else { return nil }
+        return Measurement(value: distance, unit: UnitLength.meters)
+            .formatted(.measurement(width: .abbreviated, usage: .road))
+    }
+
     var formattedArrival: String {
         Date().addingTimeInterval(remainingTime)
             .formatted(date: .omitted, time: .shortened)
@@ -200,6 +212,7 @@ final class NavigationViewModel {
     /// to that step's start point, shortens the ETA linearly based on progress along the polyline,
     /// speaks upcoming/immediate maneuvers, and flags when the driver has drifted off the route.
     func update(with location: CLLocation) {
+        self.currentLocation = location
         guard let route else { return }
         if route.steps.indices.contains(currentStepIndex + 1),
            let nextStart = polylineCoord(forStep: currentStepIndex + 1, in: route) {

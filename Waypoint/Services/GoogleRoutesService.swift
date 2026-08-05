@@ -41,6 +41,7 @@ struct GoogleRoutesService {
         var request = URLRequest(url: URL(string: "https://routes.googleapis.com/directions/v2:computeRoutes")!)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
+        request.setValue(Bundle.main.bundleIdentifier ?? "com.danielguzman.waypoint", forHTTPHeaderField: "X-Ios-Bundle-Identifier")
         request.setValue(
             [
                 "routes.duration", "routes.staticDuration", "routes.distanceMeters",
@@ -132,7 +133,11 @@ struct GoogleRoutesService {
         for leg in route.legs ?? [] {
             for step in leg.steps ?? [] {
                 if let instruction = step.navigationInstruction?.instructions, !instruction.isEmpty {
-                    steps.append(RouteStep(instruction: instruction, distanceMeters: Double(step.distanceMeters ?? 0)))
+                    steps.append(RouteStep(
+                        instruction: instruction,
+                        distanceMeters: Double(step.distanceMeters ?? 0),
+                        maneuver: step.navigationInstruction?.maneuver
+                    ))
                 }
             }
         }
@@ -163,7 +168,9 @@ struct GoogleRoutesService {
                         arrivalStop: td.stopDetails?.arrivalStop?.name ?? "—",
                         numStops: td.stopCount,
                         headsign: td.headsign,
-                        color: line?.color
+                        color: line?.color,
+                        departureISO: td.stopDetails?.departureTime,
+                        arrivalISO: td.stopDetails?.arrivalTime
                     )))
                 } else if step.travelMode == "WALK" {
                     walkSeconds += parseDuration(step.staticDuration)
@@ -225,7 +232,8 @@ struct GoogleRoutesService {
                     numStops: td.stopCount,
                     headsign: td.headsign,
                     color: line?.color,
-                    departureISO: td.stopDetails?.departureTime
+                    departureISO: td.stopDetails?.departureTime,
+                    arrivalISO: td.stopDetails?.arrivalTime
                 ))
             }
         }
@@ -284,6 +292,7 @@ private struct RoutesResponse: Codable {
 
     struct NavInstruction: Codable {
         let instructions: String?
+        let maneuver: String?
     }
 
     struct TransitDetails: Codable {
@@ -297,6 +306,7 @@ private struct RoutesResponse: Codable {
         let arrivalStop: Stop?
         let departureStop: Stop?
         let departureTime: String?
+        let arrivalTime: String?
     }
 
     struct Stop: Codable {

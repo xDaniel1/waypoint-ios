@@ -17,10 +17,15 @@ final class VoiceGuidanceService {
 
     func speak(_ text: String) {
         guard !isMuted else { return }
-        try? AVAudioSession.sharedInstance().setCategory(
-            .playback, mode: .voicePrompt, options: [.duckOthers, .mixWithOthers]
-        )
-        try? AVAudioSession.sharedInstance().setActive(true)
+        // Apple's own API warns setActive can block for a while if called on the main thread —
+        // it was doing exactly that here, causing a UI hitch right as navigation starts (the
+        // same moment other nav UI is trying to animate in).
+        Task.detached(priority: .userInitiated) {
+            try? AVAudioSession.sharedInstance().setCategory(
+                .playback, mode: .voicePrompt, options: [.duckOthers, .mixWithOthers]
+            )
+            try? AVAudioSession.sharedInstance().setActive(true)
+        }
 
         let utterance = AVSpeechUtterance(string: text)
         // `Locale.current.identifier` is underscore-separated ("en_US") and doesn't reliably

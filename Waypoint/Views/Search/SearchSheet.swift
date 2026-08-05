@@ -2,12 +2,13 @@ import CoreLocation
 import MapKit
 import SwiftUI
 
-private let categories: [(title: String, symbol: String)] = [
-    ("Restaurants", "fork.knife"),
-    ("Coffee", "cup.and.saucer.fill"),
-    ("Gas", "fuelpump.fill"),
-    ("Groceries", "cart.fill"),
-    ("Hotels", "bed.double.fill"),
+private let categories: [(title: String, emoji: String, query: String)] = [
+    ("Fast Food", "🍔", "Fast Food"),
+    ("Dinner", "🍽️", "Dinner Restaurants"),
+    ("Gas Stations", "⛽", "Gas Station"),
+    ("Coffee", "☕", "Coffee Shop"),
+    ("Groceries", "🛒", "Grocery Store"),
+    ("Movies", "🍿", "Movie Theater"),
 ]
 
 extension PresentationDetent {
@@ -25,11 +26,16 @@ struct SearchSheet: View {
     @Binding var sheetHeight: CGFloat
     @Binding var directionsHeight: CGFloat
     let onStartNavigation: (RouteOption) -> Void
+    /// Bubbled up to MapScreen, which owns the actual sheet presentation — see the comment on
+    /// DirectionsCard's matching properties for why this can't be presented from in here.
+    let onAddStop: () -> Void
+    let onShowSteps: (RouteOption) -> Void
     @FocusState private var isFieldFocused: Bool
     /// Stays true for the whole search session — scrolling dismisses the keyboard but must NOT
     /// drop you back to the map, so the results list is driven by this, not by keyboard focus.
     @State private var isSearching = false
     @State private var isShowingProfile = false
+    @State private var isAddingFavorite = false
     /// Which "see all" list the user opened from a section header chevron.
     @State private var expandedList: HomeList?
     @AppStorage("com.danielguzman.waypoint.hasDismissedVoiceSearchTip") private var hasDismissedTip = false
@@ -48,7 +54,9 @@ struct SearchSheet: View {
                     detent: $detent,
                     contentHeight: $directionsHeight,
                     onClose: { directionsViewModel.stop() },
-                    onStartNavigation: { route in onStartNavigation(route) }
+                    onStartNavigation: { route in onStartNavigation(route) },
+                    onAddStop: onAddStop,
+                    onShowSteps: onShowSteps
                 )
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             } else if let selected = viewModel.selectedResult, !isSearching {
@@ -67,12 +75,19 @@ struct SearchSheet: View {
                 HStack(spacing: 8) {
                     searchField
                     if isSearching {
-                        Button("Cancel") {
+                        Button {
                             isFieldFocused = false
                             isSearching = false
+                            isAddingFavorite = false
                             viewModel.queryText = ""
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(.primary)
+                                .frame(width: 32, height: 32)
+                                .background(.regularMaterial, in: Circle())
                         }
-                        .font(.body)
+                        .buttonStyle(.plain)
                         .accessibilityIdentifier("cancelSearchButton")
                     } else {
                         profileButton
@@ -89,6 +104,7 @@ struct SearchSheet: View {
 
                 if isSearching {
                     List {
+                        filterChipsSection
                         if viewModel.queryText.isEmpty {
                             tipSection
                             placesSection
@@ -236,6 +252,8 @@ struct SearchSheet: View {
                         tint: .secondary,
                         isPlaceholder: true
                     ) {
+                        isAddingFavorite = true
+                        isSearching = true
                         isFieldFocused = true
                     }
                 }
@@ -312,7 +330,7 @@ struct SearchSheet: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            TextField("Search Maps", text: $viewModel.queryText)
+            TextField(isAddingFavorite ? "Search to Add Favorite" : "Search Maps", text: $viewModel.queryText)
                 .focused($isFieldFocused)
                 .submitLabel(.search)
                 .accessibilityIdentifier("searchField")
@@ -414,20 +432,86 @@ struct SearchSheet: View {
         }
     }
 
+    private var filterChipsSection: some View {
+        Section {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    Button {
+                        viewModel.filterOpenNow.toggle()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: viewModel.filterOpenNow ? "clock.fill" : "clock")
+                            Text("Open Now")
+                        }
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(viewModel.filterOpenNow ? Color.white : Color.primary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(viewModel.filterOpenNow ? Color.blue : Color.primary.opacity(0.08), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        viewModel.filterTopRated.toggle()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "star.fill")
+                                .foregroundStyle(viewModel.filterTopRated ? .white : .yellow)
+                            Text("4★ & Up")
+                        }
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(viewModel.filterTopRated ? Color.white : Color.primary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(viewModel.filterTopRated ? Color.blue : Color.primary.opacity(0.08), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        if viewModel.filterMaxPrice == 2 {
+                            viewModel.filterMaxPrice = nil
+                        } else {
+                            viewModel.filterMaxPrice = 2
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "dollarsign.circle")
+                            Text("Under $$")
+                        }
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(viewModel.filterMaxPrice != nil ? Color.white : Color.primary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(viewModel.filterMaxPrice != nil ? Color.blue : Color.primary.opacity(0.08), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+            }
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+        }
+    }
+
     private var categoriesSection: some View {
         Section {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     ForEach(categories, id: \.title) { category in
                         Button {
-                            viewModel.queryText = category.title
+                            viewModel.queryText = category.query
                         } label: {
-                            Label(category.title, systemImage: category.symbol)
-                                .font(.subheadline.weight(.medium))
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
+                            HStack(spacing: 6) {
+                                Text(category.emoji).font(.subheadline)
+                                Text(category.title).font(.subheadline.weight(.semibold))
+                            }
+                            .foregroundStyle(.primary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(.quaternary.opacity(0.8), in: Capsule())
                         }
-                        .buttonStyle(.glass)
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.vertical, 4)
@@ -484,10 +568,19 @@ struct SearchSheet: View {
         }
     }
 
+    private func handleSelectionForFavorites() {
+        if isAddingFavorite, let result = viewModel.selectedResult {
+            viewModel.favoritesStore.toggle(result)
+            isAddingFavorite = false
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        }
+    }
+
     private func select(suggestion: MKLocalSearchCompletion) async {
         isFieldFocused = false
         isSearching = false
         await viewModel.select(suggestion)
+        handleSelectionForFavorites()
     }
 
     /// Resolves the suggestion, then jumps straight to directions — the one-tap "Directions"
@@ -510,6 +603,7 @@ struct SearchSheet: View {
         isFieldFocused = false
         isSearching = false
         viewModel.selectResult(result)
+        handleSelectionForFavorites()
     }
 
     private func select(favorite: FavoritePlace) {
@@ -522,6 +616,7 @@ struct SearchSheet: View {
         isFieldFocused = false
         isSearching = false
         viewModel.selectDiscover(place)
+        handleSelectionForFavorites()
     }
 }
 

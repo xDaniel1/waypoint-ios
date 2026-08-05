@@ -1,5 +1,6 @@
 import CoreLocation
 import Foundation
+import SwiftUI
 
 enum GooglePlacesError: Error {
     case missingAPIKey
@@ -54,6 +55,39 @@ private actor PlaceDetailsCache {
     }
 }
 
+/// Caches Nearby Search results in memory so re-opening Discover or re-tapping the same
+/// search-along-route category near the same spot costs zero additional Places API calls
+/// within the TTL. Unlike Place Details, this doesn't need hour-long freshness — 10 minutes is
+/// long enough to absorb repeat opens/taps without nearby restaurants or gas stations going stale.
+private actor NearbySearchCache {
+    static let shared = NearbySearchCache()
+
+    private struct Entry {
+        let places: [GooglePlace]
+        let cachedAt: Date
+    }
+
+    private let ttl: TimeInterval = 600
+    private var entries: [String: Entry] = [:]
+
+    func places(forKey key: String) -> [GooglePlace]? {
+        guard let entry = entries[key], Date().timeIntervalSince(entry.cachedAt) < ttl else { return nil }
+        return entry.places
+    }
+
+    func store(_ places: [GooglePlace], forKey key: String) {
+        entries[key] = Entry(places: places, cachedAt: Date())
+    }
+
+    /// Coordinate rounded to ~1km — coarser than the Place Details cache key since Nearby
+    /// Search already covers a multi-km radius, so sub-km precision buys nothing.
+    static func key(includedTypes: [String], coordinate: CLLocationCoordinate2D, radius: Double) -> String {
+        let lat = (coordinate.latitude * 100).rounded() / 100
+        let lng = (coordinate.longitude * 100).rounded() / 100
+        return "\(includedTypes.joined(separator: ","))|\(lat)|\(lng)|\(Int(radius))"
+    }
+}
+
 struct GooglePlacesService {
     private static let detailFields = [
         "id", "displayName", "primaryTypeDisplayName", "formattedAddress",
@@ -82,6 +116,7 @@ struct GooglePlacesService {
         var request = URLRequest(url: URL(string: "https://places.googleapis.com/v1/places:searchText")!)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
+        request.setValue(Bundle.main.bundleIdentifier ?? "com.danielguzman.waypoint", forHTTPHeaderField: "X-Ios-Bundle-Identifier")
         request.setValue("places.id", forHTTPHeaderField: "X-Goog-FieldMask")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
@@ -114,9 +149,13 @@ struct GooglePlacesService {
     ) async throws -> [GooglePlace] {
         guard !apiKey.isEmpty else { throw GooglePlacesError.missingAPIKey }
 
+        let key = NearbySearchCache.key(includedTypes: includedTypes, coordinate: coordinate, radius: radius)
+        if let cached = await NearbySearchCache.shared.places(forKey: key) { return cached }
+
         var request = URLRequest(url: URL(string: "https://places.googleapis.com/v1/places:searchNearby")!)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
+        request.setValue(Bundle.main.bundleIdentifier ?? "com.danielguzman.waypoint", forHTTPHeaderField: "X-Ios-Bundle-Identifier")
         request.setValue(
             "places.id,places.displayName,places.primaryTypeDisplayName,places.rating,places.userRatingCount,places.photos,places.formattedAddress,places.location,places.currentOpeningHours.openNow",
             forHTTPHeaderField: "X-Goog-FieldMask"
@@ -137,7 +176,9 @@ struct GooglePlacesService {
         let (data, response) = try await session.data(for: request)
         try Self.validate(response)
         let decoded = try JSONDecoder().decode(NearbySearchResponse.self, from: data)
-        return decoded.places ?? []
+        let places = decoded.places ?? []
+        await NearbySearchCache.shared.store(places, forKey: key)
+        return places
     }
 
     func placeDetails(placeId: String) async throws -> GooglePlace {
@@ -147,6 +188,7 @@ struct GooglePlacesService {
 
         var request = URLRequest(url: URL(string: "https://places.googleapis.com/v1/places/\(placeId)")!)
         request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
+        request.setValue(Bundle.main.bundleIdentifier ?? "com.danielguzman.waypoint", forHTTPHeaderField: "X-Ios-Bundle-Identifier")
         request.setValue(Self.detailFields, forHTTPHeaderField: "X-Goog-FieldMask")
 
         let (data, response) = try await session.data(for: request)
@@ -166,11 +208,93 @@ struct GooglePlacesService {
         return components?.url
     }
 
+    /// Fetches the direct CDN URL for a photo by passing skipHttpRedirect=true alongside the bundle ID header,
+    /// returning a direct lh3.googleusercontent.com CDN URL that AsyncImage can load without custom headers.
+    func fetchPhotoURL(photoName: String, maxWidthPx: Int = 800) async -> URL? {
+        guard !apiKey.isEmpty else { return nil }
+        let cacheKey = "\(photoName)|\(maxWidthPx)"
+        if let cached = await PhotoURLCache.shared.url(forKey: cacheKey) {
+            return cached
+        }
+        var components = URLComponents(string: "https://places.googleapis.com/v1/\(photoName)/media")
+        components?.queryItems = [
+            URLQueryItem(name: "maxWidthPx", value: String(maxWidthPx)),
+            URLQueryItem(name: "key", value: apiKey),
+            URLQueryItem(name: "skipHttpRedirect", value: "true"),
+        ]
+        guard let url = components?.url else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue(Bundle.main.bundleIdentifier ?? "com.danielguzman.waypoint", forHTTPHeaderField: "X-Ios-Bundle-Identifier")
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
+            let decoded = try JSONDecoder().decode(PhotoMediaResponse.self, from: data)
+            if let photoUri = decoded.photoUri, let directURL = URL(string: photoUri) {
+                await PhotoURLCache.shared.store(directURL, forKey: cacheKey)
+                return directURL
+            }
+        } catch {
+            return nil
+        }
+        return nil
+    }
+
     private static func validate(_ response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
             throw GooglePlacesError.requestFailed(status)
         }
+    }
+}
+
+private actor PhotoURLCache {
+    static let shared = PhotoURLCache()
+    private var entries: [String: URL] = [:]
+
+    func url(forKey key: String) -> URL? { entries[key] }
+    func store(_ url: URL, forKey key: String) { entries[key] = url }
+}
+
+private struct PhotoMediaResponse: Codable {
+    let photoUri: String?
+}
+
+/// A robust SwiftUI image view that resolves Google Places photo names to direct CDN URLs
+/// (using skipHttpRedirect=true + bundle ID header), bypassing header limitations of AsyncImage.
+struct GooglePlacePhotoView: View {
+    let photoName: String?
+    var maxWidthPx: Int = 800
+    var contentMode: ContentMode = .fill
+    @State private var directURL: URL?
+    private let service = GooglePlacesService()
+
+    var body: some View {
+        Group {
+            if let photoName, !photoName.isEmpty {
+                if let directURL {
+                    AsyncImage(url: directURL) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: contentMode)
+                        default:
+                            Rectangle().fill(.quaternary)
+                        }
+                    }
+                } else {
+                    Rectangle()
+                        .fill(.quaternary)
+                        .task(id: photoName) {
+                            directURL = await service.fetchPhotoURL(photoName: photoName, maxWidthPx: maxWidthPx)
+                        }
+                }
+            } else {
+                Rectangle().fill(.quaternary)
+            }
+        }
+        .clipped()
     }
 }
 

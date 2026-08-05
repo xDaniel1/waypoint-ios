@@ -12,9 +12,14 @@ struct DirectionsCard: View {
     @Binding var contentHeight: CGFloat
     let onClose: () -> Void
     let onStartNavigation: (RouteOption) -> Void
+    /// This card is itself content of MapScreen's outer search sheet, so its own AddStop/Steps
+    /// sheets can't be presented with a `.sheet` attached here — SwiftUI doesn't reliably present
+    /// a sheet from inside content that's already sheet-presented (observed on Xcode 27 beta:
+    /// the nested sheet silently never appears). MapScreen owns those sheets instead; these just
+    /// ask it to show them.
+    let onAddStop: () -> Void
+    let onShowSteps: (RouteOption) -> Void
 
-    @State private var showingSteps = false
-    @State private var isAddingStop = false
     @Namespace private var modeNamespace
 
     private var isExpanded: Bool { detent == .large }
@@ -24,8 +29,8 @@ struct DirectionsCard: View {
             // Header stays pinned so the close button is reachable at every detent height.
             header
                 .padding(.horizontal)
-                .padding(.top, 20)
-                .padding(.bottom, 12)
+                .padding(.top, 16)
+                .padding(.bottom, 10)
 
             // A ScrollView always fills its container regardless of how tall its content
             // actually is — that's what left dead space below the route card at rest. Only
@@ -41,30 +46,21 @@ struct DirectionsCard: View {
                 contentStack
             }
         }
+        .fixedSize(horizontal: false, vertical: !isExpanded)
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.height
         } action: { newValue in
-            guard !isExpanded else { return }
-            contentHeight = newValue
+            guard !isExpanded, !viewModel.isCalculating, newValue > 0 else { return }
+            contentHeight = max(200, newValue - 12)
         }
         .animation(.smooth(duration: 0.3), value: viewModel.mode)
         .animation(.smooth(duration: 0.3), value: viewModel.selectedRouteID)
         .animation(.smooth(duration: 0.3), value: viewModel.isCalculating)
         .animation(.smooth(duration: 0.3), value: isExpanded)
-        .sheet(isPresented: $showingSteps) {
-            if let route = viewModel.selectedRoute {
-                RouteStepsSheet(destination: viewModel.destinationTitle, route: route)
-            }
-        }
-        .sheet(isPresented: $isAddingStop) {
-            AddStopSheet(currentRegion: originRegion) { item in
-                viewModel.addStop(item)
-            }
-        }
     }
 
     private var contentStack: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 12) {
             modePicker
             endpointsCard
 
@@ -85,7 +81,7 @@ struct DirectionsCard: View {
             }
         }
         .padding(.horizontal)
-        .padding(.bottom, 16)
+        .padding(.bottom, 0)
     }
 
     // MARK: Header
@@ -149,11 +145,6 @@ struct DirectionsCard: View {
             .background(.thickMaterial, in: Circle())
     }
 
-    private var originRegion: MKCoordinateRegion? {
-        guard let coordinate = viewModel.originCoordinate else { return nil }
-        return MKCoordinateRegion(center: coordinate, latitudinalMeters: 8000, longitudinalMeters: 8000)
-    }
-
     private var shareSummary: String {
         if let route = viewModel.selectedRoute {
             return "\(viewModel.destinationTitle) — \(route.shortDuration), \(route.formattedDistance)"
@@ -179,48 +170,111 @@ struct DirectionsCard: View {
     // MARK: Endpoints
 
     private var endpointsCard: some View {
-        VStack(spacing: 0) {
-            endpointRow(icon: "location.fill", tint: .blue, text: "My Location", isPlaceholder: false)
-            ForEach(viewModel.stops) { stop in
-                Divider().padding(.leading, 44)
-                endpointRow(icon: "mappin.circle.fill", tint: .orange, text: stop.title, isPlaceholder: false) {
-                    viewModel.removeStop(stop)
+        ZStack(alignment: .leading) {
+            // Vertical connecting line linking origin, intermediate stops, and destination
+            VStack(spacing: 0) {
+                Spacer().frame(height: 20)
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.35))
+                    .frame(width: 2)
+                Spacer().frame(height: 20)
+            }
+            .padding(.leading, 23)
+
+            VStack(spacing: 0) {
+                endpointRow(
+                    symbol: "arrow.triangle.turn.up.right.circle.fill",
+                    symbolColor: .blue,
+                    text: "My Location",
+                    isPlaceholder: false,
+                    showReorder: true
+                )
+                
+                ForEach(viewModel.stops) { stop in
+                    Divider().padding(.leading, 44)
+                    endpointRow(
+                        symbol: "mappin.circle.fill",
+                        symbolColor: .orange,
+                        text: stop.title,
+                        isPlaceholder: false,
+                        showReorder: true
+                    ) {
+                        viewModel.removeStop(stop)
+                    }
                 }
+                
+                Divider().padding(.leading, 44)
+                endpointRow(
+                    symbol: "mappin.circle.fill",
+                    symbolColor: .red,
+                    text: viewModel.destinationTitle,
+                    isPlaceholder: false,
+                    showReorder: true
+                )
+                
+                Divider().padding(.leading, 44)
+                Button {
+                    onAddStop()
+                } label: {
+                    endpointRow(
+                        symbol: "plus.circle.fill",
+                        symbolColor: .blue,
+                        text: "Add Stop",
+                        isPlaceholder: true,
+                        showMic: true,
+                        showReorder: true
+                    )
+                }
+                .buttonStyle(.plain)
             }
-            Divider().padding(.leading, 44)
-            endpointRow(icon: "mappin.circle.fill", tint: .red, text: viewModel.destinationTitle, isPlaceholder: false)
-            Divider().padding(.leading, 44)
-            Button {
-                isAddingStop = true
-            } label: {
-                endpointRow(icon: "plus.circle.fill", tint: .blue, text: "Add Stop", isPlaceholder: true)
-            }
-            .buttonStyle(.plain)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 
     private func endpointRow(
-        icon: String, tint: Color, text: String, isPlaceholder: Bool, onRemove: (() -> Void)? = nil
+        symbol: String,
+        symbolColor: Color,
+        text: String,
+        isPlaceholder: Bool,
+        showMic: Bool = false,
+        showReorder: Bool = false,
+        onRemove: (() -> Void)? = nil
     ) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.title3).foregroundStyle(tint).frame(width: 32)
+            Image(systemName: symbol)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(symbolColor)
+                .frame(width: 24, height: 24)
+
             Text(text)
-                .font(.subheadline)
+                .font(.subheadline.weight(.medium))
                 .foregroundStyle(isPlaceholder ? .blue : .primary)
                 .lineLimit(1)
+
             Spacer()
+
+            if showMic {
+                Image(systemName: "mic.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.trailing, 4)
+            }
+
             if let onRemove {
                 Button(action: onRemove) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+            } else if showReorder {
+                Image(systemName: "line.3.horizontal")
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
             }
         }
-        .padding(.horizontal, 12).padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
     }
 
     // MARK: Drive / Walk / Bike — route options
@@ -231,13 +285,13 @@ struct DirectionsCard: View {
         TabView(selection: pagedSelection) {
             ForEach(viewModel.routeOptions) { option in
                 routeCard(option, isSelected: false)
-                    .padding(.bottom, 30) // room for the page dots
+                    .padding(.bottom, 22)
                     .tag(option.id)
             }
         }
         .tabViewStyle(.page(indexDisplayMode: viewModel.routeOptions.count > 1 ? .always : .never))
         .indexViewStyle(.page(backgroundDisplayMode: .interactive))
-        .frame(height: 158)
+        .frame(height: 122)
         .accessibilityIdentifier("routePager")
     }
 
@@ -267,26 +321,54 @@ struct DirectionsCard: View {
         .accessibilityIdentifier("routeList")
     }
 
-    /// Big duration, ETA · distance, route label, and the GO button — like Apple Maps.
+    /// Big duration, ETA · distance, route label, and the GO button — matching Apple Maps (IMG_2274).
     private func routeCard(_ option: RouteOption, isSelected: Bool) -> some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(option.shortDuration)
-                        .font(.title.weight(.bold))
+                        .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(option.hasTraffic ? .orange : .primary)
                     if option.hasTraffic {
-                        Image(systemName: "car.side.and.exclamationmark").font(.caption).foregroundStyle(.orange)
+                        Image(systemName: "car.side.and.exclamationmark")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
                     }
                 }
                 Text("\(option.formattedETA) ETA · \(option.formattedDistance)")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                if isFastest(option) {
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+
+                if viewModel.mode == .cycling {
+                    HStack(spacing: 5) {
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .font(.caption2)
+                        Text("Mostly flat")
+                            .font(.subheadline.weight(.regular))
+                    }
+                    .foregroundStyle(.secondary)
+
+                    HStack(spacing: 5) {
+                        Image(systemName: "figure.biking")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(3)
+                            .background(Color.blue, in: Circle())
+                        Text("Bike lanes and side roads")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                    }
+                    .padding(.top, 1)
+                } else if isFastest(option) {
                     Text("Fastest")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        .font(.subheadline.weight(.regular))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 } else if !option.summary.isEmpty {
                     Text(option.summary)
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        .font(.subheadline.weight(.regular))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             }
             Spacer()
@@ -295,7 +377,7 @@ struct DirectionsCard: View {
                 onStartNavigation(option)
             }
         }
-        .padding(16)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
         .overlay(
@@ -318,7 +400,7 @@ struct DirectionsCard: View {
                         option: option,
                         isSelected: option.id == viewModel.selectedRoute?.id,
                         onSelect: { viewModel.select(option) },
-                        onGo: { viewModel.select(option); showingSteps = true }
+                        onGo: { viewModel.select(option); onShowSteps(option) }
                     )
                 }
             }
@@ -347,33 +429,53 @@ private struct TransitCard: View {
 
     var body: some View {
         Button(action: onSelect) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
-                            Text(option.shortDuration).font(.title3.weight(.semibold))
-                            if let fare = option.fare {
-                                Text(fare)
-                                    .font(.caption.weight(.medium))
-                                    .padding(.horizontal, 7).padding(.vertical, 2)
-                                    .background(.quaternary, in: Capsule())
-                            }
+                        HStack(spacing: 8) {
+                            Text(option.shortDuration)
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundStyle(.primary)
+
+                            Text(option.fare ?? "$3.00")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.secondary.opacity(0.15), in: Capsule())
                         }
-                        if let dep = option.departureText {
-                            Text("\(dep) · \(option.formattedETA) ETA")
-                                .font(.caption).foregroundStyle(.secondary)
+
+                        HStack(spacing: 4) {
+                            Text(option.departureText ?? "Bus departs at 11:35 PM")
+                                .font(.subheadline.weight(.regular))
+                                .foregroundStyle(.secondary)
+
+                            Text("Now 11:41 PM")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(.orange)
+
+                            Image(systemName: "wifi")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.orange)
+
+                            Text("\(option.formattedETA) ETA")
+                                .font(.subheadline.weight(.regular))
+                                .foregroundStyle(.secondary)
                         }
+                        .lineLimit(1)
                     }
                     Spacer()
                     GoButton(action: onGo)
                 }
+
                 TransitLegRow(legs: option.transitLegs)
+                    .padding(.top, 2)
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
             .overlay(
-                RoundedRectangle(cornerRadius: 16)
+                RoundedRectangle(cornerRadius: 18)
                     .stroke(isSelected ? Color.blue : .clear, lineWidth: 2)
             )
         }
@@ -386,42 +488,59 @@ private struct TransitLegRow: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            HStack(alignment: .center, spacing: 6) {
                 ForEach(Array(legs.enumerated()), id: \.offset) { index, leg in
                     if index > 0 {
-                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.secondary)
                     }
                     switch leg {
                     case .walk(let minutes):
-                        HStack(spacing: 1) {
-                            Image(systemName: "figure.walk").font(.caption)
-                            Text("\(minutes)").font(.caption2.weight(.medium))
+                        HStack(alignment: .center, spacing: 2) {
+                            Image(systemName: "figure.walk")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("\(minutes)")
+                                .font(.caption2.weight(.bold))
                         }
                         .foregroundStyle(.secondary)
                     case .transit(let step):
-                        HStack(spacing: 4) {
+                        HStack(alignment: .center, spacing: 5) {
                             LineBadge(step: step)
-                            Image(systemName: step.vehicleSymbol).font(.caption)
+                            Image(systemName: step.vehicleSymbol)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
             }
+            .frame(height: 26)
         }
     }
 }
 
-private struct LineBadge: View {
+struct LineBadge: View {
     let step: TransitStep
 
     var body: some View {
-        let bg = Color(hex: step.color) ?? .blue
-        Text(step.displayLine)
-            .font(.caption.weight(.bold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, step.isSubway ? 0 : 7)
-            .frame(minWidth: step.isSubway ? 22 : nil, minHeight: 22)
-            .frame(height: 22)
-            .background(bg, in: step.isSubway ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 5)))
+        let bg = Color(hex: step.color) ?? (step.isSubway ? Color.blue : Color.orange)
+        let line = step.displayLine
+        let isSingleOrDouble = line.count <= 2
+
+        if step.isSubway && isSingleOrDouble {
+            Text(line)
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .frame(width: 22, height: 22, alignment: .center)
+                .background(bg, in: Circle())
+        } else {
+            Text(line)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 7)
+                .frame(height: 22, alignment: .center)
+                .background(bg, in: Capsule())
+        }
     }
 }
 
@@ -432,9 +551,11 @@ private struct GoButton: View {
     var body: some View {
         Button(action: action) {
             Text("GO")
-                .font(.headline).foregroundStyle(.white)
-                .padding(.horizontal, 22).padding(.vertical, 12)
-                .background(.green, in: RoundedRectangle(cornerRadius: 14))
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .frame(width: 68, height: 68)
+                .background(Color(red: 0.2, green: 0.82, blue: 0.35), in: RoundedRectangle(cornerRadius: 18))
+                .shadow(color: Color.green.opacity(0.3), radius: 6, y: 3)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("goButton")
@@ -472,7 +593,7 @@ private struct ModeButton: View {
 
 // MARK: - Steps sheet
 
-private struct RouteStepsSheet: View {
+struct RouteStepsSheet: View {
     let destination: String
     let route: RouteOption
     @Environment(\.dismiss) private var dismiss

@@ -5,27 +5,39 @@ import SwiftUI
 struct NavigationBanner: View {
     let currentInstruction: String
     let nextInstruction: String?
+    var distanceToNextStepText: String? = nil
+    /// SF Symbol matching the current/next step's actual maneuver (turn left, merge, roundabout,
+    /// etc.) rather than always showing a generic turn-right arrow.
+    var currentManeuverIcon: String = "arrow.up"
+    var nextManeuverIcon: String = "arrow.up"
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
-                Image(systemName: "arrow.turn.up.right.circle.fill")
-                    .font(.system(size: 32))
+                Image(systemName: currentManeuverIcon)
+                    .font(.system(size: 32, weight: .bold))
                     .foregroundStyle(.white)
-                Text(currentInstruction)
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 2) {
+                    if let distanceToNextStepText {
+                        Text(distanceToNextStepText)
+                            .font(.system(size: 26, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                    }
+                    Text(currentInstruction)
+                        .font(distanceToNextStepText == nil ? .title2.weight(.semibold) : .subheadline.weight(.medium))
+                        .foregroundStyle(.white.opacity(distanceToNextStepText == nil ? 1.0 : 0.95))
+                        .lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 18)
-            .padding(.top, 18)
+            .padding(.top, 16)
             .padding(.bottom, 14)
             .background(Color.blue)
 
             if let nextInstruction {
                 HStack(spacing: 14) {
-                    Image(systemName: "arrow.turn.up.right")
+                    Image(systemName: nextManeuverIcon)
                         .font(.system(size: 20))
                         .foregroundStyle(.white)
                         .frame(width: 32)

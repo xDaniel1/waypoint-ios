@@ -12,6 +12,15 @@ final class SearchViewModel {
     private(set) var selectedResult: SearchResult?
     private(set) var isSearching = false
     private(set) var errorMessage: String?
+    
+    /// Tracks where the search was initiated so we can show "Search Here" when user pans away.
+    var lastSearchCenter: CLLocationCoordinate2D?
+    var showSearchHereButton = false
+    
+    // Filter Chip States
+    var filterOpenNow: Bool = false
+    var filterTopRated: Bool = false
+    var filterMaxPrice: Int? = nil
 
     var suggestions: [MKLocalSearchCompletion] {
         completerService.suggestions
@@ -28,8 +37,25 @@ final class SearchViewModel {
 
     func updateSearchRegion(_ region: MKCoordinateRegion) {
         completerService.updateRegion(region)
-        lastRegionCenter = region.center
+        let newCenter = region.center
+        if let last = lastSearchCenter {
+            let distance = CLLocation(latitude: last.latitude, longitude: last.longitude)
+                .distance(from: CLLocation(latitude: newCenter.latitude, longitude: newCenter.longitude))
+            if distance > 400 && (isSearching || selectedResult != nil || queryText.isEmpty == false) {
+                showSearchHereButton = true
+            }
+        }
+        lastRegionCenter = newCenter
         Task { await nearbyService.refresh(around: region) }
+    }
+    
+    func searchInCurrentRegion(center: CLLocationCoordinate2D) {
+        lastSearchCenter = center
+        showSearchHereButton = false
+        if let region = lastRegionCenter {
+            let mkRegion = MKCoordinateRegion(center: region, latitudinalMeters: 5000, longitudinalMeters: 5000)
+            updateSearchRegion(mkRegion)
+        }
     }
 
     func loadDiscover() {
@@ -67,6 +93,8 @@ final class SearchViewModel {
 
     func selectResult(_ result: SearchResult) {
         selectedResult = result
+        lastSearchCenter = result.coordinate
+        showSearchHereButton = false
         recentsStore.add(result)
         queryText = result.title
     }

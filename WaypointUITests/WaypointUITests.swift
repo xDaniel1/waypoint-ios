@@ -62,23 +62,29 @@ final class WaypointUITests: XCTestCase {
         XCTAssertTrue(searchField.waitForExistence(timeout: 10))
         searchField.tap()
 
-        XCTAssertTrue(app.buttons["Restaurants"].waitForExistence(timeout: 5), "Category pills should appear on focus")
-        XCTAssertTrue(app.buttons["Coffee"].exists)
-        XCTAssertTrue(app.buttons["Gas"].exists)
+        // Each pill's accessible label combines its emoji + title ("🍔, Fast Food"), not just
+        // the plain title, so match by substring rather than exact string.
+        XCTAssertTrue(
+            app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Fast Food'")).firstMatch.waitForExistence(timeout: 5),
+            "Category pills should appear on focus"
+        )
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Coffee'")).firstMatch.exists)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Gas Stations'")).firstMatch.exists)
         attachScreenshot("02-focused-sections")
     }
 
-    // Tapping a category pill should fill the query and produce live suggestions.
+    // Tapping a category pill should fill the query (with its real search term, not just the
+    // pill's label — "Coffee" searches "Coffee Shop") and produce live suggestions.
     func test03_categoryPillFillsQuery() throws {
         let searchField = app.textFields["searchField"]
         XCTAssertTrue(searchField.waitForExistence(timeout: 10))
         searchField.tap()
 
-        let pill = app.buttons["Coffee"]
+        let pill = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Coffee'")).firstMatch
         XCTAssertTrue(pill.waitForExistence(timeout: 5))
         pill.tap()
 
-        XCTAssertEqual(searchField.value as? String, "Coffee", "Category tap should fill the search field")
+        XCTAssertEqual(searchField.value as? String, "Coffee Shop", "Category tap should fill the search field with its query term")
         attachScreenshot("03-category-query")
     }
 

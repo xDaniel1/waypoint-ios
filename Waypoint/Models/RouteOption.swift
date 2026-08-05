@@ -60,7 +60,9 @@ struct RouteOption: Identifiable {
 
     var formattedETA: String {
         let arrival = Date().addingTimeInterval(travelTime)
-        return arrival.formatted(date: .omitted, time: .shortened)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm"
+        return formatter.string(from: arrival)
     }
 }
 
@@ -68,10 +70,38 @@ struct RouteStep: Identifiable {
     let id = UUID()
     let instruction: String
     let distanceMeters: Double
+    /// Google Routes' raw maneuver enum (e.g. "TURN_LEFT", "ROUNDABOUT_RIGHT"), when the step
+    /// came from Google. Real per-lane guidance isn't something the public Routes API exposes
+    /// at all — that's a Navigation SDK feature — so this only drives which turn arrow to show,
+    /// not which lane to be in.
+    var maneuver: String?
 
     var formattedDistance: String {
         Measurement(value: distanceMeters, unit: UnitLength.meters)
             .formatted(.measurement(width: .abbreviated, usage: .road))
+    }
+
+    /// SF Symbol matching the maneuver type, falling back to a plain straight arrow for
+    /// anything unrecognized (including MapKit-sourced steps, which have no maneuver at all).
+    var maneuverIcon: String {
+        switch maneuver {
+        case "TURN_SLIGHT_LEFT", "TURN_LEFT", "TURN_SHARP_LEFT", "RAMP_LEFT", "FORK_LEFT":
+            "arrow.turn.up.left"
+        case "TURN_SLIGHT_RIGHT", "TURN_RIGHT", "TURN_SHARP_RIGHT", "RAMP_RIGHT", "FORK_RIGHT":
+            "arrow.turn.up.right"
+        case "UTURN_LEFT":
+            "arrow.uturn.left"
+        case "UTURN_RIGHT":
+            "arrow.uturn.right"
+        case "ROUNDABOUT_LEFT", "ROUNDABOUT_RIGHT":
+            "arrow.triangle.2.circlepath"
+        case "MERGE":
+            "arrow.triangle.merge"
+        case "FERRY", "FERRY_TRAIN":
+            "ferry.fill"
+        default:
+            "arrow.up"
+        }
     }
 }
 
@@ -87,6 +117,7 @@ struct TransitStep: Identifiable {
     let headsign: String?
     let color: String?
     var departureISO: String? = nil
+    var arrivalISO: String? = nil
 
     var displayLine: String {
         lineShortName ?? lineName
@@ -95,6 +126,16 @@ struct TransitStep: Identifiable {
     var isSubway: Bool {
         vehicle.uppercased().contains("SUBWAY") || vehicle.uppercased().contains("METRO")
             || vehicle.uppercased().contains("RAIL") || vehicle.uppercased().contains("TRAIN")
+    }
+
+    /// Real clock times from Google's transit stop details, locale-formatted — nil (not a
+    /// fabricated placeholder) when Google didn't return one for this leg.
+    var formattedDepartureTime: String? { Self.formattedClockTime(departureISO) }
+    var formattedArrivalTime: String? { Self.formattedClockTime(arrivalISO) }
+
+    private static func formattedClockTime(_ iso: String?) -> String? {
+        guard let iso, let date = ISO8601DateFormatter().date(from: iso) else { return nil }
+        return date.formatted(date: .omitted, time: .shortened)
     }
 
     var vehicleSymbol: String {

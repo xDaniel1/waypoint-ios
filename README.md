@@ -1,87 +1,88 @@
 # Waypoint
 
-A native iOS maps app: Apple Maps' look, feel, native MapKit rendering, and the Liquid Glass design system — with Google Maps–style rich place details (photos, ratings, reviews, hours) layered on top via the Google Places API.
+Waypoint is an iOS maps app I'm building to practice SwiftUI and working with real APIs. The goal is basically a smaller version of Apple Maps — same look and feel, MapKit under the hood — but with richer place info (photos, ratings, reviews) pulled from Google Places, since Apple's built-in POI data is pretty bare.
 
-*(screenshot / demo GIF coming once there's UI to show)*
+*(screenshots coming soon)*
 
-## Features
+## What it does
 
-- [x] Native MapKit map centered on the user's current location, with graceful handling of denied/restricted location permission
-- [x] Apple-Maps-style search: persistent Liquid Glass bottom sheet, category shortcuts, live autocomplete, recents, on-device voice search
-- [x] Custom-positioned map controls (3D, compass, map style, location) matching Apple Maps' own layout
-- [x] Local Favorites ("Places") with a quick-add row
-- [x] WeatherKit floating weather widget (needs the WeatherKit capability enabled with a paid account, see Setup)
-- [x] Tap-to-open place detail sheet: photos, star ratings, reviews, hours, phone, website, address (sourced from Google Places, not Apple's default POI data). Google's API doesn't expose structured menus or in-app ordering, so those aren't faked.
-- [x] In-app directions: Drive/Walk/Transit mode picker, route drawn on the map, distance/ETA summary — no handoff to Apple Maps. (Live voice-guided turn-by-turn is an Apple-private feature no third-party app can access.)
-- [x] Recent searches / favorites (local storage)
+- [x] Map centered on your current location, handles denied/restricted location permission
+- [x] Search with a bottom sheet like Apple Maps — category shortcuts, autocomplete, recent searches, voice search
+- [x] Custom map controls (3D, compass, map style, location) positioned like Apple Maps
+- [x] Local Favorites/"Places" with a quick-add button
+- [x] Weather widget using WeatherKit (needs the WeatherKit capability + paid dev account to actually show up)
+- [x] Place detail sheet with photos, ratings, reviews, hours, phone number, website, and address (from Google Places)
+- [x] In-app directions — Drive/Walk/Transit, route drawn right on the map, distance/ETA, no bouncing out to Apple Maps
+- [x] Multi-stop routing — add extra stops and it routes through all of them, not just A to B
+- [x] Turn-by-turn voice guidance and auto-reroute if you go off path
+- [x] Recent searches saved locally
 
-See [Roadmap](#roadmap) for what's built vs. planned.
+Check the [Roadmap](#roadmap) below for what's done vs. what's next.
 
-## Tech stack
+## Built with
 
-- Swift 6, SwiftUI
-- Liquid Glass (`.glassEffect`, `GlassEffectContainer`, `.glassProminent` button style) — iOS 26+ only, so custom UI matches system chrome
-- MapKit (native `Map` view and annotations, scope-based custom control placement)
-- WeatherKit (current-location weather widget)
-- Speech + AVFoundation (on-device voice search)
-- Google Places API (New) — Place Details, Text/Nearby Search, Photos
-- URLSession + async/await for networking (no third-party networking libraries)
-- MVVM architecture
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen) to generate the `.xcodeproj` from `project.yml` (the `.xcodeproj` itself is not committed)
-- Swift Package Manager only — no CocoaPods
+- Swift 6 / SwiftUI
+- Liquid Glass UI (iOS 26+ only)
+- MapKit for the map itself
+- WeatherKit for the weather widget
+- Speech framework + AVFoundation for voice search and voice guidance
+- Google Places API + Google Routes API
+- Plain URLSession/async-await for networking — didn't want to pull in a networking library for a project this size
+- MVVM
+- XcodeGen to generate the Xcode project from `project.yml` (the `.xcodeproj` isn't committed)
+- No CocoaPods, just Swift Package Manager
 
 ## Setup
 
-### Prerequisites
+### You'll need
 
-- Xcode 26 or later (developed against Xcode 27 beta)
-- iOS 26 or later on device/simulator — the deployment target is iOS 26.0 to support Liquid Glass
+- Xcode 26+ (I'm on the Xcode 27 beta)
+- iOS 26+ simulator or device
 - [Homebrew](https://brew.sh)
-- A Google Cloud project with **Places API (New)** enabled and an API key ([console.cloud.google.com](https://console.cloud.google.com/))
+- A Google Cloud project with the Places API (New) turned on, and an API key
 
 ### Steps
 
-1. Clone the repo:
+1. Clone it:
    ```sh
    git clone https://github.com/<your-account>/waypoint-ios.git
    cd waypoint-ios
    ```
-2. Install XcodeGen if you don't already have it:
+2. Get XcodeGen if you don't have it:
    ```sh
    brew install xcodegen
    ```
-3. Copy the secrets template and add your Google Places API key:
+3. Copy the secrets template and drop in your own API key:
    ```sh
    cp Secrets.xcconfig.example Secrets.xcconfig
-   # then edit Secrets.xcconfig and set GOOGLE_PLACES_API_KEY
+   # edit Secrets.xcconfig and set GOOGLE_PLACES_API_KEY
    ```
-   `Secrets.xcconfig` is git-ignored — your key never gets committed. In Google Cloud Console, restrict the key to **iOS apps** and list this app's bundle ID (`com.danielguzman.waypoint`) so it can't be used from anywhere else if it ever leaks.
-4. Generate the Xcode project:
+   `Secrets.xcconfig` is gitignored so your key doesn't end up on GitHub. Also worth restricting the key to iOS apps in Google Cloud Console and locking it to this bundle ID (`com.danielguzman.waypoint`).
+4. Generate the project:
    ```sh
    xcodegen generate
    ```
-5. Open `Waypoint.xcodeproj` and run on an iOS 26+ simulator or device.
-6. To see live weather in the top-left widget, sign in with your paid Apple Developer team in Xcode's Signing & Capabilities tab for the `Waypoint` target and confirm the **WeatherKit** capability is enabled for your App ID (the entitlement is already checked into `Waypoint/Waypoint.entitlements`; Xcode/App Store Connect need your team to actually grant it). Without this, the app runs fine but the weather widget just stays hidden.
+5. Open `Waypoint.xcodeproj` and run it.
+6. If you want the weather widget working, you need a paid Apple Developer account with WeatherKit enabled for your team — otherwise it just stays hidden and everything else still works fine.
 
 ## Project structure
 
 ```
 Waypoint/
 ├── Waypoint/
-│   ├── App/            # App entry point (WaypointApp.swift)
+│   ├── App/            # entry point
 │   ├── Models/          # Place, Review, PlacePhoto, etc.
 │   ├── ViewModels/      # MapViewModel, PlaceDetailViewModel, etc.
 │   ├── Views/
-│   │   ├── Map/         # Main map screen
-│   │   ├── PlaceDetail/ # Bottom sheet + subviews
+│   │   ├── Map/
+│   │   ├── PlaceDetail/
 │   │   └── Search/
 │   ├── Services/        # LocationManager, GooglePlacesService
-│   └── Resources/       # Assets, colors
+│   └── Resources/
 ├── WaypointTests/
-├── project.yml               # XcodeGen spec — source of truth for the Xcode project
-├── Secrets.xcconfig          # git-ignored, holds your real API key
-├── Secrets.xcconfig.example  # committed template
-├── .gitignore
+├── project.yml               # XcodeGen config, source of truth
+├── Secrets.xcconfig          # gitignored, your real key goes here
+├── Secrets.xcconfig.example
 ├── README.md
 ├── CHANGELOG.md
 └── LICENSE
@@ -89,23 +90,24 @@ Waypoint/
 
 ## Roadmap
 
-**Phase 1 (MVP)**
-- [x] Base map view with current-location centering and permission handling
-- [x] Search bar
-- [x] Recent searches / favorites (local only)
-- [x] Place detail sheet (photos, ratings, reviews, hours, contact info)
-- [x] In-app directions (Drive/Walk/Transit, route + ETA, no Apple Maps handoff)
+**Done**
+- [x] Map + location permission handling
+- [x] Search
+- [x] Recents/favorites (local only)
+- [x] Place detail sheet
+- [x] In-app directions
+- [x] Multi-stop routing
+- [x] Voice guidance + auto-reroute
 
-**Phase 2 (future)**
-- User accounts
-- Saved lists / collections
+**Maybe later**
+- Accounts / sign in
+- Saved lists
 - Offline maps
-- Android version
-- Social features
+- Android (probably not, but who knows)
 
-## Contributing
+## Notes
 
-This is currently a solo/small project. Work happens on feature branches (`feature/*`) with conventional commit messages (`feat:`, `fix:`, `docs:`, `chore:`). Issues and PRs welcome.
+Solo project, just me working on it in feature branches. Not really looking for contributors right now but feel free to open an issue if something's broken.
 
 ## License
 

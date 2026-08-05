@@ -19,7 +19,7 @@ struct MapScreen: View {
     /// Measured live from DirectionsCard's actual content so the sheet hugs it exactly instead
     /// of leaving dead space the way a fixed `.medium` fraction did. 420 is just a first-frame
     /// placeholder before any measurement has come back.
-    @State private var directionsCardHeight: CGFloat = 420
+    @State private var directionsCardHeight: CGFloat = 180
     @State private var sheetHeight: CGFloat = 90
     @State private var mapStyle: MapStyle = .standard
     @State private var mapCenter: CLLocationCoordinate2D?
@@ -34,7 +34,13 @@ struct MapScreen: View {
     @State private var isRerouting = false
     @State private var isSearchingAlongRoute = false
     @State private var isAddingNavStop = false
+    /// Owned here rather than by DirectionsCard, since DirectionsCard is itself content of this
+    /// screen's outer search sheet — a sheet presented from within already-sheet-presented
+    /// content doesn't reliably appear (observed on Xcode 27 beta).
+    @State private var isAddingDirectionsStop = false
+    @State private var stepsRoute: RouteOption?
     @State private var isReportingIncident = false
+    @State private var showingTransitDetails = false
     /// Set when the user pans/zooms/rotates. While true, nothing programmatically moves the
     /// camera — they stay wherever they dragged to until they tap re-center.
     @State private var isCameraUserControlled = false
@@ -98,18 +104,7 @@ struct MapScreen: View {
                         .stroke(Color.blue, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
                 }
                 ForEach(Array(directionsViewModel.routeOptions.enumerated()), id: \.element.id) { index, option in
-                    if let mid = option.midCoordinate {
-                        Annotation("", coordinate: mid) {
-                            RouteTimeBubble(
-                                text: option.shortDuration,
-                                label: index == 0 ? "Fastest" : nil,
-                                isSelected: option.id == directionsViewModel.selectedRoute?.id
-                            ) {
-                                directionsViewModel.select(option)
-                            }
-                        }
-                        .annotationTitles(.hidden)
-                    }
+                    routeTimeBubbleAnnotation(index: index, option: option)
                 }
                 // Transit stops for the selected transit route.
                 if directionsViewModel.mode == .transit, let selected = directionsViewModel.selectedRoute {
@@ -281,7 +276,9 @@ struct MapScreen: View {
                             viewModel.followUser(at: location, heading: heading)
                         }
                     }
-                }
+                },
+                onAddStop: { isAddingDirectionsStop = true },
+                onShowSteps: { route in stepsRoute = route }
             )
             .presentationDetents(sheetDetents, selection: $searchDetent)
             .presentationDragIndicator(.visible)
@@ -293,6 +290,14 @@ struct MapScreen: View {
             .presentationSizing(.page)
             .presentationCornerRadius(28)
             .interactiveDismissDisabled(true)
+        }
+        .sheet(isPresented: $isAddingDirectionsStop) {
+            AddStopSheet(currentRegion: originRegionForAddStop) { item in
+                directionsViewModel.addStop(item)
+            }
+        }
+        .sheet(item: $stepsRoute) { route in
+            RouteStepsSheet(destination: directionsViewModel.destinationTitle, route: route)
         }
         .sheet(isPresented: $isSearchingAlongRoute) {
             SearchAlongRouteSheet(remainingCoordinates: navigationViewModel.remainingCoordinates) { coordinate in
@@ -313,17 +318,33 @@ struct MapScreen: View {
             searchViewModel.selectMapFeature(feature)
             selectedMapFeature = nil
         }
+        .onChange(of: directionsViewModel.isActive) { oldValue, active in
+            if active {
+                searchDetent = .height(directionsCardHeight)
+            } else if oldValue == true {
+                searchDetent = .home
+                if let currentCamera, currentCamera.pitch > 1 {
+                    viewModel.resetTo2D(from: currentCamera)
+                }
+            }
+        }
+        .onChange(of: navigationViewModel.isActive) { oldValue, active in
+            if !active && oldValue == true {
+                if let currentCamera, currentCamera.pitch > 1 {
+                    viewModel.resetTo2D(from: currentCamera)
+                }
+            }
+        }
+        .onChange(of: directionsCardHeight) { _, newHeight in
+            if directionsViewModel.isActive && searchDetent != .large {
+                searchDetent = .height(newHeight)
+            }
+        }
     }
 
-    /// Apple Maps only ever offers three heights, so one pull from the resting card goes straight
-    /// to full screen. Directions swap the middle stop for one measured to the card's actual
-    /// content (so there's no dead space below it) plus a short one so the header/close button
-    /// stays reachable when it's dragged down. `.medium` stays in the set too as the one-frame
-    /// placeholder used before the real measurement lands — selecting a detent that isn't a
-    /// member of this set is silently ignored, so both have to be present.
     private var sheetDetents: Set<PresentationDetent> {
         if directionsViewModel.isActive {
-            return [.height(190), .medium, .height(directionsCardHeight), .large]
+            return [.height(190), .height(directionsCardHeight), .large]
         }
         return [.height(collapsedHeight), .home, .large]
     }
@@ -390,6 +411,11 @@ struct MapScreen: View {
 
     private var mapControlsOverlay: some View {
         VStack {
+            if searchViewModel.showSearchHereButton && !directionsViewModel.isActive {
+                searchHereOverlay
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .padding(.top, 54)
+            }
             Spacer()
             HStack(alignment: .bottom) {
                 if isCloseEnoughForStreetControls {
@@ -411,17 +437,54 @@ struct MapScreen: View {
 
                 Spacer()
 
-                FusedRightControls(
-                    mapStyle: $mapStyle,
-                    trackingMode: trackingMode,
-                    onRecenter: handleLocationButtonTap
-                )
+                VStack(spacing: 8) {
+                    if isMapRotated {
+                        CompassRoseButton(heading: currentCamera?.heading ?? 0) {
+                            withAnimation(.smooth(duration: 0.4)) {
+                                viewModel.resetHeading(from: currentCamera)
+                            }
+                        }
+                        .transition(.scale.combined(with: .opacity))
+                    }
+                    FusedRightControls(
+                        mapStyle: $mapStyle,
+                        trackingMode: trackingMode,
+                        onRecenter: handleLocationButtonTap
+                    )
+                }
             }
             .padding(.horizontal, 12)
             .padding(.bottom, sheetHeight + 20)
             .animation(.smooth(duration: 0.3), value: sheetHeight)
             .animation(.snappy(duration: 0.35), value: isCloseEnoughForStreetControls)
         }
+        .animation(.smooth(duration: 0.3), value: searchViewModel.showSearchHereButton)
+        .animation(.smooth(duration: 0.3), value: isMapRotated)
+    }
+
+    private var isMapRotated: Bool {
+        abs(currentCamera?.heading ?? 0) > 1.5
+    }
+
+    private var searchHereOverlay: some View {
+        Button {
+            if let center = mapCenter {
+                searchViewModel.searchInCurrentRegion(center: center)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.subheadline.weight(.semibold))
+                Text("Search Here")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Capsule())
+        .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
     }
 
     private var is3D: Bool {
@@ -436,89 +499,119 @@ struct MapScreen: View {
 
     @ViewBuilder
     private var navigationOverlay: some View {
-        ZStack(alignment: .top) {
-            // Floating controls sit above the card and ride up/down with it as it expands.
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
-                HStack(alignment: .bottom) {
-                    Button(action: handleLocationButtonTap) {
-                        Image(systemName: trackingMode == .followHeading ? "location.north.line.fill" : "location.north.fill")
-                            .font(.system(size: 18, weight: .medium))
-                            .foregroundStyle(trackingMode == .followHeading ? Color.accentColor : Color.primary)
-                            .frame(width: 48, height: 48)
-                            .contentShape(Circle())
-                            .contentTransition(.symbolEffect(.replace))
+        ZStack {
+            ZStack(alignment: .top) {
+                // Floating controls sit above the card and ride up/down with it as it expands.
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    HStack(alignment: .bottom) {
+                        Button(action: handleLocationButtonTap) {
+                            Image(systemName: trackingMode == .followHeading ? "location.north.line.fill" : "location.north.fill")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundStyle(trackingMode == .followHeading ? Color.accentColor : Color.primary)
+                                .frame(width: 48, height: 48)
+                                .contentShape(Circle())
+                                .contentTransition(.symbolEffect(.replace))
+                        }
+                        .buttonStyle(.plain)
+                        .glassEffect(.clear.interactive(), in: Circle())
+
+                        Spacer()
+
+                        navigationSideButtons
                     }
-                    .buttonStyle(.plain)
-                    .glassEffect(.clear.interactive(), in: Circle())
-
-                    Spacer()
-
-                    navigationSideButtons
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, navBarHeight + 14)
+                    .animation(.smooth(duration: 0.35), value: navBarHeight)
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, navBarHeight + 14)
-                .animation(.smooth(duration: 0.35), value: navBarHeight)
-            }
 
-            VStack {
-                NavigationBanner(
-                    currentInstruction: navigationViewModel.currentStep?.instruction ?? "Head to \(navigationViewModel.destinationName)",
-                    nextInstruction: navigationViewModel.nextStep?.instruction,
-                    currentManeuverIcon: navigationViewModel.currentStep?.maneuverIcon ?? "arrow.up",
-                    nextManeuverIcon: navigationViewModel.nextStep?.maneuverIcon ?? "arrow.up"
-                )
-                .padding(.top, 4)
+                if let route = navigationViewModel.route, !route.transitSteps.isEmpty {
+                    VStack {
+                        Spacer()
+                        TransitNavigationCardView(
+                            route: route,
+                            destinationName: navigationViewModel.destinationName,
+                            onClose: {
+                                navigationViewModel.end()
+                                speedLimitService.reset()
+                            },
+                            onMore: { showingTransitDetails = true }
+                        )
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 24)
+                    }
+                } else {
+                    VStack {
+                        NavigationBanner(
+                            currentInstruction: navigationViewModel.currentStep?.instruction ?? "Head to \(navigationViewModel.destinationName)",
+                            nextInstruction: navigationViewModel.nextStep?.instruction,
+                            distanceToNextStepText: navigationViewModel.formattedDistanceToNextStep,
+                            currentManeuverIcon: navigationViewModel.currentStep?.maneuverIcon ?? "arrow.up",
+                            nextManeuverIcon: navigationViewModel.nextStep?.maneuverIcon ?? "arrow.up"
+                        )
+                        .padding(.top, 4)
 
-                if let limit = speedLimitService.display {
-                    HStack(spacing: 10) {
-                        SpeedLimitSign(speedLimit: limit.value, unitLabel: limit.unit)
-                        if let speed = currentSpeedValue(matching: limit.unit) {
-                            CurrentSpeedReadout(speed: speed, unit: limit.unit, isOverLimit: speed > limit.value + 3)
+                        if let limit = speedLimitService.display {
+                            HStack(spacing: 10) {
+                                SpeedLimitSign(speedLimit: limit.value, unitLabel: limit.unit)
+                                if let speed = currentSpeedValue(matching: limit.unit) {
+                                    CurrentSpeedReadout(speed: speed, unit: limit.unit, isOverLimit: speed > limit.value + 3)
+                                }
+                                Spacer()
+                            }
+                            .padding(.leading, 16)
+                            .padding(.top, 6)
+                            .transition(.scale.combined(with: .opacity))
                         }
                         Spacer()
                     }
-                    .padding(.leading, 16)
-                    .padding(.top, 6)
-                    .transition(.scale.combined(with: .opacity))
-                }
-                Spacer()
-            }
-            .animation(.smooth(duration: 0.3), value: speedLimitService.display?.value)
+                    .animation(.smooth(duration: 0.3), value: speedLimitService.display?.value)
 
-            VStack {
-                Spacer()
-                NavigationBottomBar(
-                    arrival: navigationViewModel.formattedArrival,
-                    minutes: navigationViewModel.formattedRemainingMinutes,
-                    distance: navigationViewModel.formattedRemainingDistance,
-                    destinationName: navigationViewModel.destinationName,
-                    isMuted: voiceGuidance.isMuted,
-                    onEndRoute: {
-                        navigationViewModel.end()
-                        speedLimitService.reset()
-                    },
-                    onAddStop: { isAddingNavStop = true },
-                    onReportIncident: { isReportingIncident = true },
-                    onToggleMute: { voiceGuidance.isMuted.toggle() },
-                    onHeightChange: { navBarHeight = $0 }
-                )
-            }
-        }
-        .sheet(isPresented: $isAddingNavStop) {
-            AddStopSheet(currentRegion: originRegionForAddStop) { item in
-                navigationViewModel.addStop(item.placemark.coordinate)
-            }
-        }
-        .confirmationDialog("Report an Incident", isPresented: $isReportingIncident, titleVisibility: .visible) {
-            ForEach(ReportedIncident.Kind.allCases, id: \.self) { kind in
-                Button(kind.rawValue) {
-                    guard let coordinate = viewModel.currentLocation?.coordinate else { return }
-                    navigationViewModel.reportIncident(kind, at: coordinate)
+                    VStack {
+                        Spacer()
+                        NavigationBottomBar(
+                            arrival: navigationViewModel.formattedArrival,
+                            minutes: navigationViewModel.formattedRemainingMinutes,
+                            distance: navigationViewModel.formattedRemainingDistance,
+                            destinationName: navigationViewModel.destinationName,
+                            isMuted: voiceGuidance.isMuted,
+                            onEndRoute: {
+                                navigationViewModel.end()
+                                speedLimitService.reset()
+                            },
+                            onAddStop: { isAddingNavStop = true },
+                            onReportIncident: { isReportingIncident = true },
+                            onToggleMute: { voiceGuidance.isMuted.toggle() },
+                            onHeightChange: { navBarHeight = $0 }
+                        )
+                    }
                 }
             }
-        } message: {
-            Text("This marks the spot for this trip and checks for a better route. It isn't shared with other drivers or with Apple/Google traffic data.")
+            .sheet(isPresented: $showingTransitDetails) {
+                if let route = navigationViewModel.route {
+                    TransitNavigationDetailSheet(
+                        destinationName: navigationViewModel.destinationName,
+                        destinationAddress: searchViewModel.selectedResult?.subtitle,
+                        route: route,
+                        onClose: { showingTransitDetails = false }
+                    )
+                }
+            }
+            .sheet(isPresented: $isAddingNavStop) {
+                AddStopSheet(currentRegion: originRegionForAddStop) { item in
+                    navigationViewModel.addStop(item.placemark.coordinate)
+                }
+            }
+            .confirmationDialog("Report an Incident", isPresented: $isReportingIncident, titleVisibility: .visible) {
+                ForEach(ReportedIncident.Kind.allCases, id: \.self) { kind in
+                    Button(kind.rawValue) {
+                        guard let coordinate = viewModel.currentLocation?.coordinate else { return }
+                        navigationViewModel.reportIncident(kind, at: coordinate)
+                    }
+                }
+            } message: {
+                Text("This marks the spot for this trip and checks for a better route. It isn't shared with other drivers or with Apple/Google traffic data.")
+            }
         }
         // Apple Maps forces a dark nav theme at night regardless of the device's own light/dark
         // setting — glare from a bright map at 11pm is the actual reason, not aesthetics. Only
@@ -529,6 +622,25 @@ struct MapScreen: View {
     private var isNightTime: Bool {
         let hour = Calendar.current.component(.hour, from: Date())
         return hour >= 20 || hour < 6
+    }
+
+    /// Pulled out of the map's ForEach as its own function (with an explicit return type) so the
+    /// Swift type-checker doesn't have to fold it into the already-huge `Map` builder expression
+    /// above — inlined, this specific combination started timing out the compiler.
+    @MapContentBuilder
+    private func routeTimeBubbleAnnotation(index: Int, option: RouteOption) -> some MapContent {
+        if let mid = option.midCoordinate {
+            Annotation("", coordinate: mid) {
+                RouteTimeBubble(
+                    text: option.shortDuration,
+                    label: index == 0 ? "Fastest" : nil,
+                    isSelected: option.id == directionsViewModel.selectedRoute?.id
+                ) {
+                    directionsViewModel.select(option)
+                }
+            }
+            .annotationTitles(.hidden)
+        }
     }
 
     private var originRegionForAddStop: MKCoordinateRegion? {
@@ -785,6 +897,26 @@ private struct LookAroundScenePresenter: View {
     }
 }
 
+/// An Apple Maps-style compass button that appears whenever the map is rotated away from North.
+private struct CompassRoseButton: View {
+    let heading: Double
+    let onReset: () -> Void
+
+    var body: some View {
+        Button(action: onReset) {
+            Image(systemName: "location.north.circle.fill")
+                .font(.system(size: 24, weight: .medium))
+                .foregroundStyle(.red, .primary)
+                .frame(width: 48, height: 48)
+                .contentShape(Circle())
+                .rotationEffect(.degrees(-heading))
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.clear.interactive(), in: Circle())
+        .accessibilityLabel("Reset map to North")
+    }
+}
+
 private extension Double {
     func rounded(toPlaces places: Int) -> Double {
         let factor = pow(10.0, Double(places))
@@ -810,12 +942,88 @@ private struct LocationPermissionDeniedView: View {
                         UIApplication.shared.open(url)
                     }
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.borderedProminent)
             }
             .padding(24)
             .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20))
             .padding()
         }
+    }
+}
+
+private struct TransitNavigationCardView: View {
+    let route: RouteOption
+    let destinationName: String
+    let onClose: () -> Void
+    let onMore: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: "figure.walk")
+                .font(.system(size: 32, weight: .semibold))
+                .foregroundStyle(.primary)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    if let firstStep = route.transitSteps.first {
+                        Text("Walk to \(firstStep.departureStop) stop")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                    } else {
+                        Text("Walk to \(destinationName)")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(.primary)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.primary)
+                            .frame(width: 32, height: 32)
+                            .background(Color.secondary.opacity(0.18), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Text("0.3 miles, about 7 min")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    if let firstStep = route.transitSteps.first {
+                        LineBadge(step: firstStep)
+
+                        Text("Departs at 11:35 PM")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        Text("Now 11:40 PM")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.orange)
+
+                        Image(systemName: "wifi")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.orange)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Button(action: onMore) {
+                        Text("More")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.blue)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 4)
+            }
+        }
+        .padding(16)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 26))
+        .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
     }
 }
 

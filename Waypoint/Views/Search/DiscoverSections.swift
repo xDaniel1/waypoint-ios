@@ -52,24 +52,29 @@ private struct SuggestedCard: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
-                placeThumbnail(imageURL, size: 56, cornerRadius: 10)
+            HStack(spacing: 12) {
+                placeThumbnail(place.photos?.first?.name, size: 56, cornerRadius: 12)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(place.displayName?.text ?? "Place")
                         .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
                     if let type = place.primaryTypeDisplayName?.text {
-                        Text(type)
+                        Text("\(type) · 0.4 mi")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                     ratingLine(place)
                 }
-                .frame(width: 150, alignment: .leading)
+                Spacer(minLength: 0)
+                Image(systemName: "ellipsis")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
             }
-            .padding(10)
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+            .padding(12)
+            .frame(width: 300, alignment: .leading)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("suggested-\(place.id)")
@@ -84,42 +89,51 @@ private struct TrendingCard: View {
 
     var body: some View {
         Button(action: action) {
-            ZStack(alignment: .bottomLeading) {
-                placeThumbnail(imageURL, size: nil, cornerRadius: 16)
-                    .frame(width: 240, height: 150)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+            ZStack(alignment: .topTrailing) {
+                ZStack(alignment: .bottomLeading) {
+                    placeThumbnail(place.photos?.first?.name, size: nil, cornerRadius: 18)
+                        .frame(width: 240, height: 155)
+                        .clipShape(RoundedRectangle(cornerRadius: 18))
 
-                LinearGradient(
-                    colors: [.black.opacity(0.6), .clear],
-                    startPoint: .bottom, endPoint: .center
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 16))
+                    LinearGradient(
+                        colors: [.black.opacity(0.65), .clear],
+                        startPoint: .bottom, endPoint: .center
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(rank)")
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .shadow(radius: 3)
-                    Spacer()
-                    Text(place.displayName?.text ?? "Restaurant")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(rank)")
+                            .font(.system(size: 36, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .shadow(radius: 4)
+                        Spacer()
+                        Text(place.displayName?.text ?? "Restaurant")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                        HStack(spacing: 4) {
+                            if let type = place.primaryTypeDisplayName?.text {
+                                Text(type)
+                            }
+                            if let rating = place.rating {
+                                Text("· ★ \(String(format: "%.1f", rating))")
+                            }
+                        }
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.85))
                         .lineLimit(1)
-                    HStack(spacing: 4) {
-                        if let type = place.primaryTypeDisplayName?.text {
-                            Text(type)
-                        }
-                        if let rating = place.rating {
-                            Text("· ★ \(String(format: "%.1f", rating))")
-                        }
                     }
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.85))
-                    .lineLimit(1)
+                    .padding(12)
                 }
-                .padding(12)
+
+                Image(systemName: "ellipsis")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(8)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .padding(10)
             }
-            .frame(width: 240, height: 150)
+            .frame(width: 240, height: 155)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("trending-\(rank)")
@@ -127,19 +141,11 @@ private struct TrendingCard: View {
 }
 
 @ViewBuilder
-private func placeThumbnail(_ url: URL?, size: CGFloat?, cornerRadius: CGFloat) -> some View {
-    AsyncImage(url: url) { phase in
-        switch phase {
-        case .success(let image):
-            image.resizable().aspectRatio(contentMode: .fill)
-        default:
-            Rectangle().fill(.quaternary)
-                .overlay(Image(systemName: "photo").foregroundStyle(.secondary))
-        }
-    }
-    .frame(width: size, height: size)
-    .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-    .clipped()
+private func placeThumbnail(_ photoName: String?, size: CGFloat?, cornerRadius: CGFloat) -> some View {
+    GooglePlacePhotoView(photoName: photoName, maxWidthPx: 600, contentMode: .fill)
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+        .clipped()
 }
 
 @ViewBuilder

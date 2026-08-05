@@ -9,6 +9,7 @@ struct PlaceDetailContent: View {
     let onClose: () -> Void
 
     @State private var viewModel = PlaceDetailViewModel()
+    @State private var favoritesStore = FavoritesStore()
     @State private var lightbox: LightboxSelection?
 
     var body: some View {
@@ -183,8 +184,24 @@ struct PlaceDetailContent: View {
                 .padding(.vertical, 12)
                 .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 14))
             }
-            .buttonStyle(.plain)
             .accessibilityIdentifier("getDirectionsButton")
+            Button {
+                favoritesStore.toggle(result)
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            } label: {
+                VStack(spacing: 3) {
+                    Image(systemName: favoritesStore.isFavorite(result) ? "star.fill" : "star")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(favoritesStore.isFavorite(result) ? Color.yellow : Color.accentColor)
+                    Text(favoritesStore.isFavorite(result) ? "Saved" : "Save")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 14))
+            }
+            .buttonStyle(.plain)
 
             if let phone = place.internationalPhoneNumber {
                 secondaryAction(symbol: "phone.fill", title: "Call") {
@@ -425,21 +442,7 @@ struct PlaceDetailContent: View {
     // MARK: Shared
 
     private func photoImage(_ photo: GooglePlace.Photo, contentMode: ContentMode) -> some View {
-        Group {
-            if let url = viewModel.photoURL(for: photo) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().aspectRatio(contentMode: contentMode)
-                    default:
-                        Rectangle().fill(.quaternary)
-                    }
-                }
-            } else {
-                Rectangle().fill(.quaternary)
-            }
-        }
-        .clipped()
+        GooglePlacePhotoView(photoName: photo.name, maxWidthPx: 1200, contentMode: contentMode)
     }
 
     private func openDirections() {
