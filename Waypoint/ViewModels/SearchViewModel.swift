@@ -16,11 +16,6 @@ final class SearchViewModel {
     /// Tracks where the search was initiated so we can show "Search Here" when user pans away.
     var lastSearchCenter: CLLocationCoordinate2D?
     var showSearchHereButton = false
-    
-    // Filter Chip States
-    var filterOpenNow: Bool = false
-    var filterTopRated: Bool = false
-    var filterMaxPrice: Int? = nil
 
     var suggestions: [MKLocalSearchCompletion] {
         completerService.suggestions
@@ -112,7 +107,7 @@ final class SearchViewModel {
         queryText = favorite.title
     }
 
-    func selectDiscover(_ place: GooglePlace) {
+    func selectDiscover(_ place: DetailedPlace) {
         guard let coordinate = place.coordinate, let name = place.displayName?.text else { return }
         let result = syntheticResult(title: name, coordinate: coordinate)
         selectedResult = result

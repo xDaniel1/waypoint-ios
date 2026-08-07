@@ -76,7 +76,7 @@ struct SearchAlongRouteSheet: View {
 }
 
 private struct AlongRouteResultRow: View {
-    let place: GooglePlace
+    let place: DetailedPlace
     let onAdd: () -> Void
 
     var body: some View {

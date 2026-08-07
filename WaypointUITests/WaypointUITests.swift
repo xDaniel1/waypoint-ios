@@ -184,19 +184,19 @@ final class WaypointUITests: XCTestCase {
         XCTAssertTrue(app.textFields["searchField"].waitForExistence(timeout: 5))
     }
 
-    // Focusing search should load Google-powered Trending Restaurants; tapping one opens its detail.
+    // Focusing search should load the nearby-restaurants shelf; tapping one opens its detail.
     func test08_discoverTrending() throws {
         let searchField = app.textFields["searchField"]
         XCTAssertTrue(searchField.waitForExistence(timeout: 10))
         searchField.tap()
 
-        // Trending cards load from Google after a network round-trip.
+        // Rows populate from an MKLocalSearch round-trip.
         let firstTrending = app.buttons["trending-1"]
-        XCTAssertTrue(firstTrending.waitForExistence(timeout: 25), "A Trending Restaurant card should load from Google")
+        XCTAssertTrue(firstTrending.waitForExistence(timeout: 25), "A nearby restaurant row should load")
         attachScreenshot("08a-discover")
         firstTrending.tap()
 
-        XCTAssertTrue(app.buttons["closeDetailButton"].waitForExistence(timeout: 10), "Tapping a trending card opens its place detail")
+        XCTAssertTrue(app.buttons["closeDetailButton"].waitForExistence(timeout: 10), "Tapping a nearby restaurant row opens its place detail")
         attachScreenshot("08b-trending-detail")
         app.buttons["closeDetailButton"].tap()
     }

@@ -86,7 +86,7 @@ struct PlaceDetailContent: View {
         }
     }
 
-    private func openLightbox(_ photos: [GooglePlace.Photo], at index: Int) {
+    private func openLightbox(_ photos: [DetailedPlace.Photo], at index: Int) {
         lightbox = LightboxSelection(photos: photos, index: index)
     }
 
@@ -137,7 +137,7 @@ struct PlaceDetailContent: View {
 
     /// Edge-to-edge hero photo with a gradient scrim, like Apple's place cards.
     @ViewBuilder
-    private func heroHeader(_ place: GooglePlace) -> some View {
+    private func heroHeader(_ place: DetailedPlace) -> some View {
         if let photo = place.photos?.first {
             Button {
                 openLightbox(place.photos ?? [], at: 0)
@@ -162,7 +162,7 @@ struct PlaceDetailContent: View {
     }
 
     /// Name, category · price, and neighborhood.
-    private func titleBlock(_ place: GooglePlace) -> some View {
+    private func titleBlock(_ place: DetailedPlace) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(place.displayName?.text ?? result.title)
                 .font(.system(size: 30, weight: .bold))
@@ -183,7 +183,7 @@ struct PlaceDetailContent: View {
     }
 
     /// Directions (filled blue, with ETA when known) + Call + Website, matching Apple.
-    private func primaryActionRow(_ place: GooglePlace) -> some View {
+    private func primaryActionRow(_ place: DetailedPlace) -> some View {
         HStack(spacing: 10) {
             Button(action: openDirections) {
                 VStack(spacing: 3) {
@@ -244,7 +244,7 @@ struct PlaceDetailContent: View {
     }
 
     /// Hours / Rating / Distance columns under the action buttons.
-    private func statStrip(_ place: GooglePlace) -> some View {
+    private func statStrip(_ place: DetailedPlace) -> some View {
         HStack(alignment: .top, spacing: 0) {
             if let openNow = place.currentOpeningHours?.openNow {
                 statColumn(title: "Hours") {
@@ -289,7 +289,7 @@ struct PlaceDetailContent: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func distanceText(_ place: GooglePlace) -> String? {
+    private func distanceText(_ place: DetailedPlace) -> String? {
         guard let currentLocation, let coordinate = place.coordinate else { return nil }
         let meters = currentLocation.distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude))
         return Measurement(value: meters, unit: UnitLength.meters)
@@ -297,7 +297,7 @@ struct PlaceDetailContent: View {
     }
 
     /// Horizontally scrolling photo cards, mirroring Apple's "From the Business / All Photos".
-    private func photoShowcase(_ photos: [GooglePlace.Photo]) -> some View {
+    private func photoShowcase(_ photos: [DetailedPlace.Photo]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 ForEach(Array(photos.prefix(10).enumerated()), id: \.element.id) { index, photo in
@@ -325,7 +325,7 @@ struct PlaceDetailContent: View {
     }
 
     @ViewBuilder
-    private func aboutSection(_ place: GooglePlace) -> some View {
+    private func aboutSection(_ place: DetailedPlace) -> some View {
         if let description = place.descriptionText, !description.isEmpty {
             sectionContainer(title: "About") {
                 Text(description)
@@ -336,7 +336,7 @@ struct PlaceDetailContent: View {
     }
 
     @ViewBuilder
-    private func ratingsSection(_ place: GooglePlace) -> some View {
+    private func ratingsSection(_ place: DetailedPlace) -> some View {
         if let reviews = place.reviews, !reviews.isEmpty {
             sectionContainer(title: "Ratings & Reviews") {
                 VStack(spacing: 14) {
@@ -350,7 +350,7 @@ struct PlaceDetailContent: View {
     }
 
     @ViewBuilder
-    private func goodToKnowSection(_ place: GooglePlace) -> some View {
+    private func goodToKnowSection(_ place: DetailedPlace) -> some View {
         let items = place.goodToKnow
         if !items.isEmpty {
             sectionContainer(title: "Good to Know") {
@@ -371,7 +371,7 @@ struct PlaceDetailContent: View {
     }
 
     @ViewBuilder
-    private func hoursSection(_ place: GooglePlace) -> some View {
+    private func hoursSection(_ place: DetailedPlace) -> some View {
         if let hours = place.currentOpeningHours, let descriptions = hours.weekdayDescriptions, !descriptions.isEmpty {
             sectionContainer(title: "Hours") {
                 VStack(alignment: .leading, spacing: 8) {
@@ -390,7 +390,7 @@ struct PlaceDetailContent: View {
         }
     }
 
-    private func detailsSection(_ place: GooglePlace) -> some View {
+    private func detailsSection(_ place: DetailedPlace) -> some View {
         sectionContainer(title: "Details") {
             VStack(spacing: 0) {
                 if let phone = place.internationalPhoneNumber {
@@ -452,7 +452,7 @@ struct PlaceDetailContent: View {
 
     // MARK: Shared
 
-    private func photoImage(_ photo: GooglePlace.Photo, contentMode: ContentMode) -> some View {
+    private func photoImage(_ photo: DetailedPlace.Photo, contentMode: ContentMode) -> some View {
         Group {
             if let url = viewModel.photoURL(for: photo) {
                 GooglePhotoImage(url: url) { phase in
@@ -482,7 +482,7 @@ struct PlaceDetailContent: View {
 
 
 private struct ReviewRow: View {
-    let review: GooglePlace.Review
+    let review: DetailedPlace.Review
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {

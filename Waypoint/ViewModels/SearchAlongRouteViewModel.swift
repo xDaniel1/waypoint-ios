@@ -49,11 +49,11 @@ final class SearchAlongRouteViewModel {
     }
 
     private(set) var selectedCategory: Category?
-    private(set) var results: [GooglePlace] = []
+    private(set) var results: [DetailedPlace] = []
     private(set) var isLoading = false
     private(set) var errorMessage: String?
 
-    private let service = GooglePlacesService()
+    private let service = ApplePlacesService()
     private var searchTask: Task<Void, Never>?
 
     func select(_ category: Category, along remainingCoordinates: [CLLocationCoordinate2D]) {
@@ -86,7 +86,7 @@ final class SearchAlongRouteViewModel {
         }
     }
 
-    func photoURL(for place: GooglePlace, maxWidthPx: Int = 400) -> URL? {
+    func photoURL(for place: DetailedPlace, maxWidthPx: Int = 400) -> URL? {
         guard let photo = place.photos?.first else { return nil }
         return service.photoURL(photoName: photo.name, maxWidthPx: maxWidthPx)
     }

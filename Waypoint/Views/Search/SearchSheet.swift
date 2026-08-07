@@ -110,16 +110,17 @@ struct SearchSheet: View {
 
                 if isSearching {
                     List {
-                        filterChipsSection
                         if viewModel.queryText.isEmpty {
                             tipSection
                             placesSection
                             categoriesSection
-                            DiscoverSections(discover: viewModel.discover) { place in
+                            recentsSection
+                            DiscoverSections(
+                                discover: viewModel.discover,
+                                currentLocation: currentLocation
+                            ) { place in
                                 selectDiscover(place)
                             }
-                            nearbySection
-                            recentsSection
                         } else {
                             suggestionsSection
                         }
@@ -471,22 +472,6 @@ struct SearchSheet: View {
     }
 
     @ViewBuilder
-    private var nearbySection: some View {
-        if !viewModel.nearbyService.nearbyResults.isEmpty {
-            Section("Nearby") {
-                ForEach(viewModel.nearbyService.nearbyResults) { result in
-                    Button {
-                        select(nearby: result)
-                    } label: {
-                        NearbyRow(result: result)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
     private var placesSection: some View {
         let canAddSelection = viewModel.selectedResult.map { !viewModel.favoritesStore.isFavorite($0) } ?? false
         if !viewModel.favoritesStore.favorites.isEmpty || canAddSelection {
@@ -509,68 +494,6 @@ struct SearchSheet: View {
                 .listRowInsets(EdgeInsets())
                 .listRowSeparator(.hidden)
             }
-        }
-    }
-
-    private var filterChipsSection: some View {
-        Section {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    Button {
-                        viewModel.filterOpenNow.toggle()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: viewModel.filterOpenNow ? "clock.fill" : "clock")
-                            Text("Open Now")
-                        }
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(viewModel.filterOpenNow ? Color.white : Color.primary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(viewModel.filterOpenNow ? Color.blue : Color.primary.opacity(0.08), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        viewModel.filterTopRated.toggle()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "star.fill")
-                                .foregroundStyle(viewModel.filterTopRated ? .white : .yellow)
-                            Text("4★ & Up")
-                        }
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(viewModel.filterTopRated ? Color.white : Color.primary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(viewModel.filterTopRated ? Color.blue : Color.primary.opacity(0.08), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        if viewModel.filterMaxPrice == 2 {
-                            viewModel.filterMaxPrice = nil
-                        } else {
-                            viewModel.filterMaxPrice = 2
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "dollarsign.circle")
-                            Text("Under $$")
-                        }
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(viewModel.filterMaxPrice != nil ? Color.white : Color.primary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(viewModel.filterMaxPrice != nil ? Color.blue : Color.primary.opacity(0.08), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-            }
-            .listRowInsets(EdgeInsets())
-            .listRowSeparator(.hidden)
         }
     }
 
@@ -602,25 +525,40 @@ struct SearchSheet: View {
     }
 
     @ViewBuilder
+    /// Apple's Recents shelf: a grouped rounded card holding two rows, paging sideways through
+    /// the rest — not a flat full-length list.
     private var recentsSection: some View {
         if !viewModel.recentsStore.recents.isEmpty {
-            Section {
-                ForEach(viewModel.recentsStore.recents) { recent in
-                    RecentRow(recent: recent) {
-                        select(recent: recent)
-                    } onRemove: {
-                        viewModel.recentsStore.remove(recent)
+            let pages = stride(from: 0, to: viewModel.recentsStore.recents.count, by: 2).map {
+                Array(viewModel.recentsStore.recents[$0..<min($0 + 2, viewModel.recentsStore.recents.count)])
+            }
+            Section(header: SectionHeader(title: "Recents", showsChevron: true)) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(Array(pages.enumerated()), id: \.offset) { _, page in
+                            VStack(spacing: 0) {
+                                ForEach(Array(page.enumerated()), id: \.element.id) { index, recent in
+                                    RecentRow(recent: recent) {
+                                        select(recent: recent)
+                                    } onRemove: {
+                                        viewModel.recentsStore.remove(recent)
+                                    }
+                                    if index < page.count - 1 {
+                                        Divider().padding(.leading, 52)
+                                    }
+                                }
+                            }
+                            .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
+                            .containerRelativeFrame(.horizontal, count: 1, spacing: 12)
+                        }
                     }
+                    .scrollTargetLayout()
+                    .padding(.vertical, 4)
                 }
-            } header: {
-                HStack {
-                    Text("Recents")
-                    Spacer()
-                    Button("Clear") {
-                        viewModel.recentsStore.clear()
-                    }
-                    .font(.caption)
-                }
+                .scrollTargetBehavior(.viewAligned)
+                .safeAreaPadding(.horizontal, 16)
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
             }
         }
     }
@@ -679,20 +617,13 @@ struct SearchSheet: View {
         viewModel.selectRecent(recent)
     }
 
-    private func select(nearby result: SearchResult) {
-        isFieldFocused = false
-        isSearching = false
-        viewModel.selectResult(result)
-        handleSelectionForFavorites()
-    }
-
     private func select(favorite: FavoritePlace) {
         isFieldFocused = false
         isSearching = false
         viewModel.selectFavorite(favorite)
     }
 
-    private func selectDiscover(_ place: GooglePlace) {
+    private func selectDiscover(_ place: DetailedPlace) {
         isFieldFocused = false
         isSearching = false
         viewModel.selectDiscover(place)
@@ -1006,22 +937,22 @@ private struct RecentRow: View {
         HStack(spacing: 12) {
             Button(action: onSelect) {
                 HStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(.quaternary)
-                            .frame(width: 32, height: 32)
-                        Image(systemName: "clock")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
+                    // Apple marks recent *searches* with a magnifying glass, not a clock.
+                    Image(systemName: "magnifyingglass")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28)
+                    // Title and locality sit on one line there — "Half Moon · New York".
+                    HStack(spacing: 4) {
                         Text(recent.title)
                             .font(.body)
                             .foregroundStyle(.primary)
+                            .lineLimit(1)
                         if !recent.subtitle.isEmpty {
-                            Text(recent.subtitle)
-                                .font(.caption)
+                            Text("· \(recent.subtitle)")
+                                .font(.body)
                                 .foregroundStyle(.secondary)
+                                .lineLimit(1)
                         }
                     }
                 }
@@ -1041,6 +972,11 @@ private struct RecentRow: View {
                     .contentShape(Rectangle())
             }
         }
+        // Inside a grouped card now, so the row owns its own insets — Apple's rows breathe
+        // considerably more than the default List spacing did.
+        .padding(.leading, 14)
+        .padding(.trailing, 6)
+        .padding(.vertical, 6)
     }
 }
 
@@ -1075,31 +1011,6 @@ private struct TipCard: View {
     }
 }
 
-private struct NearbyRow: View {
-    let result: SearchResult
-
-    var body: some View {
-        let icon = PlaceCategoryIcon.icon(for: result.title)
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(icon.color.opacity(0.2))
-                    .frame(width: 32, height: 32)
-                Image(systemName: icon.symbol)
-                    .font(.subheadline)
-                    .foregroundStyle(icon.color)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(result.title)
-                    .font(.body)
-                Text("Nearby")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-}
-
 private struct AroundMeChip: View {
     let category: AroundMeViewModel.Category
     let isSelected: Bool
@@ -1126,7 +1037,7 @@ private struct AroundMeChip: View {
 }
 
 private struct AroundMeResultCard: View {
-    let place: GooglePlace
+    let place: DetailedPlace
     let imageURL: URL?
     let distanceText: String?
     let action: () -> Void

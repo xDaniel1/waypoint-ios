@@ -341,14 +341,21 @@ struct MapScreen: View {
             .presentationSizing(.page)
             .presentationCornerRadius(28)
             .interactiveDismissDisabled(true)
-        }
-        .sheet(isPresented: $isAddingDirectionsStop) {
-            AddStopSheet(currentRegion: originRegionForAddStop) { item in
-                directionsViewModel.addStop(item)
+            // Chained onto SearchSheet itself, not sibling .sheet() modifiers on MapScreen's own
+            // root: the outer SearchSheet sheet is presented essentially the whole time the user
+            // isn't actively navigating, so a sibling .sheet() here would be a second *independent*
+            // sheet trying to present itself while another already is — the exact "sheet from a
+            // sheet" pattern that silently never shows on this SwiftUI version. Presenting instead
+            // from the already-open sheet's own content chains it onto the same, single active
+            // presentation, which iOS handles correctly.
+            .sheet(isPresented: $isAddingDirectionsStop) {
+                AddStopSheet(currentRegion: originRegionForAddStop) { item in
+                    directionsViewModel.addStop(item)
+                }
             }
-        }
-        .sheet(item: $stepsRoute) { route in
-            RouteStepsSheet(destination: directionsViewModel.destinationTitle, route: route)
+            .sheet(item: $stepsRoute) { route in
+                RouteStepsSheet(destination: directionsViewModel.destinationTitle, route: route)
+            }
         }
         .sheet(isPresented: $isSearchingAlongRoute) {
             SearchAlongRouteSheet(remainingCoordinates: navigationViewModel.remainingCoordinates) { coordinate in
@@ -410,14 +417,15 @@ struct MapScreen: View {
         Task {
             defer { isRerouting = false }
             guard let location = viewModel.currentLocation else { return }
-            guard let options = try? await GoogleRoutesService().computeRoutes(
+            let destinationItem = MKMapItem(placemark: MKPlacemark(coordinate: navigationViewModel.destinationCoordinate))
+            let stopItems = navigationViewModel.intermediateStops.map { MKMapItem(placemark: MKPlacemark(coordinate: $0)) }
+            guard let options = try? await AppleRoutesService().computeRoutes(
                 from: location.coordinate,
-                to: navigationViewModel.destinationCoordinate,
-                mode: .drive,
+                to: destinationItem,
+                stops: stopItems,
+                transportType: .automobile,
                 avoidTolls: directionsViewModel.avoidTolls,
-                avoidHighways: directionsViewModel.avoidHighways,
-                avoidFerries: directionsViewModel.avoidFerries,
-                intermediates: navigationViewModel.intermediateStops
+                avoidHighways: directionsViewModel.avoidHighways
             ), let newRoute = options.first else { return }
             navigationViewModel.reroute(to: newRoute)
             // A reroute changes the ETA/instruction enough that it's worth refreshing right

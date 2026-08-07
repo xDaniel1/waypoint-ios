@@ -51,7 +51,11 @@ struct DirectionsCard: View {
             proxy.size.height
         } action: { newValue in
             guard !isExpanded, !viewModel.isCalculating, newValue > 0 else { return }
-            contentHeight = max(200, newValue - 12)
+            // Measured empirically: the presented sheet consistently renders ~27pt taller than
+            // this VStack's own measured height regardless of what's inside it (confirmed with a
+            // 10pt placeholder in place of the route pager, same gap) — some fixed overhead in
+            // how the .height() detent maps to the rendered sheet, not anything content-specific.
+            contentHeight = max(160, newValue - 39)
         }
         .animation(.smooth(duration: 0.3), value: viewModel.mode)
         .animation(.smooth(duration: 0.3), value: viewModel.selectedRouteID)
@@ -163,7 +167,7 @@ struct DirectionsCard: View {
             }
         }
         .padding(4)
-        .background(.thickMaterial, in: Capsule())
+        .background(Color.black.opacity(0.82), in: Capsule())
         .accessibilityIdentifier("directionsModePicker")
     }
 
@@ -574,11 +578,11 @@ private struct ModeButton: View {
                 .font(.system(size: 17, weight: .semibold))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
-                .foregroundStyle(isSelected ? Color(uiColor: .systemBackground) : .primary)
+                .foregroundStyle(.white)
                 .background {
                     if isSelected {
                         Capsule()
-                            .fill(Color.primary)
+                            .fill(Color(white: 0.42))
                             .matchedGeometryEffect(id: "modeHighlight", in: namespace)
                     }
                 }

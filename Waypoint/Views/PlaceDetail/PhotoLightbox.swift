@@ -3,21 +3,21 @@ import SwiftUI
 /// Identifies which photo set (and starting photo) the full-screen viewer should open with.
 struct LightboxSelection: Identifiable {
     let id = UUID()
-    let photos: [GooglePlace.Photo]
+    let photos: [DetailedPlace.Photo]
     let index: Int
 }
 
 /// Full-screen photo viewer: swipe between photos, pinch/double-tap to zoom, drag down to dismiss.
 struct PhotoLightbox: View {
-    let photos: [GooglePlace.Photo]
+    let photos: [DetailedPlace.Photo]
     let startIndex: Int
-    let urlProvider: (GooglePlace.Photo) -> URL?
+    let urlProvider: (DetailedPlace.Photo) -> URL?
 
     @Environment(\.dismiss) private var dismiss
     @State private var index: Int
     @State private var dragOffset: CGFloat = 0
 
-    init(photos: [GooglePlace.Photo], startIndex: Int, urlProvider: @escaping (GooglePlace.Photo) -> URL?) {
+    init(photos: [DetailedPlace.Photo], startIndex: Int, urlProvider: @escaping (DetailedPlace.Photo) -> URL?) {
         self.photos = photos
         self.startIndex = startIndex
         self.urlProvider = urlProvider

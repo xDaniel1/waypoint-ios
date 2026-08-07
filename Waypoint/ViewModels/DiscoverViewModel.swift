@@ -2,13 +2,15 @@ import CoreLocation
 import Foundation
 import Observation
 
-/// Loads Google-powered discovery content (trending restaurants + suggested nearby places)
-/// for the browse state of the search sheet — our take on Apple Maps' Suggested/Trending sections.
+/// Discovery content for the browse state of the search sheet — the Suggested Places and
+/// Trending Restaurants shelves. Google-backed rather than MapKit-backed specifically because
+/// these shelves are photo-led: MapKit returns no photos, ratings, price or open/closed state,
+/// which left the cards as empty grey frames.
 @Observable
 @MainActor
 final class DiscoverViewModel {
-    private(set) var trendingRestaurants: [GooglePlace] = []
-    private(set) var suggestedPlaces: [GooglePlace] = []
+    private(set) var trendingRestaurants: [DetailedPlace] = []
+    private(set) var suggestedPlaces: [DetailedPlace] = []
     private(set) var isLoading = false
 
     private let service = GooglePlacesService()
@@ -37,7 +39,7 @@ final class DiscoverViewModel {
         suggestedPlaces = s
     }
 
-    func photoURL(for place: GooglePlace, maxWidthPx: Int = 400) -> URL? {
+    func photoURL(for place: DetailedPlace, maxWidthPx: Int = 400) -> URL? {
         guard let photo = place.photos?.first else { return nil }
         return service.photoURL(photoName: photo.name, maxWidthPx: maxWidthPx)
     }
