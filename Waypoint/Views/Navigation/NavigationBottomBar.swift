@@ -12,6 +12,7 @@ struct NavigationBottomBar: View {
     var isMuted: Bool = false
     let onEndRoute: () -> Void
     var onAddStop: () -> Void = {}
+    var onShowDetails: () -> Void = {}
     var onReportIncident: () -> Void = {}
     var onToggleMute: () -> Void = {}
     /// Reports the card's rendered height so the floating map buttons can sit right above it.
@@ -113,6 +114,8 @@ struct NavigationBottomBar: View {
                 shareETARow
                 Divider().padding(.leading, 56)
                 actionRow(icon: "exclamationmark.bubble.fill", tint: .red, title: "Report an Incident", action: onReportIncident)
+                Divider().padding(.leading, 56)
+                actionRow(icon: "list.bullet", tint: .blue, title: "Details", action: onShowDetails)
                 Divider().padding(.leading, 56)
                 actionRow(
                     icon: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",

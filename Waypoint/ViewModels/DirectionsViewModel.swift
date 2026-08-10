@@ -53,6 +53,14 @@ final class DirectionsViewModel {
     var avoidFerries = false {
         didSet { scheduleCalculation() }
     }
+    
+    var departureDate: Date? {
+        didSet { scheduleCalculation() }
+    }
+    
+    var arrivalDate: Date? {
+        didSet { scheduleCalculation() }
+    }
 
     var avoidSummary: String {
         let active = [
@@ -167,7 +175,9 @@ final class DirectionsViewModel {
                 stops: stops.map(\.mapItem),
                 transportType: mode.mkTransportType,
                 avoidTolls: avoidTolls,
-                avoidHighways: avoidHighways
+                avoidHighways: avoidHighways,
+                departureDate: departureDate,
+                arrivalDate: arrivalDate
             )
             applyOptions(options, emptyMessage: "No \(mode.label.lowercased()) route found.")
         } catch {

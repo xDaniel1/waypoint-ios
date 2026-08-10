@@ -26,6 +26,7 @@ final class PlaceDetailViewModel {
                 place = try await googleService.details(name: result.title, coordinate: result.coordinate)
                 return
             } catch {
+                print("Google Places API error: \(error)")
                 // Fall through to MapKit rather than leaving the card empty.
             }
         }

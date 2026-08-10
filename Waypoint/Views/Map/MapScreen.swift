@@ -21,24 +21,19 @@ struct MapScreen: View {
     /// placeholder before any measurement has come back.
     @State private var directionsCardHeight: CGFloat = 180
     @State private var sheetHeight: CGFloat = 90
-    @State private var mapStyle: MapStyle = .standard
+    @State private var mapStyle: MapStyle = .standard(showsTraffic: true)
     @State private var mapCenter: CLLocationCoordinate2D?
     @State private var currentCamera: MapCamera?
     @State private var trackingMode: UserTrackingMode = .off
     /// Shared between the GPS-fix and compass-heading update paths so they never both animate
     /// the camera within the same window — that fight was the source of the stutter/snapping.
     @State private var lastCameraAnimation: Date = .distantPast
-    @State private var speedLimitService = SpeedLimitService()
     @State private var navBarHeight: CGFloat = 120
     @State private var voiceGuidance = VoiceGuidanceService()
     @State private var navigationNotifications = NavigationNotificationService()
     @State private var isRerouting = false
     @State private var isSearchingAlongRoute = false
     @State private var isAddingNavStop = false
-    /// Owned here rather than by DirectionsCard, since DirectionsCard is itself content of this
-    /// screen's outer search sheet — a sheet presented from within already-sheet-presented
-    /// content doesn't reliably appear (observed on Xcode 27 beta).
-    @State private var isAddingDirectionsStop = false
     @State private var stepsRoute: RouteOption?
     @State private var isReportingIncident = false
     @State private var showingTransitDetails = false
@@ -150,7 +145,7 @@ struct MapScreen: View {
                     }
                 }
             }
-            .mapStyle(navigationViewModel.isActive ? .standard(elevation: .realistic) : mapStyle)
+            .mapStyle(navigationViewModel.isActive ? .standard(elevation: .realistic, showsTraffic: true) : mapStyle)
             .onMapCameraChange(frequency: .onEnd) { context in
                 searchViewModel.updateSearchRegion(context.region)
                 mapCenter = context.region.center
@@ -204,7 +199,6 @@ struct MapScreen: View {
             viewModel.onLocationUpdate = { location in
                 if navigationViewModel.isActive {
                     navigationViewModel.update(with: location)
-                    Task { await speedLimitService.refreshIfNeeded(at: location) }
                     if Date().timeIntervalSince(lastLiveActivityUpdate) > 20 {
                         lastLiveActivityUpdate = Date()
                         let arrival = Date().addingTimeInterval(navigationViewModel.remainingTime)
@@ -328,7 +322,6 @@ struct MapScreen: View {
                         }
                     }
                 },
-                onAddStop: { isAddingDirectionsStop = true },
                 onShowSteps: { route in stepsRoute = route }
             )
             .presentationDetents(sheetDetents, selection: $searchDetent)
@@ -348,11 +341,6 @@ struct MapScreen: View {
             // sheet" pattern that silently never shows on this SwiftUI version. Presenting instead
             // from the already-open sheet's own content chains it onto the same, single active
             // presentation, which iOS handles correctly.
-            .sheet(isPresented: $isAddingDirectionsStop) {
-                AddStopSheet(currentRegion: originRegionForAddStop) { item in
-                    directionsViewModel.addStop(item)
-                }
-            }
             .sheet(item: $stepsRoute) { route in
                 RouteStepsSheet(destination: directionsViewModel.destinationTitle, route: route)
             }
@@ -606,7 +594,6 @@ struct MapScreen: View {
                             destinationName: navigationViewModel.destinationName,
                             onClose: {
                                 navigationViewModel.end()
-                                speedLimitService.reset()
                             },
                             onMore: { showingTransitDetails = true }
                         )
@@ -624,21 +611,8 @@ struct MapScreen: View {
                         )
                         .padding(.top, 4)
 
-                        if let limit = speedLimitService.display {
-                            HStack(spacing: 10) {
-                                SpeedLimitSign(speedLimit: limit.value, unitLabel: limit.unit)
-                                if let speed = currentSpeedValue(matching: limit.unit) {
-                                    CurrentSpeedReadout(speed: speed, unit: limit.unit, isOverLimit: speed > limit.value + 3)
-                                }
-                                Spacer()
-                            }
-                            .padding(.leading, 16)
-                            .padding(.top, 6)
-                            .transition(.scale.combined(with: .opacity))
-                        }
                         Spacer()
                     }
-                    .animation(.smooth(duration: 0.3), value: speedLimitService.display?.value)
 
                     VStack {
                         Spacer()
@@ -650,13 +624,13 @@ struct MapScreen: View {
                             isMuted: voiceGuidance.isMuted,
                             onEndRoute: {
                                 navigationViewModel.end()
-                                speedLimitService.reset()
                                 liveActivity.end()
                                 NavigationWidgetDataStore.clear()
                                 viewModel.endBackgroundTracking()
                                 navigationNotifications.clear()
                             },
                             onAddStop: { isAddingNavStop = true },
+                            onShowDetails: { stepsRoute = navigationViewModel.route },
                             onReportIncident: { isReportingIncident = true },
                             onToggleMute: { voiceGuidance.isMuted.toggle() },
                             onHeightChange: { navBarHeight = $0 }
@@ -879,9 +853,9 @@ private struct FusedRightControls: View {
                     .overlay(Color.primary.opacity(0.15))
 
                 Menu {
-                    Button("Standard") { mapStyle = .standard }
+                    Button("Standard") { mapStyle = .standard(showsTraffic: true) }
                     Button("Satellite") { mapStyle = .imagery }
-                    Button("Hybrid") { mapStyle = .hybrid }
+                    Button("Hybrid") { mapStyle = .hybrid(showsTraffic: true) }
                 } label: {
                     Image(systemName: "square.3.layers.3d")
                         .font(.system(size: 18, weight: .medium))

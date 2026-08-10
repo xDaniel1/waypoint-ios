@@ -14,7 +14,12 @@ final class DiscoverViewModel {
     private(set) var isLoading = false
 
     private let service = GooglePlacesService()
+    /// Used only when Google is unavailable — see `loadIfNeeded`.
+    private let fallbackService = ApplePlacesService()
     private var lastLoadedCenter: CLLocationCoordinate2D?
+    /// True when the shelves below are MapKit-sourced, so the UI can explain the thinner cards
+    /// instead of silently looking broken.
+    private(set) var isUsingFallbackData = false
 
     func loadIfNeeded(around coordinate: CLLocationCoordinate2D) async {
         // Skip refetching if we already loaded for a nearby center (~500m).
@@ -34,7 +39,27 @@ final class DiscoverViewModel {
             coordinate: coordinate, radius: 2000, maxResults: 8
         )) ?? []
 
-        let (t, s) = await (trending, suggested)
+        var (t, s) = await (trending, suggested)
+
+        // Google can be unavailable for reasons that have nothing to do with this code — an
+        // expired key, billing lapsing, or the Places API being switched off in Cloud Console
+        // all return 403. Previously that emptied both shelves, so the whole search page looked
+        // broken. Fall back to MapKit so the shelves still populate; they lose photos, ratings
+        // and hours (MapKit exposes none of those), which `isUsingFallbackData` lets the UI say
+        // out loud rather than leaving the user guessing.
+        if t.isEmpty && s.isEmpty {
+            async let fallbackTrending = (try? fallbackService.searchNearby(
+                includedTypes: ["restaurant"], coordinate: coordinate, radius: 2500, maxResults: 8
+            )) ?? []
+            async let fallbackSuggested = (try? fallbackService.searchNearby(
+                includedTypes: ["cafe"], coordinate: coordinate, radius: 2000, maxResults: 8
+            )) ?? []
+            (t, s) = await (fallbackTrending, fallbackSuggested)
+            isUsingFallbackData = !(t.isEmpty && s.isEmpty)
+        } else {
+            isUsingFallbackData = false
+        }
+
         trendingRestaurants = t
         suggestedPlaces = s
     }

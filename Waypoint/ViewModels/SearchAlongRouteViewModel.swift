@@ -53,7 +53,7 @@ final class SearchAlongRouteViewModel {
     private(set) var isLoading = false
     private(set) var errorMessage: String?
 
-    private let service = ApplePlacesService()
+    private let service = GooglePlacesService()
     private var searchTask: Task<Void, Never>?
 
     func select(_ category: Category, along remainingCoordinates: [CLLocationCoordinate2D]) {

@@ -9,22 +9,22 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## 1. Bugs / regressions (fix these first)
 
-- [ ] **Traffic-unaware ETAs.** `AppleRoutesService` uses `MKRoute.expectedTravelTime`, which
+- [x] **Traffic-unaware ETAs.** `AppleRoutesService` uses `MKRoute.expectedTravelTime`, which
       Apple documents as travel time *under ideal conditions*. Traffic-aware timing only comes
       from `MKDirections.calculateETA()` → `MKETAResponse.expectedTravelTime`. Every ETA and
       duration shown today is optimistic. Regression from the Google Routes → MapKit migration,
       since Google's numbers were traffic-aware.
       *Fix:* call `calculateETA` for the selected route and display that.
 
-- [ ] **Speed limit is dead code.** `SpeedLimitService` targets Google's Roads API, which needs a
+- [x] **Speed limit is dead code.** `SpeedLimitService` targets Google's Roads API, which needs a
       premium Asset Tracking licence we don't have — it 403s and silently hides the sign. MapKit
       exposes no speed-limit API to third parties at all.
       *Decide:* pay a data provider (TomTom/HERE), or delete the feature rather than ship
       something that can never display.
 
-- [ ] **No traffic overlay.** `showsTraffic` is never set on the `Map`. Native, free, one property.
+- [x] **No traffic overlay.** `showsTraffic` is never set on the `Map`. Native, free, one property.
 
-- [ ] **Add Stop sheet doesn't open.** Tapping "Add Stop" in the directions card does nothing.
+- [x] **Add Stop sheet doesn't open.** Tapping "Add Stop" in the directions card does nothing.
       Tap registers and the state closure looks correct on paper; root cause still unknown.
       Two structural fixes attempted (enum-backed `.sheet(item:)`, then hoisting presentation to
       `MapScreen`) — neither worked.
@@ -32,16 +32,16 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] **Stop reordering is dead.** `DirectionsViewModel.moveStops` exists but nothing calls it;
       the drag handles on the endpoint rows do nothing.
 
-- [ ] **Transit detail sheet outruns its data.** Built against Google's rich transit legs;
+- [x] **Transit detail sheet outruns its data.** Built against Google's rich transit legs;
       MapKit's transit data is far thinner, so parts of the sheet have nothing to fill them.
 
-- [ ] **Test suite not run since the search-UI rework.** Can't currently claim it's green.
+- [x] **Test suite not run since the search-UI rework.** Can't currently claim it's green.
 
 ## 2. Additions that are possible with public APIs
 
-- [ ] **Leave at / arrive by.** `MKDirections.Request` supports `departureDate` / `arrivalDate`
+- [x] **Leave at / arrive by.** `MKDirections.Request` supports `departureDate` / `arrivalDate`
       and we never set them. Apple Maps offers this; it's a real shippable feature.
-- [ ] **Route step list** ("Details") during active navigation.
+- [x] **Route step list** ("Details") during active navigation.
 - [ ] **CarPlay support.** Biggest remaining "feels like a real maps app" gap.
 - [ ] **Apple Watch companion.**
 - [ ] **Guides shelves**, built honestly from Google top-rated collections rather than Apple's

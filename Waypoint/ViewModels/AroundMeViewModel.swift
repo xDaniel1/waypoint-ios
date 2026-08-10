@@ -42,7 +42,7 @@ final class AroundMeViewModel {
     private(set) var isLoading = false
     private(set) var errorMessage: String?
 
-    private let service = ApplePlacesService()
+    private let service = GooglePlacesService()
     private var searchTask: Task<Void, Never>?
 
     /// Tapping the already-open category collapses the grid back down, matching how the rest

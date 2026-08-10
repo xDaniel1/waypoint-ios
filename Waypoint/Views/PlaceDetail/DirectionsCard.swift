@@ -127,8 +127,23 @@ struct DirectionsCard: View {
                 Toggle("Highways", isOn: $viewModel.avoidHighways)
                 Toggle("Ferries", isOn: $viewModel.avoidFerries)
             }
-            Section {
-                Text("Routes and ETAs use live traffic for right now. Scheduled departure isn't supported yet.")
+            Section("Timing") {
+                // A quick way to set departure time. A more robust UI would use a DatePicker in a sheet.
+                Button("Leave Now") {
+                    viewModel.departureDate = nil
+                    viewModel.arrivalDate = nil
+                }
+                Button("Leave in 1 hour") {
+                    viewModel.departureDate = Date().addingTimeInterval(3600)
+                    viewModel.arrivalDate = nil
+                }
+                Button("Leave tomorrow morning") {
+                    if let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()),
+                       let morning = Calendar.current.date(bySettingHour: 8, minute: 0, second: 0, of: tomorrow) {
+                        viewModel.departureDate = morning
+                        viewModel.arrivalDate = nil
+                    }
+                }
             }
         } label: {
             Text(viewModel.hasAvoidPreferences ? viewModel.avoidSummary : "Options")

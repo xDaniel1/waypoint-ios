@@ -28,9 +28,9 @@ struct SearchSheet: View {
     let onStartNavigation: (RouteOption) -> Void
     /// Bubbled up to MapScreen, which owns the actual sheet presentation — see the comment on
     /// DirectionsCard's matching properties for why this can't be presented from in here.
-    let onAddStop: () -> Void
     let onShowSteps: (RouteOption) -> Void
     @FocusState private var isFieldFocused: Bool
+    @State private var isAddingDirectionsStop = false
     /// Stays true for the whole search session — scrolling dismisses the keyboard but must NOT
     /// drop you back to the map, so the results list is driven by this, not by keyboard focus.
     @State private var isSearching = false
@@ -60,7 +60,7 @@ struct SearchSheet: View {
                     contentHeight: $directionsHeight,
                     onClose: { directionsViewModel.stop() },
                     onStartNavigation: { route in onStartNavigation(route) },
-                    onAddStop: onAddStop,
+                    onAddStop: { isAddingDirectionsStop = true },
                     onShowSteps: onShowSteps
                 )
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -205,6 +205,11 @@ struct SearchSheet: View {
         .sheet(item: $editingFavorite) { favorite in
             EditFavoriteSheet(favorite: favorite) { title, emoji, colorHex in
                 viewModel.favoritesStore.update(favorite, title: title, emoji: emoji, colorHex: colorHex)
+            }
+        }
+        .sheet(isPresented: $isAddingDirectionsStop) {
+            AddStopSheet(currentRegion: originRegionForAddStop) { item in
+                directionsViewModel.addStop(item)
             }
         }
     }
@@ -439,6 +444,11 @@ struct SearchSheet: View {
         // simultaneous gesture fires alongside that (never blocking it) and sets focus directly,
         // so the keyboard appears on the very first tap.
         .simultaneousGesture(TapGesture().onEnded { isFieldFocused = true })
+    }
+
+    private var originRegionForAddStop: MKCoordinateRegion? {
+        guard let coordinate = currentLocation?.coordinate else { return nil }
+        return MKCoordinateRegion(center: coordinate, latitudinalMeters: 8000, longitudinalMeters: 8000)
     }
 
     private var profileButton: some View {

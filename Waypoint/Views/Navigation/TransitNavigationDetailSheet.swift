@@ -65,11 +65,20 @@ struct TransitNavigationDetailSheet: View {
                         // 5. Arrival Step
                         arriveStepView()
                     } else {
-                        // Fallback plain walk itinerary
-                        walkStepView(
-                            title: "Walk to \(destinationName)",
-                            subtitle: "\(route.formattedDistance), about \(route.shortDuration)"
-                        )
+                        ForEach(Array(route.steps.enumerated()), id: \.element.id) { index, step in
+                            genericStepView(step: step)
+                            if index < route.steps.count - 1 {
+                                Divider().padding(.leading, 48)
+                            }
+                        }
+                        
+                        if route.steps.isEmpty {
+                            walkStepView(
+                                title: "Walk to \(destinationName)",
+                                subtitle: "\(route.formattedDistance), about \(route.shortDuration)"
+                            )
+                        }
+
                         Divider().padding(.leading, 48)
                         arriveStepView()
                     }
@@ -243,6 +252,29 @@ struct TransitNavigationDetailSheet: View {
                 Text(destinationAddress ?? destinationName)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+extension TransitNavigationDetailSheet {
+    private func genericStepView(step: RouteStep) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            Image(systemName: step.maneuverIcon)
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 32)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(step.instruction)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(.primary)
+
+                if step.distanceMeters > 0 {
+                    Text(step.formattedDistance)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
