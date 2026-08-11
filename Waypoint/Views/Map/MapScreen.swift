@@ -30,6 +30,7 @@ struct MapScreen: View {
     @State private var lastCameraAnimation: Date = .distantPast
     @State private var navBarHeight: CGFloat = 120
     @State private var voiceGuidance = VoiceGuidanceService()
+    @State private var speedLimitService = SpeedLimitService()
     @State private var navigationNotifications = NavigationNotificationService()
     @State private var isRerouting = false
     @State private var isSearchingAlongRoute = false
@@ -199,6 +200,7 @@ struct MapScreen: View {
             viewModel.onLocationUpdate = { location in
                 if navigationViewModel.isActive {
                     navigationViewModel.update(with: location)
+                    Task { await speedLimitService.refreshIfNeeded(at: location) }
                     if Date().timeIntervalSince(lastLiveActivityUpdate) > 20 {
                         lastLiveActivityUpdate = Date()
                         let arrival = Date().addingTimeInterval(navigationViewModel.remainingTime)
@@ -594,6 +596,7 @@ struct MapScreen: View {
                             destinationName: navigationViewModel.destinationName,
                             onClose: {
                                 navigationViewModel.end()
+                                speedLimitService.reset()
                             },
                             onMore: { showingTransitDetails = true }
                         )
@@ -611,8 +614,19 @@ struct MapScreen: View {
                         )
                         .padding(.top, 4)
 
+                        if let limit = speedLimitService.display {
+                            HStack {
+                                SpeedLimitSign(speedLimit: limit.value, unitLabel: limit.unit)
+                                    .padding(.leading, 16)
+                                    .padding(.top, 6)
+                                    .transition(.scale.combined(with: .opacity))
+                                Spacer()
+                            }
+                        }
+
                         Spacer()
                     }
+                    .animation(.smooth(duration: 0.3), value: speedLimitService.display?.value)
 
                     VStack {
                         Spacer()
@@ -624,6 +638,7 @@ struct MapScreen: View {
                             isMuted: voiceGuidance.isMuted,
                             onEndRoute: {
                                 navigationViewModel.end()
+                                speedLimitService.reset()
                                 liveActivity.end()
                                 NavigationWidgetDataStore.clear()
                                 viewModel.endBackgroundTracking()

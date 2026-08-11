@@ -205,18 +205,27 @@ struct DirectionsCard: View {
                     symbol: "arrow.triangle.turn.up.right.circle.fill",
                     symbolColor: .blue,
                     text: "My Location",
-                    isPlaceholder: false,
-                    showReorder: true
+                    isPlaceholder: false
                 )
                 
-                ForEach(viewModel.stops) { stop in
+                ForEach(Array(viewModel.stops.enumerated()), id: \.element.id) { index, stop in
                     Divider().padding(.leading, 44)
                     endpointRow(
                         symbol: "mappin.circle.fill",
                         symbolColor: .orange,
                         text: stop.title,
                         isPlaceholder: false,
-                        showReorder: true
+                        // Only a row that can actually move gets the grip — previously every row
+                        // showed one and none of them did anything.
+                        showReorder: viewModel.stops.count > 1,
+                        reorder: viewModel.stops.count > 1
+                            ? (
+                                canMoveUp: index > 0,
+                                canMoveDown: index < viewModel.stops.count - 1,
+                                moveUp: { viewModel.moveStops(fromOffsets: IndexSet(integer: index), toOffset: index - 1) },
+                                moveDown: { viewModel.moveStops(fromOffsets: IndexSet(integer: index), toOffset: index + 2) }
+                              )
+                            : nil
                     ) {
                         viewModel.removeStop(stop)
                     }
@@ -227,8 +236,7 @@ struct DirectionsCard: View {
                     symbol: "mappin.circle.fill",
                     symbolColor: .red,
                     text: viewModel.destinationTitle,
-                    isPlaceholder: false,
-                    showReorder: true
+                    isPlaceholder: false
                 )
                 
                 Divider().padding(.leading, 44)
@@ -240,8 +248,7 @@ struct DirectionsCard: View {
                         symbolColor: .blue,
                         text: "Add Stop",
                         isPlaceholder: true,
-                        showMic: true,
-                        showReorder: true
+                        showMic: true
                     )
                 }
                 .buttonStyle(.plain)
@@ -258,6 +265,9 @@ struct DirectionsCard: View {
         isPlaceholder: Bool,
         showMic: Bool = false,
         showReorder: Bool = false,
+        /// Supplied only for rows that can genuinely move, which drives whether the grip is
+        /// interactive at all.
+        reorder: (canMoveUp: Bool, canMoveDown: Bool, moveUp: () -> Void, moveDown: () -> Void)? = nil,
         onRemove: (() -> Void)? = nil
     ) -> some View {
         HStack(spacing: 12) {
@@ -280,16 +290,31 @@ struct DirectionsCard: View {
                     .padding(.trailing, 4)
             }
 
+            if showReorder, let reorder {
+                // The grip is a real control now. Apple uses drag-to-reorder here; this is a
+                // menu instead because these rows live in a plain VStack rather than a List,
+                // and a discoverable menu beats a grip that silently does nothing.
+                Menu {
+                    Button("Move Up", systemImage: "arrow.up") { reorder.moveUp() }
+                        .disabled(!reorder.canMoveUp)
+                    Button("Move Down", systemImage: "arrow.down") { reorder.moveDown() }
+                        .disabled(!reorder.canMoveDown)
+                } label: {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Reorder \(text)")
+            }
+
             if let onRemove {
                 Button(action: onRemove) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-            } else if showReorder {
-                Image(systemName: "line.3.horizontal")
-                    .font(.subheadline)
-                    .foregroundStyle(.tertiary)
             }
         }
         .padding(.horizontal, 12)

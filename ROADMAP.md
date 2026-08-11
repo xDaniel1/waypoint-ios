@@ -16,11 +16,11 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
       since Google's numbers were traffic-aware.
       *Fix:* call `calculateETA` for the selected route and display that.
 
-- [x] **Speed limit is dead code.** `SpeedLimitService` targets Google's Roads API, which needs a
-      premium Asset Tracking licence we don't have — it 403s and silently hides the sign. MapKit
-      exposes no speed-limit API to third parties at all.
-      *Decide:* pay a data provider (TomTom/HERE), or delete the feature rather than ship
-      something that can never display.
+- [x] **Speed limit.** Confirmed Google's Roads `ListSpeedLimits` returns `API_KEY_SERVICE_BLOCKED`
+      even with billing fully active — it's gated behind an Asset Tracking licence, not spend.
+      MapKit exposes no speed-limit API at all. *Now sourced from OpenStreetMap via the Overpass
+      API* (free, keyless). Coverage is good on highways/arterials, patchy on residential streets;
+      the sign hides when there's no `maxspeed` tag rather than guessing.
 
 - [x] **No traffic overlay.** `showsTraffic` is never set on the `Map`. Native, free, one property.
 
@@ -29,8 +29,10 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
       Two structural fixes attempted (enum-backed `.sheet(item:)`, then hoisting presentation to
       `MapScreen`) — neither worked.
 
-- [ ] **Stop reordering is dead.** `DirectionsViewModel.moveStops` exists but nothing calls it;
-      the drag handles on the endpoint rows do nothing.
+- [x] **Stop reordering.** Grips now appear only on stop rows, and only with 2+ stops, and open a
+      Move Up / Move Down menu wired to `moveStops`. Previously every row (origin, destination,
+      even "Add Stop") drew a grip and none did anything. Apple uses drag-to-reorder; these rows
+      live in a plain VStack rather than a List, so a menu is the honest interim.
 
 - [x] **Transit detail sheet outruns its data.** Built against Google's rich transit legs;
       MapKit's transit data is far thinner, so parts of the sheet have nothing to fill them.
