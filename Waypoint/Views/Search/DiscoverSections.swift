@@ -242,7 +242,8 @@ private struct TrendingCard: View {
 
 /// A place photo, falling back to the place's category glyph rather than an empty grey frame
 /// when Google has no photo for it.
-private struct PlaceThumbnail: View {
+/// Shared with the Guides shelf, so it can't be file-private.
+struct PlaceThumbnail: View {
     let url: URL?
     let place: DetailedPlace
     /// Square side for row thumbnails; nil lets the card size it (the large trending cards).

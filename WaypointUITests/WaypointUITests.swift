@@ -201,6 +201,34 @@ final class WaypointUITests: XCTestCase {
         app.buttons["closeDetailButton"].tap()
     }
 
+    // The Guides shelf sits below the discover shelves, is built from live Google data, and each
+    // card has to open a list of real places.
+    func test16_guidesShelf() throws {
+        let searchField = app.textFields["searchField"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 10))
+        searchField.tap()
+
+        XCTAssertTrue(app.buttons["trending-1"].waitForExistence(timeout: 25), "Discover shelves should load first")
+
+        // Guides render below Trending, so scroll until a card is actually hittable.
+        let guidesHeader = app.staticTexts["Guides"]
+        var attempts = 0
+        while !guidesHeader.exists && attempts < 8 {
+            app.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(guidesHeader.waitForExistence(timeout: 10), "Guides section should appear")
+        attachScreenshot("16a-guides-shelf")
+
+        let card = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'top-rated nearby'")).firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 10), "A guide card should be built from live data")
+        card.tap()
+
+        XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 10), "Tapping a guide opens its place list")
+        attachScreenshot("16b-guide-detail")
+        app.buttons["Done"].tap()
+    }
+
     // Map style menu should offer Standard/Satellite/Hybrid and apply a selection.
     func test06_mapStyleMenu() throws {
         let styleButton = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'layer'")).firstMatch

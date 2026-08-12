@@ -121,6 +121,12 @@ struct SearchSheet: View {
                             ) { place in
                                 selectDiscover(place)
                             }
+                            GuidesSection(
+                                guides: viewModel.guides,
+                                currentLocation: currentLocation
+                            ) { place in
+                                selectDiscover(place)
+                            }
                         } else {
                             suggestionsSection
                         }

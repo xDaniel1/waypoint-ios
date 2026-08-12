@@ -54,8 +54,12 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] **Route step list** ("Details") during active navigation.
 - [ ] **CarPlay support.** Biggest remaining "feels like a real maps app" gap.
 - [ ] **Apple Watch companion.**
-- [ ] **Guides shelves**, built honestly from Google top-rated collections rather than Apple's
-      licensed Infatuation/Time Out editorial (which has no API).
+- [x] **Guides shelves.** Five themed collections (Great Coffee, Dinner Tonight, Parks & Outdoors,
+      Nightlife, Arts & Culture) as Apple-style photo cards, each opening a list of real places.
+      Apple's guides are licensed editorial with no API, so these are assembled from top-rated
+      nearby places and the card says so rather than posing as curation. Note: had to switch to
+      Google's `includedPrimaryTypes` — `includedTypes` matches anywhere that merely *has* a cafe,
+      which put UNIQLO and Barnes & Noble in "Great Coffee".
 
 ## 3. Can't match with public APIs — do not chase
 

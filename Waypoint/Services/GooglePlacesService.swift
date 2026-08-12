@@ -99,15 +99,25 @@ struct GooglePlacesService {
     ///
     /// Kept deliberately cheap: it only fires when the search sheet is opened (never per
     /// keystroke), asks for a single page, and is cached for 10 minutes per rounded location.
+    /// - Parameter primaryTypesOnly: `includedTypes` matches any place that merely *carries* one
+    ///   of the types, which is why a "cafe" search returns bookshops and clothing stores that
+    ///   happen to have a coffee counter. `includedPrimaryTypes` restricts to places whose main
+    ///   business is that type — what a themed guide needs.
     func searchNearby(
         includedTypes: [String],
         coordinate: CLLocationCoordinate2D,
         radius: Double = 2000,
-        maxResults: Int = 8
+        maxResults: Int = 8,
+        primaryTypesOnly: Bool = false
     ) async throws -> [DetailedPlace] {
         guard isConfigured else { throw GooglePlacesError.missingAPIKey }
 
-        let key = NearbyCache.key(includedTypes: includedTypes, coordinate: coordinate, radius: radius)
+        let key = NearbyCache.key(
+            includedTypes: includedTypes,
+            coordinate: coordinate,
+            radius: radius,
+            primaryTypesOnly: primaryTypesOnly
+        )
         if let cached = await NearbyCache.shared.places(forKey: key) { return cached }
 
         var request = URLRequest(url: URL(string: "https://places.googleapis.com/v1/places:searchNearby")!)
@@ -125,7 +135,7 @@ struct GooglePlacesService {
         )
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "includedTypes": includedTypes,
+            (primaryTypesOnly ? "includedPrimaryTypes" : "includedTypes"): includedTypes,
             "maxResultCount": maxResults,
             "rankPreference": "POPULARITY",
             "locationRestriction": [
@@ -241,9 +251,16 @@ private actor NearbyCache {
 
     /// Coordinate rounded to ~1km: the search radius already spans multiple km, so finer
     /// precision would only fragment the cache and cause redundant billed calls.
-    static func key(includedTypes: [String], coordinate: CLLocationCoordinate2D, radius: Double) -> String {
+    static func key(
+        includedTypes: [String],
+        coordinate: CLLocationCoordinate2D,
+        radius: Double,
+        primaryTypesOnly: Bool
+    ) -> String {
         let lat = (coordinate.latitude * 100).rounded() / 100
         let lng = (coordinate.longitude * 100).rounded() / 100
-        return "\(includedTypes.joined(separator: ","))|\(lat)|\(lng)|\(Int(radius))"
+        // The flag is part of the key because the two modes return genuinely different results
+        // for the same types — without it a loose result set would be served to a strict caller.
+        return "\(includedTypes.joined(separator: ","))|\(lat)|\(lng)|\(Int(radius))|\(primaryTypesOnly)"
     }
 }

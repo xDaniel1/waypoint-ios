@@ -26,6 +26,7 @@ final class SearchViewModel {
     let speechService = SpeechRecognitionService()
     let nearbyService = NearbyPlacesService()
     let discover = DiscoverViewModel()
+    let guides = GuidesViewModel()
 
     private let completerService = SearchCompleterService()
     private var lastRegionCenter: CLLocationCoordinate2D?
@@ -56,6 +57,7 @@ final class SearchViewModel {
     func loadDiscover() {
         guard let center = lastRegionCenter else { return }
         Task { await discover.loadIfNeeded(around: center) }
+        Task { await guides.loadIfNeeded(around: center) }
     }
 
     func toggleVoiceSearch() async {
