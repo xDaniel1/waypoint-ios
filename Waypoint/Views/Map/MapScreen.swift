@@ -293,6 +293,12 @@ struct MapScreen: View {
                         destinationCoordinate: destinationCoordinate,
                         intermediateStops: directionsViewModel.stops.map(\.coordinate)
                     )
+                    // Kick off the first lookup here rather than waiting on a location update —
+                    // starting from a standstill can otherwise leave the sign blank until the
+                    // first 80m of movement.
+                    if let location = viewModel.currentLocation {
+                        Task { await speedLimitService.refreshIfNeeded(at: location) }
+                    }
                     let arrival = Date().addingTimeInterval(route.travelTime)
                     let minutes = max(1, Int((route.travelTime / 60).rounded()))
                     liveActivity.start(
@@ -605,14 +611,20 @@ struct MapScreen: View {
                     }
                 } else {
                     VStack {
+                        // The distance shown is the distance to the *next* maneuver, so the
+                        // headline instruction has to be that maneuver's — pairing it with the
+                        // current step read as "900 ft" above a blank line, because MapKit
+                        // leaves the in-progress step's instruction empty.
                         NavigationBanner(
-                            currentInstruction: navigationViewModel.currentStep?.instruction ?? "Head to \(navigationViewModel.destinationName)",
-                            nextInstruction: navigationViewModel.nextStep?.instruction,
+                            currentInstruction: navigationViewModel.nextStep?.instruction.nilIfEmpty
+                                ?? navigationViewModel.currentStep?.instruction.nilIfEmpty
+                                ?? "Head to \(navigationViewModel.destinationName)",
+                            nextInstruction: navigationViewModel.stepAfterNext?.instruction.nilIfEmpty,
                             distanceToNextStepText: navigationViewModel.formattedDistanceToNextStep,
-                            currentManeuverIcon: navigationViewModel.currentStep?.maneuverIcon ?? "arrow.up",
-                            nextManeuverIcon: navigationViewModel.nextStep?.maneuverIcon ?? "arrow.up"
+                            currentManeuverIcon: navigationViewModel.nextStep?.maneuverIcon
+                                ?? navigationViewModel.currentStep?.maneuverIcon ?? "arrow.up",
+                            nextManeuverIcon: navigationViewModel.stepAfterNext?.maneuverIcon ?? "arrow.up"
                         )
-                        .padding(.top, 4)
 
                         if let limit = speedLimitService.display {
                             HStack {

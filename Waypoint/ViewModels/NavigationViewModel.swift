@@ -106,6 +106,11 @@ final class NavigationViewModel {
         guard let route, route.steps.indices.contains(currentStepIndex + 1) else { return nil }
         return route.steps[currentStepIndex + 1]
     }
+    /// The maneuver after the upcoming one — what Apple's "Then …" line refers to.
+    var stepAfterNext: RouteStep? {
+        guard let route, route.steps.indices.contains(currentStepIndex + 2) else { return nil }
+        return route.steps[currentStepIndex + 2]
+    }
 
     private(set) var currentLocation: CLLocation?
     

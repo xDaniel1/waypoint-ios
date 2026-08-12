@@ -19,8 +19,16 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] **Speed limit.** Confirmed Google's Roads `ListSpeedLimits` returns `API_KEY_SERVICE_BLOCKED`
       even with billing fully active — it's gated behind an Asset Tracking licence, not spend.
       MapKit exposes no speed-limit API at all. *Now sourced from OpenStreetMap via the Overpass
-      API* (free, keyless). Coverage is good on highways/arterials, patchy on residential streets;
-      the sign hides when there's no `maxspeed` tag rather than guessing.
+      API* (free, keyless), with **NYC DOT's VZV Speed Limits** open data layered underneath
+      inside the five boroughs — OSM turned out to have no `maxspeed` at all on Brooklyn
+      residential streets, which is why the sign never appeared. Both are real posted limits; the
+      sign hides when neither has data rather than guessing.
+
+- [x] **Nav banner didn't look like Apple's.** It floated as a rounded card with the map and status
+      bar above it. Now full-bleed to the top edge with only the bottom corners rounded, a deeper
+      adaptive blue, and a "Then …" shelf. Also fixed an off-by-one: the banner paired the distance
+      to the *next* maneuver with the *current* step's instruction, which MapKit leaves empty — so
+      it read as a distance above a blank line.
 
 - [x] **No traffic overlay.** `showsTraffic` is never set on the `Map`. Native, free, one property.
 

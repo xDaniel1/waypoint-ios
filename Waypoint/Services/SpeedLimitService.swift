@@ -2,17 +2,21 @@ import CoreLocation
 import Foundation
 import Observation
 
-/// Posted speed limits from OpenStreetMap via the Overpass API.
+/// Posted speed limits, from two real sources — never inferred.
 ///
 /// Why not Google: the Roads API's `speedLimits` method is gated behind an Asset Tracking
 /// licence — with billing fully active it still returns `API_KEY_SERVICE_BLOCKED` for
 /// `ListSpeedLimits` specifically, so no amount of normal spend unlocks it. MapKit exposes no
-/// speed limit API to third-party apps at all. OSM is the one source that's actually reachable
-/// here, and it's free and keyless.
+/// speed limit API to third-party apps at all.
 ///
-/// Honest limitation: OSM `maxspeed` coverage is good on highways and major urban roads but
-/// patchy on residential streets. When there's no tag for the road you're on, the sign simply
-/// doesn't appear — it never guesses or falls back to a default limit.
+/// 1. **OpenStreetMap** (Overpass API) — worldwide, free, keyless. Good coverage on highways and
+///    arterials, but frequently blank on residential streets. Measured directly: McKibbin St in
+///    Brooklyn carries no `maxspeed` tag at all, which is why the sign never appeared there.
+/// 2. **NYC DOT** (`VZV Speed Limits` on NYC Open Data) — the city's own posted-limit centreline
+///    data, which *does* cover those residential streets. Only queried inside NYC's bounding box.
+///
+/// Both are real posted limits. When neither has data the sign simply doesn't appear — it never
+/// guesses or falls back to a default.
 @Observable
 @MainActor
 final class SpeedLimitService {
@@ -49,14 +53,14 @@ final class SpeedLimitService {
     }
 
     /// Overpass is a free, shared, community-run endpoint, so this is deliberately gentle with
-    /// it: at most one request every 15s, and only after moving 120m — roughly "you've plausibly
-    /// turned onto a different road" rather than once per GPS tick.
+    /// it: at most one request every 10s, and only after moving 80m — about one city block, so a
+    /// turn onto a new street resolves quickly without firing on every GPS tick.
     func refreshIfNeeded(at location: CLLocation) async {
         let now = Date()
-        guard now.timeIntervalSince(lastFetch) >= 15 else { return }
+        guard now.timeIntervalSince(lastFetch) >= 10 else { return }
         if let last = lastCoordinate {
             let moved = location.distance(from: CLLocation(latitude: last.latitude, longitude: last.longitude))
-            guard moved >= 120 else { return }
+            guard moved >= 80 else { return }
         }
         lastFetch = now
         lastCoordinate = location.coordinate
@@ -97,10 +101,61 @@ final class SpeedLimitService {
                 }
                 .max { $0.rank < $1.rank }
 
-            speedLimitKph = best?.kph
+            if let best {
+                speedLimitKph = best.kph
+                return
+            }
+            // OSM answered but has no maxspeed for this road — try the city's own data.
+            speedLimitKph = await cityFallback(around: coordinate)
         } catch {
-            // Leave the last known reading up rather than flickering the sign on a hiccup.
+            // A network hiccup isn't evidence the limit changed, so keep the last reading up
+            // unless the city source can positively replace it.
+            if let city = await cityFallback(around: coordinate) {
+                speedLimitKph = city
+            }
         }
+    }
+
+    private func cityFallback(around coordinate: CLLocationCoordinate2D) async -> Int? {
+        guard Self.isWithinNYC(coordinate) else { return nil }
+        return await nycSpeedLimit(around: coordinate)
+    }
+
+    /// NYC DOT posts limits per street centreline segment. A 60m circle is wide enough to catch
+    /// the segment when GPS puts you slightly off the centreline, narrow enough not to reach the
+    /// next street over.
+    private func nycSpeedLimit(around coordinate: CLLocationCoordinate2D) async -> Int? {
+        var components = URLComponents(string: "https://data.cityofnewyork.us/resource/5mad-ntua.json")
+        components?.queryItems = [
+            URLQueryItem(name: "$where", value: "within_circle(the_geom, \(coordinate.latitude), \(coordinate.longitude), 60)"),
+            URLQueryItem(name: "$select", value: "postvz_sl"),
+            URLQueryItem(name: "$limit", value: "5")
+        ]
+        guard let url = components?.url else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 12
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
+            guard !Task.isCancelled else { return nil }
+            let rows = try JSONDecoder().decode([NYCSpeedLimitRow].self, from: data)
+            // Lowest posted limit among overlapping segments is the safe one to show.
+            let mph = rows.compactMap { Int($0.postvz_sl ?? "") }.filter { $0 > 0 }.min()
+            guard let mph else { return nil }
+            return Int((Double(mph) * 1.60934).rounded())
+        } catch {
+            return nil
+        }
+    }
+
+    /// Rough bounding box covering the five boroughs.
+    private static func isWithinNYC(_ coordinate: CLLocationCoordinate2D) -> Bool {
+        (40.47...40.93).contains(coordinate.latitude) && (-74.28...(-73.68)).contains(coordinate.longitude)
+    }
+
+    private struct NYCSpeedLimitRow: Decodable {
+        let postvz_sl: String?
     }
 
     /// OSM stores this as a free-text tag: "50" (implicitly km/h), "25 mph", "30 knots", or
