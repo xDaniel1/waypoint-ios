@@ -72,13 +72,49 @@ final class SpeedLimitService {
         await inFlight?.value
     }
 
+    /// Whether a source answered, so a network failure can leave the previous reading alone
+    /// instead of blinking the sign off mid-drive, while a genuine "no data here" clears it.
+    private enum Lookup {
+        case found(Int)
+        case noData
+        case failed
+    }
+
     private func fetch(around coordinate: CLLocationCoordinate2D) async {
+        // NYC DOT is authoritative and complete inside the city — including the residential
+        // streets OSM leaves untagged — and it answers far faster than Overpass, so it goes
+        // first when in range. OSM is the worldwide source everywhere else.
+        var results: [Lookup] = []
+
+        if Self.isWithinNYC(coordinate) {
+            let city = await nycSpeedLimit(around: coordinate)
+            if case .found(let kph) = city {
+                speedLimitKph = kph
+                return
+            }
+            results.append(city)
+        }
+
+        let osm = await openStreetMapSpeedLimit(around: coordinate)
+        if case .found(let kph) = osm {
+            speedLimitKph = kph
+            return
+        }
+        results.append(osm)
+
+        // Only clear once a source actually told us there's nothing here.
+        if results.contains(where: { if case .noData = $0 { return true } else { return false } }) {
+            speedLimitKph = nil
+        }
+    }
+
+    private func openStreetMapSpeedLimit(around coordinate: CLLocationCoordinate2D) async -> Lookup {
         // 25m radius keeps this to the road actually being driven rather than pulling in the
         // cross street at an intersection.
         let query = """
         [out:json][timeout:10];way(around:25,\(coordinate.latitude),\(coordinate.longitude))["maxspeed"];out tags 5;
         """
-        guard let url = URL(string: "https://overpass-api.de/api/interpreter") else { return }
+        guard let url = URL(string: "https://overpass-api.de/api/interpreter") else { return .failed }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = 12
@@ -87,8 +123,13 @@ final class SpeedLimitService {
 
         do {
             let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return }
-            guard !Task.isCancelled else { return }
+            // Overpass is a busy shared endpoint and answers 429/504 under load. That's a failure
+            // to consult it, not evidence the road is untagged — previously this returned early
+            // and skipped the city source entirely.
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                return .failed
+            }
+            guard !Task.isCancelled else { return .failed }
             let decoded = try JSONDecoder().decode(OverpassResponse.self, from: data)
 
             // Prefer the highest-classification road nearby: at an intersection the driver is far
@@ -101,56 +142,44 @@ final class SpeedLimitService {
                 }
                 .max { $0.rank < $1.rank }
 
-            if let best {
-                speedLimitKph = best.kph
-                return
-            }
-            // OSM answered but has no maxspeed for this road — try the city's own data.
-            speedLimitKph = await cityFallback(around: coordinate)
+            return best.map { .found($0.kph) } ?? .noData
         } catch {
-            // A network hiccup isn't evidence the limit changed, so keep the last reading up
-            // unless the city source can positively replace it.
-            if let city = await cityFallback(around: coordinate) {
-                speedLimitKph = city
-            }
+            return .failed
         }
-    }
-
-    private func cityFallback(around coordinate: CLLocationCoordinate2D) async -> Int? {
-        guard Self.isWithinNYC(coordinate) else { return nil }
-        return await nycSpeedLimit(around: coordinate)
     }
 
     /// NYC DOT posts limits per street centreline segment. A 60m circle is wide enough to catch
     /// the segment when GPS puts you slightly off the centreline, narrow enough not to reach the
     /// next street over.
-    private func nycSpeedLimit(around coordinate: CLLocationCoordinate2D) async -> Int? {
+    private func nycSpeedLimit(around coordinate: CLLocationCoordinate2D) async -> Lookup {
         var components = URLComponents(string: "https://data.cityofnewyork.us/resource/5mad-ntua.json")
         components?.queryItems = [
             URLQueryItem(name: "$where", value: "within_circle(the_geom, \(coordinate.latitude), \(coordinate.longitude), 60)"),
             URLQueryItem(name: "$select", value: "postvz_sl"),
             URLQueryItem(name: "$limit", value: "5")
         ]
-        guard let url = components?.url else { return nil }
+        guard let url = components?.url else { return .failed }
         var request = URLRequest(url: url)
         request.timeoutInterval = 12
 
         do {
             let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
-            guard !Task.isCancelled else { return nil }
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                return .failed
+            }
+            guard !Task.isCancelled else { return .failed }
             let rows = try JSONDecoder().decode([NYCSpeedLimitRow].self, from: data)
             // Lowest posted limit among overlapping segments is the safe one to show.
             let mph = rows.compactMap { Int($0.postvz_sl ?? "") }.filter { $0 > 0 }.min()
-            guard let mph else { return nil }
-            return Int((Double(mph) * 1.60934).rounded())
+            guard let mph else { return .noData }
+            return .found(Int((Double(mph) * 1.60934).rounded()))
         } catch {
-            return nil
+            return .failed
         }
     }
 
     /// Rough bounding box covering the five boroughs.
-    private static func isWithinNYC(_ coordinate: CLLocationCoordinate2D) -> Bool {
+    nonisolated private static func isWithinNYC(_ coordinate: CLLocationCoordinate2D) -> Bool {
         (40.47...40.93).contains(coordinate.latitude) && (-74.28...(-73.68)).contains(coordinate.longitude)
     }
 
@@ -161,7 +190,7 @@ final class SpeedLimitService {
     /// OSM stores this as a free-text tag: "50" (implicitly km/h), "25 mph", "30 knots", or
     /// country presets like "US:urban" that carry no number at all. Only the forms with a real
     /// number are used; anything else is treated as unknown rather than guessed at.
-    static func parseMaxspeed(_ raw: String) -> Int? {
+    nonisolated static func parseMaxspeed(_ raw: String) -> Int? {
         let value = raw.trimmingCharacters(in: .whitespaces).lowercased()
         let number = value.prefix { $0.isNumber }
         guard let magnitude = Int(number), magnitude > 0 else { return nil }
