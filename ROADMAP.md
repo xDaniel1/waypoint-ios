@@ -32,20 +32,26 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 
 - [x] **No traffic overlay.** `showsTraffic` is never set on the `Map`. Native, free, one property.
 
-- [x] **Add Stop sheet doesn't open.** Tapping "Add Stop" in the directions card does nothing.
-      Tap registers and the state closure looks correct on paper; root cause still unknown.
-      Two structural fixes attempted (enum-backed `.sheet(item:)`, then hoisting presentation to
-      `MapScreen`) — neither worked.
+- [ ] **Add Stop sheet doesn't open.** STILL BROKEN — `test11_multiStopRouting` fails on
+      "Add Stop sheet should present a search field". Was marked done; a full suite run on
+      2026-08-12 disproved that. Three structural fixes tried now: enum-backed `.sheet(item:)`,
+      hoisting presentation to `MapScreen`, and consolidating SearchSheet's four chained `.sheet`
+      modifiers into one (that last one was a real latent bug and is worth keeping, but it did not
+      fix this). Root cause still unknown.
 
 - [x] **Stop reordering.** Grips now appear only on stop rows, and only with 2+ stops, and open a
       Move Up / Move Down menu wired to `moveStops`. Previously every row (origin, destination,
       even "Add Stop") drew a grip and none did anything. Apple uses drag-to-reorder; these rows
       live in a plain VStack rather than a List, so a menu is the honest interim.
 
-- [x] **Transit detail sheet outruns its data.** Built against Google's rich transit legs;
+- [~] **Transit detail sheet outruns its data.** Built against Google's rich transit legs;
       MapKit's transit data is far thinner, so parts of the sheet have nothing to fill them.
 
-- [x] **Test suite not run since the search-UI rework.** Can't currently claim it's green.
+- [ ] **Test suite is NOT green.** Full run on 2026-08-12: 15 passed, 6 failed. Failures:
+      `test03` (search field not found), `test07_inAppDirections`, `test10_navigationVoiceAndControls`
+      (reported as an app crash, but passes in isolation — likely suite state pollution),
+      `test11` (Add Stop), `test13` (bottom bar toggle), `test15` (swipe-to-edit a favorite).
+      Several of these sit under roadmap items previously marked done.
 
 ## 2. Additions that are possible with public APIs
 

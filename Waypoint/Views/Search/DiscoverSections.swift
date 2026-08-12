@@ -16,6 +16,20 @@ struct DiscoverSections: View {
 
     var body: some View {
         if !discover.suggestedPlaces.isEmpty {
+            Section {
+                if discover.isUsingFallbackData {
+                    // The shelves fell back to MapKit, which returns no photos, ratings or hours.
+                    // Saying so beats letting the thinner cards read as a broken layout.
+                    Label(
+                        "Showing limited results — photos and ratings are unavailable right now.",
+                        systemImage: "exclamationmark.circle"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .listRowSeparator(.hidden)
+                }
+            }
+
             Section(header: SectionHeader(title: "Suggested Places", showsChevron: false)) {
                 // Apple groups these two-to-a-card and pages sideways through the rest.
                 pagedGroups(discover.suggestedPlaces, perPage: 2) { place in

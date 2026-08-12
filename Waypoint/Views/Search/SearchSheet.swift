@@ -30,18 +30,32 @@ struct SearchSheet: View {
     /// DirectionsCard's matching properties for why this can't be presented from in here.
     let onShowSteps: (RouteOption) -> Void
     @FocusState private var isFieldFocused: Bool
-    @State private var isAddingDirectionsStop = false
+    /// Every sheet this view presents, as one value — see the `.sheet(item:)` below for why.
+    enum ActiveSheet: Identifiable {
+        case profile
+        case savedList(HomeList)
+        case editFavorite(FavoritePlace)
+        case addDirectionsStop
+
+        var id: String {
+            switch self {
+            case .profile: "profile"
+            case .savedList(let list): "list-\(list.id)"
+            case .editFavorite(let favorite): "favorite-\(favorite.id)"
+            case .addDirectionsStop: "add-stop"
+            }
+        }
+    }
+
+    @State private var activeSheet: ActiveSheet?
     /// Stays true for the whole search session — scrolling dismisses the keyboard but must NOT
     /// drop you back to the map, so the results list is driven by this, not by keyboard focus.
     @State private var isSearching = false
-    @State private var isShowingProfile = false
     @State private var isAddingFavorite = false
     /// Which "see all" list the user opened from a section header chevron.
-    @State private var expandedList: HomeList?
     /// The favorite currently open in the rename/emoji/color editor, from either the home row
     /// or a search-results circle — `SavedListSheet` has its own copy of this for edits started
     /// from the full list, since that's a separate presented sheet.
-    @State private var editingFavorite: FavoritePlace?
     @State private var aroundMe = AroundMeViewModel()
     @AppStorage("com.danielguzman.waypoint.hasDismissedVoiceSearchTip") private var hasDismissedTip = false
 
@@ -60,7 +74,7 @@ struct SearchSheet: View {
                     contentHeight: $directionsHeight,
                     onClose: { directionsViewModel.stop() },
                     onStartNavigation: { route in onStartNavigation(route) },
-                    onAddStop: { isAddingDirectionsStop = true },
+                    onAddStop: { activeSheet = .addDirectionsStop },
                     onShowSteps: onShowSteps
                 )
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -184,38 +198,41 @@ struct SearchSheet: View {
             guard viewModel.speechService.isRecording else { return }
             viewModel.queryText = newValue
         }
-        .sheet(isPresented: $isShowingProfile) {
-            ProfilePlaceholderSheet()
-        }
-        .sheet(item: $expandedList) { list in
-            SavedListSheet(
-                list: list,
-                favorites: viewModel.favoritesStore.favorites,
-                recents: viewModel.recentsStore.recents,
-                distanceText: distanceText(to:),
-                onSelectFavorite: { favorite in
-                    expandedList = nil
-                    select(favorite: favorite)
-                },
-                onSelectRecent: { recent in
-                    expandedList = nil
-                    select(recent: recent)
-                },
-                onRemoveFavorite: { viewModel.favoritesStore.remove($0) },
-                onRemoveRecent: { viewModel.recentsStore.remove($0) },
-                onUpdateFavorite: { favorite, title, emoji, colorHex in
+        // One `.sheet` per view. Four chained here meant SwiftUI only reliably honoured one of
+        // them, which is why "Add Stop" opened nothing — it was the last in the chain and lost to
+        // the ones above it. Routing every sheet through a single enum removes the conflict.
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .profile:
+                ProfilePlaceholderSheet()
+            case .savedList(let list):
+                SavedListSheet(
+                    list: list,
+                    favorites: viewModel.favoritesStore.favorites,
+                    recents: viewModel.recentsStore.recents,
+                    distanceText: distanceText(to:),
+                    onSelectFavorite: { favorite in
+                        activeSheet = nil
+                        select(favorite: favorite)
+                    },
+                    onSelectRecent: { recent in
+                        activeSheet = nil
+                        select(recent: recent)
+                    },
+                    onRemoveFavorite: { viewModel.favoritesStore.remove($0) },
+                    onRemoveRecent: { viewModel.recentsStore.remove($0) },
+                    onUpdateFavorite: { favorite, title, emoji, colorHex in
+                        viewModel.favoritesStore.update(favorite, title: title, emoji: emoji, colorHex: colorHex)
+                    }
+                )
+            case .editFavorite(let favorite):
+                EditFavoriteSheet(favorite: favorite) { title, emoji, colorHex in
                     viewModel.favoritesStore.update(favorite, title: title, emoji: emoji, colorHex: colorHex)
                 }
-            )
-        }
-        .sheet(item: $editingFavorite) { favorite in
-            EditFavoriteSheet(favorite: favorite) { title, emoji, colorHex in
-                viewModel.favoritesStore.update(favorite, title: title, emoji: emoji, colorHex: colorHex)
-            }
-        }
-        .sheet(isPresented: $isAddingDirectionsStop) {
-            AddStopSheet(currentRegion: originRegionForAddStop) { item in
-                directionsViewModel.addStop(item)
+            case .addDirectionsStop:
+                AddStopSheet(currentRegion: originRegionForAddStop) { item in
+                    directionsViewModel.addStop(item)
+                }
             }
         }
     }
@@ -259,7 +276,7 @@ struct SearchSheet: View {
 
     private var placesRow: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Places") { expandedList = .places }
+            sectionHeader("Places") { activeSheet = .savedList(.places) }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 18) {
                     ForEach(viewModel.favoritesStore.favorites) { favorite in
@@ -269,7 +286,7 @@ struct SearchSheet: View {
                             symbol: PlaceCategoryIcon.icon(for: favorite.title).symbol,
                             tint: Color(hex: favorite.colorHex) ?? PlaceCategoryIcon.icon(for: favorite.title).color,
                             emoji: favorite.emoji,
-                            onEdit: { editingFavorite = favorite }
+                            onEdit: { activeSheet = .editFavorite(favorite) }
                         ) {
                             select(favorite: favorite)
                         }
@@ -356,7 +373,7 @@ struct SearchSheet: View {
 
     private var recentsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Recents") { expandedList = .recents }
+            sectionHeader("Recents") { activeSheet = .savedList(.recents) }
             let shown = Array(viewModel.recentsStore.recents.prefix(3))
             VStack(spacing: 0) {
                 ForEach(Array(shown.enumerated()), id: \.element.id) { index, recent in
@@ -377,9 +394,9 @@ struct SearchSheet: View {
     /// Waypoint's equivalent of Apple's "Your Guides": the places you've saved on this device.
     private var favoritesCollection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Your Places") { expandedList = .places }
+            sectionHeader("Your Places") { activeSheet = .savedList(.places) }
             Button {
-                expandedList = .places
+                activeSheet = .savedList(.places)
             } label: {
                 VStack(alignment: .leading, spacing: 0) {
                     Image(systemName: "star.fill")
@@ -459,7 +476,7 @@ struct SearchSheet: View {
 
     private var profileButton: some View {
         Button {
-            isShowingProfile = true
+            activeSheet = .profile
         } label: {
             Image(systemName: "person.crop.circle.fill")
                 .font(.system(size: 32))
@@ -495,7 +512,7 @@ struct SearchSheet: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 16) {
                         ForEach(viewModel.favoritesStore.favorites) { favorite in
-                            FavoriteCircle(favorite: favorite, onEdit: { editingFavorite = favorite }) {
+                            FavoriteCircle(favorite: favorite, onEdit: { activeSheet = .editFavorite(favorite) }) {
                                 select(favorite: favorite)
                             }
                         }

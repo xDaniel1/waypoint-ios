@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import Observation
 
 @Observable
@@ -26,7 +27,7 @@ final class PlaceDetailViewModel {
                 place = try await googleService.details(name: result.title, coordinate: result.coordinate)
                 return
             } catch {
-                print("Google Places API error: \(error)")
+                Logger.places.error("Google Places details failed, falling back to MapKit: \(error.localizedDescription)")
                 // Fall through to MapKit rather than leaving the card empty.
             }
         }
