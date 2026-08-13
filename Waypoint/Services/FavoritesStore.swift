@@ -77,11 +77,14 @@ final class FavoritesStore {
         guard let data = store.data(forKey: defaultsKey),
               let decoded = try? JSONDecoder().decode([FavoritePlace].self, from: data) else { return }
         favorites = decoded
+        SpotlightIndexer.index(favorites)
     }
 
     private func save() {
         guard let data = try? JSONEncoder().encode(favorites) else { return }
         store.set(data, forKey: defaultsKey)
         (store as? NSUbiquitousKeyValueStore)?.synchronize()
+        // Keeps system search in step with adds, renames and deletions.
+        SpotlightIndexer.index(favorites)
     }
 }

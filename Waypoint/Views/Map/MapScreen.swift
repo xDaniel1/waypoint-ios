@@ -1,4 +1,5 @@
 import MapKit
+import OSLog
 import SwiftUI
 
 /// The three states Apple Maps' own location button cycles through: not tracking, centered on
@@ -53,6 +54,41 @@ struct MapScreen: View {
     /// A built-in map POI (restaurant, shop, landmark) the user tapped directly on the map.
     @State private var selectedMapFeature: MapFeature?
     @Namespace private var mapScope
+
+    /// Runs whatever Siri or a Shortcut asked for, once the map is actually on screen.
+    /// Resolved through MapKit rather than trusting the spoken string as a coordinate.
+    private func handlePendingIntent() async {
+        guard let request = PendingIntent.shared.request else { return }
+        PendingIntent.shared.request = nil
+
+        let query: String
+        let startsDirections: Bool
+        switch request {
+        case .search(let text):
+            query = text
+            startsDirections = false
+        case .directions(let text):
+            query = text
+            startsDirections = true
+        }
+
+        let searchRequest = MKLocalSearch.Request()
+        searchRequest.naturalLanguageQuery = query
+        if let coordinate = viewModel.currentLocation?.coordinate {
+            searchRequest.region = MKCoordinateRegion(
+                center: coordinate, latitudinalMeters: 20000, longitudinalMeters: 20000
+            )
+        }
+        guard let item = try? await MKLocalSearch(request: searchRequest).start().mapItems.first else {
+            Logger.navigation.error("Intent query had no match: \(query)")
+            return
+        }
+
+        searchViewModel.selectResult(SearchResult(mapItem: item))
+        if startsDirections {
+            directionsViewModel.start(destination: item, from: viewModel.currentLocation)
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -200,6 +236,13 @@ struct MapScreen: View {
         }
         .animation(.smooth(duration: 0.4), value: navigationViewModel.isActive)
         .mapScope(mapScope)
+        // `.task` covers a cold launch from Siri; the `onChange` covers an intent firing while
+        // the app is already open, which `.task` alone would miss.
+        .task { await handlePendingIntent() }
+        .onChange(of: PendingIntent.shared.request) { _, newValue in
+            guard newValue != nil else { return }
+            Task { await handlePendingIntent() }
+        }
         .task {
             viewModel.onLocationUpdate = { location in
                 if navigationViewModel.isActive {
