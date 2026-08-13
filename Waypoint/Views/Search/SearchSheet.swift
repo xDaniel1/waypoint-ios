@@ -669,7 +669,7 @@ struct SearchSheet: View {
         if isAddingFavorite, let result = viewModel.selectedResult {
             viewModel.favoritesStore.toggle(result)
             isAddingFavorite = false
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            Haptics.commit()
         }
     }
 

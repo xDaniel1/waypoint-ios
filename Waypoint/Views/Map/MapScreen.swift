@@ -292,7 +292,7 @@ struct MapScreen: View {
                 voiceGuidance.speak(text)
                 // A tap alongside the voice cue so a turn still registers over road noise or
                 // when muted — Apple Maps does the same on the Watch and CarPlay.
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                Haptics.commit()
                 // No-op unless the app is actually backgrounded — see
                 // NavigationNotificationService for why this isn't real push.
                 navigationNotifications.postNextTurn(text)
@@ -506,11 +506,13 @@ struct MapScreen: View {
         lastCameraAnimation = .distantPast
         switch trackingMode {
         case .off:
+            Haptics.select()
             trackingMode = .follow
             animateCamera(duration: 0.5) {
                 viewModel.recenterOnUser()
             }
         case .follow:
+            Haptics.select()
             trackingMode = .followHeading
             if let location = viewModel.currentLocation {
                 let heading = viewModel.currentHeading ?? 0
@@ -519,6 +521,7 @@ struct MapScreen: View {
                 }
             }
         case .followHeading:
+            Haptics.select()
             trackingMode = .follow
             animateCamera(duration: 0.5) {
                 viewModel.recenterOnUser()

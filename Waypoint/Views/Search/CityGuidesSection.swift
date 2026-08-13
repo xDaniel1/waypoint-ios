@@ -69,7 +69,7 @@ private struct CityCard: View {
             }
             .frame(width: 170, height: 220)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressableCard)
         .accessibilityLabel("\(city.name), \(city.region)")
     }
 }

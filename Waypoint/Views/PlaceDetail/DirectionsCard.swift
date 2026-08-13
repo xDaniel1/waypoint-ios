@@ -179,6 +179,8 @@ struct DirectionsCard: View {
         HStack(spacing: 2) {
             ForEach(DirectionsViewModel.Mode.allCases, id: \.self) { mode in
                 ModeButton(mode: mode, isSelected: viewModel.mode == mode, namespace: modeNamespace) {
+                    guard viewModel.mode != mode else { return }
+                    Haptics.select()
                     viewModel.mode = mode
                 }
             }

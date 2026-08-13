@@ -198,7 +198,7 @@ struct PlaceDetailContent: View {
             .accessibilityIdentifier("getDirectionsButton")
             Button {
                 favoritesStore.toggle(result)
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                Haptics.commit()
             } label: {
                 VStack(spacing: 3) {
                     Image(systemName: favoritesStore.isFavorite(result) ? "star.fill" : "star")

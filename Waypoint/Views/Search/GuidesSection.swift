@@ -81,7 +81,7 @@ private struct GuideCard: View {
             }
             .frame(width: 260, height: 170)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressableCard)
         .accessibilityLabel("\(guide.title), \(guide.subtitle)")
     }
 }
