@@ -28,14 +28,14 @@ struct NavigationBanner: View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: 16) {
                 Image(systemName: currentManeuverIcon)
-                    .font(.system(size: 38, weight: .semibold))
+                    .scaledFont(size: 38, weight: .semibold, relativeTo: .largeTitle)
                     .foregroundStyle(.white)
                     .frame(width: 46)
 
                 VStack(alignment: .leading, spacing: 1) {
                     if let distanceToNextStepText {
                         Text(distanceToNextStepText)
-                            .font(.system(size: 34, weight: .semibold, design: .rounded))
+                            .scaledFont(size: 34, weight: .semibold, design: .rounded, relativeTo: .largeTitle)
                             .foregroundStyle(.white)
                     }
                     Text(currentInstruction)
@@ -56,13 +56,13 @@ struct NavigationBanner: View {
             if let nextInstruction {
                 HStack(spacing: 10) {
                     Text("Then")
-                        .font(.system(size: 15, weight: .semibold))
+                        .scaledFont(size: 15, weight: .semibold, relativeTo: .subheadline)
                         .foregroundStyle(.white.opacity(0.75))
                     Image(systemName: nextManeuverIcon)
-                        .font(.system(size: 15, weight: .semibold))
+                        .scaledFont(size: 15, weight: .semibold, relativeTo: .subheadline)
                         .foregroundStyle(.white)
                     Text(nextInstruction)
-                        .font(.system(size: 15))
+                        .scaledFont(size: 15, relativeTo: .subheadline)
                         .foregroundStyle(.white.opacity(0.9))
                         .lineLimit(1)
                     Spacer(minLength: 0)
@@ -88,6 +88,10 @@ struct NavigationBanner: View {
                 .ignoresSafeArea(edges: .top)
                 .shadow(color: .black.opacity(0.22), radius: 10, y: 3)
         }
+        // Scales with the user's text size, but capped: past accessibility1 the maneuver text
+        // pushes the banner far enough down the windshield view to hide the road ahead. Apple
+        // constrains its driving UI the same way.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         .transition(.move(edge: .top).combined(with: .opacity))
         .animation(.smooth(duration: 0.3), value: currentInstruction)
         .animation(.smooth(duration: 0.3), value: nextInstruction)

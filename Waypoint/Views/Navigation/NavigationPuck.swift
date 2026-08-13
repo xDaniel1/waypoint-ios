@@ -33,7 +33,7 @@ struct NavigationPuck: View {
                 .frame(width: 24, height: 24)
 
             Image(systemName: "location.north.fill")
-                .font(.system(size: 11, weight: .bold))
+                .scaledFont(size: 11, weight: .bold, relativeTo: .caption2)
                 .foregroundStyle(.white)
                 .rotationEffect(.degrees(heading))
         }
@@ -114,12 +114,12 @@ struct SpeedLimitSign: View {
     var body: some View {
         VStack(spacing: 0) {
             Text(unitLabel == "mph" ? "SPEED\nLIMIT" : "VELOCIDAD\nMAXIMA")
-                .font(.system(size: 9, weight: .bold))
+                .scaledFont(size: 9, weight: .bold, relativeTo: .caption2)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.black)
                 .lineSpacing(-2)
             Text("\(speedLimit)")
-                .font(.system(size: 30, weight: .heavy))
+                .scaledFont(size: 30, weight: .heavy, relativeTo: .title)
                 .foregroundStyle(.black)
         }
         .padding(.horizontal, 10)
@@ -145,9 +145,9 @@ struct CurrentSpeedReadout: View {
     var body: some View {
         VStack(spacing: 0) {
             Text("\(speed)")
-                .font(.system(size: 22, weight: .heavy))
+                .scaledFont(size: 22, weight: .heavy, relativeTo: .title2)
             Text(unit)
-                .font(.system(size: 9, weight: .semibold))
+                .scaledFont(size: 9, weight: .semibold, relativeTo: .caption2)
         }
         .foregroundStyle(isOverLimit ? .white : .primary)
         .frame(width: 54, height: 54)

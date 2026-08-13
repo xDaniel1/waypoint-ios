@@ -13,14 +13,14 @@ struct TransitNavigationDetailSheet: View {
             // Pinned Header: Destination Title + Close Button
             HStack {
                 Text(destinationName)
-                    .font(.system(size: 30, weight: .bold))
+                    .scaledFont(size: 30, weight: .bold, relativeTo: .title)
                     .foregroundStyle(.primary)
 
                 Spacer()
 
                 Button(action: onClose) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 15, weight: .bold))
+                        .scaledFont(size: 15, weight: .bold, relativeTo: .subheadline)
                         .foregroundStyle(.primary)
                         .frame(width: 32, height: 32)
                         .background(.thickMaterial, in: Circle())
@@ -116,13 +116,13 @@ struct TransitNavigationDetailSheet: View {
     private func walkStepView(title: String, subtitle: String?) -> some View {
         HStack(alignment: .top, spacing: 16) {
             Image(systemName: "figure.walk")
-                .font(.system(size: 26, weight: .semibold))
+                .scaledFont(size: 26, weight: .semibold, relativeTo: .title2)
                 .foregroundStyle(.primary)
                 .frame(width: 32)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 20, weight: .bold))
+                    .scaledFont(size: 20, weight: .bold, relativeTo: .title3)
                     .foregroundStyle(.primary)
 
                 if let subtitle {
@@ -141,7 +141,7 @@ struct TransitNavigationDetailSheet: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Board the \(step.lineName)")
-                    .font(.system(size: 20, weight: .bold))
+                    .scaledFont(size: 20, weight: .bold, relativeTo: .title3)
                     .foregroundStyle(.primary)
 
                 if let headsign = step.headsign {
@@ -168,20 +168,20 @@ struct TransitNavigationDetailSheet: View {
     private func exitStepView(step: TransitStep) -> some View {
         HStack(alignment: .top, spacing: 16) {
             Image(systemName: "rectangle.portrait.and.arrow.right")
-                .font(.system(size: 24, weight: .semibold))
+                .scaledFont(size: 24, weight: .semibold, relativeTo: .title2)
                 .foregroundStyle(.primary)
                 .frame(width: 32)
 
             VStack(alignment: .leading, spacing: 12) {
                 Text("Exit at \(step.arrivalStop)")
-                    .font(.system(size: 20, weight: .bold))
+                    .scaledFont(size: 20, weight: .bold, relativeTo: .title3)
                     .foregroundStyle(.primary)
 
                 // Station Timeline Card
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 12) {
                         Image(systemName: "mappin.circle.fill")
-                            .font(.system(size: 16))
+                            .scaledFont(size: 16, relativeTo: .callout)
                             .foregroundStyle(.blue)
                         Text(step.departureStop)
                             .font(.subheadline.weight(.semibold))
@@ -209,7 +209,7 @@ struct TransitNavigationDetailSheet: View {
 
                     HStack(spacing: 12) {
                         Image(systemName: "circle.fill")
-                            .font(.system(size: 14))
+                            .scaledFont(size: 14, relativeTo: .footnote)
                             .foregroundStyle(.blue)
                         Text(step.arrivalStop)
                             .font(.subheadline.weight(.semibold))
@@ -239,14 +239,14 @@ struct TransitNavigationDetailSheet: View {
     private func arriveStepView() -> some View {
         HStack(alignment: .top, spacing: 16) {
             Image(systemName: "music.note")
-                .font(.system(size: 16, weight: .bold))
+                .scaledFont(size: 16, weight: .bold, relativeTo: .callout)
                 .foregroundStyle(.white)
                 .frame(width: 32, height: 32)
                 .background(Color.pink, in: Circle())
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Arrive")
-                    .font(.system(size: 20, weight: .bold))
+                    .scaledFont(size: 20, weight: .bold, relativeTo: .title3)
                     .foregroundStyle(.primary)
 
                 Text(destinationAddress ?? destinationName)
@@ -261,13 +261,13 @@ extension TransitNavigationDetailSheet {
     private func genericStepView(step: RouteStep) -> some View {
         HStack(alignment: .top, spacing: 16) {
             Image(systemName: step.maneuverIcon)
-                .font(.system(size: 26, weight: .semibold))
+                .scaledFont(size: 26, weight: .semibold, relativeTo: .title2)
                 .foregroundStyle(.primary)
                 .frame(width: 32)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(step.instruction)
-                    .font(.system(size: 20, weight: .bold))
+                    .scaledFont(size: 20, weight: .bold, relativeTo: .title3)
                     .foregroundStyle(.primary)
 
                 if step.distanceMeters > 0 {

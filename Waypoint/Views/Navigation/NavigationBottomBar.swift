@@ -96,7 +96,7 @@ struct NavigationBottomBar: View {
     private func stat(value: String, label: String) -> some View {
         VStack(spacing: 0) {
             Text(value)
-                .font(.system(size: 30, weight: .semibold))
+                .scaledFont(size: 30, weight: .semibold, relativeTo: .title)
                 .foregroundStyle(.primary)
             Text(label)
                 .font(.subheadline)
@@ -142,7 +142,7 @@ struct NavigationBottomBar: View {
     private var destinationRow: some View {
         HStack(spacing: 12) {
             Image(systemName: "mappin.circle.fill")
-                .font(.system(size: 32))
+                .scaledFont(size: 32, relativeTo: .title)
                 .foregroundStyle(.white, .pink)
             Text(destinationName)
                 .font(.title3)
@@ -153,7 +153,7 @@ struct NavigationBottomBar: View {
                     UIApplication.shared.open(url)
                 } label: {
                     Image(systemName: "phone.fill")
-                        .font(.system(size: 17))
+                        .scaledFont(size: 17, relativeTo: .body)
                         .foregroundStyle(.blue)
                         .frame(width: 38, height: 38)
                         .background(.quaternary, in: Circle())
@@ -174,7 +174,7 @@ struct NavigationBottomBar: View {
         ShareLink(item: shareText) {
             HStack(spacing: 14) {
                 Image(systemName: "person.crop.circle.badge.plus")
-                    .font(.system(size: 20))
+                    .scaledFont(size: 20, relativeTo: .title3)
                     .foregroundStyle(.green)
                     .frame(width: 30)
                 Text("Share ETA")
@@ -197,7 +197,7 @@ struct NavigationBottomBar: View {
         Button(action: action) {
             HStack(spacing: 14) {
                 Image(systemName: icon)
-                    .font(.system(size: 20))
+                    .scaledFont(size: 20, relativeTo: .title3)
                     .foregroundStyle(tint)
                     .frame(width: 30)
                 Text(title)

@@ -89,7 +89,7 @@ struct MapScreen: View {
                 ForEach(navigationViewModel.reportedIncidents) { incident in
                     Annotation(incident.kind.rawValue, coordinate: incident.coordinate) {
                         Image(systemName: incident.kind.symbol)
-                            .font(.system(size: 14, weight: .bold))
+                            .scaledFont(size: 14, weight: .bold, relativeTo: .footnote)
                             .foregroundStyle(incident.kind.iconColor)
                             .padding(6)
                             .background(incident.kind.tint, in: Circle())
@@ -505,7 +505,7 @@ struct MapScreen: View {
                                 }
                             } label: {
                                 Text(is3D ? "2D" : "3D")
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .scaledFont(size: 16, weight: .semibold, relativeTo: .callout)
                             }
                             LookAroundButton(coordinate: mapCenter ?? viewModel.currentLocation?.coordinate)
                         }
@@ -585,7 +585,7 @@ struct MapScreen: View {
                     HStack(alignment: .bottom) {
                         Button(action: handleLocationButtonTap) {
                             Image(systemName: trackingMode == .followHeading ? "location.north.line.fill" : "location.north.fill")
-                                .font(.system(size: 18, weight: .medium))
+                                .scaledFont(size: 18, weight: .medium, relativeTo: .body)
                                 .foregroundStyle(trackingMode == .followHeading ? Color.accentColor : Color.primary)
                                 .frame(width: 48, height: 48)
                                 .contentShape(Circle())
@@ -791,7 +791,7 @@ struct MapScreen: View {
 
     private func navSideIcon(_ systemName: String) -> some View {
         Image(systemName: systemName)
-            .font(.system(size: 17, weight: .medium))
+            .scaledFont(size: 17, weight: .medium, relativeTo: .body)
             .foregroundStyle(.primary)
             .frame(width: 48, height: 48)
             .contentShape(Rectangle())
@@ -882,7 +882,7 @@ private struct FusedRightControls: View {
             VStack(spacing: 0) {
                 Button(action: onRecenter) {
                     Image(systemName: locationSymbol)
-                        .font(.system(size: 17, weight: .medium))
+                        .scaledFont(size: 17, weight: .medium, relativeTo: .body)
                         .foregroundStyle(trackingMode == .off ? Color.primary : Color.accentColor)
                         .frame(width: 48, height: 48)
                         .contentShape(Rectangle())
@@ -900,7 +900,7 @@ private struct FusedRightControls: View {
                     Button("Hybrid") { mapStyle = .hybrid(showsTraffic: true) }
                 } label: {
                     Image(systemName: "square.3.layers.3d")
-                        .font(.system(size: 18, weight: .medium))
+                        .scaledFont(size: 18, weight: .medium, relativeTo: .body)
                         .foregroundStyle(.primary)
                         .frame(width: 48, height: 48)
                         .contentShape(Rectangle())
@@ -930,7 +930,7 @@ private struct LookAroundButton: View {
                     ProgressView().tint(.white)
                 } else {
                     Image(systemName: "binoculars.fill")
-                        .font(.system(size: 17, weight: .medium))
+                        .scaledFont(size: 17, weight: .medium, relativeTo: .body)
                 }
             }
             .foregroundStyle(.primary)
@@ -999,7 +999,7 @@ private struct CompassRoseButton: View {
     var body: some View {
         Button(action: onReset) {
             Image(systemName: "location.north.circle.fill")
-                .font(.system(size: 24, weight: .medium))
+                .scaledFont(size: 24, weight: .medium, relativeTo: .title2)
                 .foregroundStyle(.red, .primary)
                 .frame(width: 48, height: 48)
                 .contentShape(Circle())
@@ -1054,19 +1054,19 @@ private struct TransitNavigationCardView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: "figure.walk")
-                .font(.system(size: 32, weight: .semibold))
+                .scaledFont(size: 32, weight: .semibold, relativeTo: .title)
                 .foregroundStyle(.primary)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     if let firstStep = route.transitSteps.first {
                         Text("Walk to \(firstStep.departureStop) stop")
-                            .font(.system(size: 20, weight: .bold))
+                            .scaledFont(size: 20, weight: .bold, relativeTo: .title3)
                             .foregroundStyle(.primary)
                             .lineLimit(2)
                     } else {
                         Text("Walk to \(destinationName)")
-                            .font(.system(size: 20, weight: .bold))
+                            .scaledFont(size: 20, weight: .bold, relativeTo: .title3)
                             .foregroundStyle(.primary)
                     }
 
@@ -1074,7 +1074,7 @@ private struct TransitNavigationCardView: View {
 
                     Button(action: onClose) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .bold))
+                            .scaledFont(size: 14, weight: .bold, relativeTo: .footnote)
                             .foregroundStyle(.primary)
                             .frame(width: 32, height: 32)
                             .background(Color.secondary.opacity(0.18), in: Circle())

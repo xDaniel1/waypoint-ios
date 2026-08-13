@@ -123,7 +123,7 @@ struct PlaceDetailContent: View {
 
     private func floatingCircle(_ systemName: String, tint: Color = .primary) -> some View {
         Image(systemName: systemName)
-            .font(.system(size: 15, weight: .bold))
+            .scaledFont(size: 15, weight: .bold, relativeTo: .subheadline)
             .foregroundStyle(tint)
             .frame(width: 34, height: 34)
             .background(.regularMaterial, in: Circle())
@@ -165,7 +165,7 @@ struct PlaceDetailContent: View {
     private func titleBlock(_ place: DetailedPlace) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(place.displayName?.text ?? result.title)
-                .font(.system(size: 30, weight: .bold))
+                .scaledFont(size: 30, weight: .bold, relativeTo: .title)
                 .lineLimit(2)
             HStack(spacing: 6) {
                 if let type = place.primaryTypeDisplayName?.text {
@@ -187,7 +187,7 @@ struct PlaceDetailContent: View {
         HStack(spacing: 10) {
             Button(action: openDirections) {
                 VStack(spacing: 3) {
-                    Image(systemName: "car.fill").font(.system(size: 17, weight: .semibold))
+                    Image(systemName: "car.fill").scaledFont(size: 17, weight: .semibold, relativeTo: .body)
                     Text("Directions").font(.caption.weight(.semibold))
                 }
                 .foregroundStyle(.white)
@@ -202,7 +202,7 @@ struct PlaceDetailContent: View {
             } label: {
                 VStack(spacing: 3) {
                     Image(systemName: favoritesStore.isFavorite(result) ? "star.fill" : "star")
-                        .font(.system(size: 17, weight: .semibold))
+                        .scaledFont(size: 17, weight: .semibold, relativeTo: .body)
                         .foregroundStyle(favoritesStore.isFavorite(result) ? Color.yellow : Color.accentColor)
                     Text(favoritesStore.isFavorite(result) ? "Saved" : "Save")
                         .font(.caption.weight(.semibold))
@@ -232,7 +232,7 @@ struct PlaceDetailContent: View {
     private func secondaryAction(symbol: String, title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 3) {
-                Image(systemName: symbol).font(.system(size: 17, weight: .semibold))
+                Image(systemName: symbol).scaledFont(size: 17, weight: .semibold, relativeTo: .body)
                 Text(title).font(.caption.weight(.semibold))
             }
             .foregroundStyle(Color.accentColor)
@@ -358,7 +358,7 @@ struct PlaceDetailContent: View {
                     ForEach(items, id: \.label) { item in
                         HStack(spacing: 12) {
                             Image(systemName: item.symbol)
-                                .font(.system(size: 15))
+                                .scaledFont(size: 15, relativeTo: .subheadline)
                                 .frame(width: 24)
                                 .foregroundStyle(.primary)
                             Text(item.label).font(.body)

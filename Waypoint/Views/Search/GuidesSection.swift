@@ -72,7 +72,7 @@ private struct GuideCard: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Image(systemName: guide.symbol)
-                        .font(.system(size: 18, weight: .semibold))
+                        .scaledFont(size: 18, weight: .semibold, relativeTo: .body)
                         .foregroundStyle(.white)
                         .shadow(radius: 3)
                     Spacer(minLength: 0)

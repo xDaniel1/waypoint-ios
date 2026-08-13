@@ -74,7 +74,7 @@ struct PhotoLightbox: View {
             }
             Button { dismiss() } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 15, weight: .bold))
+                    .scaledFont(size: 15, weight: .bold, relativeTo: .subheadline)
                     .foregroundStyle(.white)
                     .frame(width: 32, height: 32)
                     .background(.ultraThinMaterial, in: Circle())

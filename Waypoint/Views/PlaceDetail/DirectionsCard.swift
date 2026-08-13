@@ -160,7 +160,7 @@ struct DirectionsCard: View {
 
     private func headerCircleIcon(_ systemName: String) -> some View {
         Image(systemName: systemName)
-            .font(.system(size: 15, weight: .semibold))
+            .scaledFont(size: 15, weight: .semibold, relativeTo: .subheadline)
             .foregroundStyle(.primary)
             .frame(width: 32, height: 32)
             .background(.thickMaterial, in: Circle())
@@ -274,7 +274,7 @@ struct DirectionsCard: View {
     ) -> some View {
         HStack(spacing: 12) {
             Image(systemName: symbol)
-                .font(.system(size: 20, weight: .semibold))
+                .scaledFont(size: 20, weight: .semibold, relativeTo: .title3)
                 .foregroundStyle(symbolColor)
                 .frame(width: 24, height: 24)
 
@@ -376,7 +376,7 @@ struct DirectionsCard: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(option.shortDuration)
-                        .font(.system(size: 28, weight: .bold))
+                        .scaledFont(size: 28, weight: .bold, relativeTo: .title)
                         .foregroundStyle(option.hasTraffic ? .orange : .primary)
                     if option.hasTraffic {
                         Image(systemName: "car.side.and.exclamationmark")
@@ -399,7 +399,7 @@ struct DirectionsCard: View {
 
                     HStack(spacing: 5) {
                         Image(systemName: "figure.biking")
-                            .font(.system(size: 9, weight: .bold))
+                            .scaledFont(size: 9, weight: .bold, relativeTo: .caption2)
                             .foregroundStyle(.white)
                             .padding(3)
                             .background(Color.blue, in: Circle())
@@ -483,7 +483,7 @@ private struct TransitCard: View {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 8) {
                             Text(option.shortDuration)
-                                .font(.system(size: 28, weight: .bold))
+                                .scaledFont(size: 28, weight: .bold, relativeTo: .title)
                                 .foregroundStyle(.primary)
 
                             Text(option.fare ?? "$3.00")
@@ -541,14 +541,14 @@ private struct TransitLegRow: View {
                 ForEach(Array(legs.enumerated()), id: \.offset) { index, leg in
                     if index > 0 {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .bold))
+                            .scaledFont(size: 10, weight: .bold, relativeTo: .caption2)
                             .foregroundStyle(.secondary)
                     }
                     switch leg {
                     case .walk(let minutes):
                         HStack(alignment: .center, spacing: 2) {
                             Image(systemName: "figure.walk")
-                                .font(.system(size: 13, weight: .semibold))
+                                .scaledFont(size: 13, weight: .semibold, relativeTo: .footnote)
                             Text("\(minutes)")
                                 .font(.caption2.weight(.bold))
                         }
@@ -557,7 +557,7 @@ private struct TransitLegRow: View {
                         HStack(alignment: .center, spacing: 5) {
                             LineBadge(step: step)
                             Image(systemName: step.vehicleSymbol)
-                                .font(.system(size: 12, weight: .semibold))
+                                .scaledFont(size: 12, weight: .semibold, relativeTo: .caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -578,13 +578,13 @@ struct LineBadge: View {
 
         if step.isSubway && isSingleOrDouble {
             Text(line)
-                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .scaledFont(size: 13, weight: .bold, design: .rounded, relativeTo: .footnote)
                 .foregroundStyle(.white)
                 .frame(width: 22, height: 22, alignment: .center)
                 .background(bg, in: Circle())
         } else {
             Text(line)
-                .font(.system(size: 12, weight: .bold))
+                .scaledFont(size: 12, weight: .bold, relativeTo: .caption)
                 .foregroundStyle(.white)
                 .padding(.horizontal, 7)
                 .frame(height: 22, alignment: .center)
@@ -600,7 +600,7 @@ private struct GoButton: View {
     var body: some View {
         Button(action: action) {
             Text("GO")
-                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .scaledFont(size: 22, weight: .bold, design: .rounded, relativeTo: .title2)
                 .foregroundStyle(.white)
                 .frame(width: 68, height: 68)
                 .background(Color(red: 0.2, green: 0.82, blue: 0.35), in: RoundedRectangle(cornerRadius: 18))
@@ -620,7 +620,7 @@ private struct ModeButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: mode.symbolName)
-                .font(.system(size: 17, weight: .semibold))
+                .scaledFont(size: 17, weight: .semibold, relativeTo: .body)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 9)
                 // Selected reads as the foreground colour against a raised white segment, the

@@ -118,7 +118,7 @@ struct SearchSheet: View {
                             viewModel.queryText = ""
                         } label: {
                             Image(systemName: "xmark")
-                                .font(.system(size: 15, weight: .bold))
+                                .scaledFont(size: 15, weight: .bold, relativeTo: .subheadline)
                                 .foregroundStyle(.primary)
                                 .frame(width: 32, height: 32)
                                 .background(.regularMaterial, in: Circle())
@@ -412,7 +412,7 @@ struct SearchSheet: View {
             } label: {
                 VStack(alignment: .leading, spacing: 0) {
                     Image(systemName: "star.fill")
-                        .font(.system(size: 62))
+                        .scaledFont(size: 62, relativeTo: .largeTitle)
                         .foregroundStyle(.yellow.gradient)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     VStack(alignment: .leading, spacing: 2) {
@@ -491,7 +491,7 @@ struct SearchSheet: View {
             activeSheet = .profile
         } label: {
             Image(systemName: "person.crop.circle.fill")
-                .font(.system(size: 32))
+                .scaledFont(size: 32, relativeTo: .title)
                 .foregroundStyle(.secondary)
         }
         .buttonStyle(.plain)
@@ -700,10 +700,10 @@ private struct PlaceCircle: View {
                         Circle().fill(tint.gradient)
                     }
                     if let emoji, !emoji.isEmpty {
-                        Text(emoji).font(.system(size: 28))
+                        Text(emoji).scaledFont(size: 28, relativeTo: .title)
                     } else {
                         Image(systemName: symbol)
-                            .font(.system(size: 28, weight: .semibold))
+                            .scaledFont(size: 28, weight: .semibold, relativeTo: .title)
                             .foregroundStyle(isPlaceholder ? AnyShapeStyle(Color.secondary) : AnyShapeStyle(.white))
                     }
                 }
@@ -1204,7 +1204,7 @@ private struct ProfilePlaceholderSheet: View {
                 Section {
                     VStack(spacing: 12) {
                         Image(systemName: "person.crop.circle.fill")
-                            .font(.system(size: 56))
+                            .scaledFont(size: 56, relativeTo: .largeTitle)
                             .foregroundStyle(.secondary)
                         Text("Accounts aren't built yet")
                             .font(.headline)

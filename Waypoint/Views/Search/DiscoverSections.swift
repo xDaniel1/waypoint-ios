@@ -211,7 +211,7 @@ private struct TrendingCard: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(rank)")
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .scaledFont(size: 34, weight: .bold, design: .rounded, relativeTo: .largeTitle)
                         .foregroundStyle(.white)
                         .shadow(radius: 4)
                     Spacer(minLength: 0)
