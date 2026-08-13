@@ -39,12 +39,16 @@ struct SearchSheet: View {
         case profile
         case savedList(HomeList)
         case editFavorite(FavoritePlace)
+        case guideDetail(GuidesViewModel.Guide)
+        case cityGuideDetail(CityGuidesViewModel.CityGuide)
 
         var id: String {
             switch self {
             case .profile: "profile"
             case .savedList(let list): "list-\(list.id)"
             case .editFavorite(let favorite): "favorite-\(favorite.id)"
+            case .guideDetail(let guide): "guide-\(guide.id)"
+            case .cityGuideDetail(let city): "city-\(city.id)"
             }
         }
     }
@@ -151,11 +155,11 @@ struct SearchSheet: View {
                             ) { place in
                                 selectDiscover(place)
                             }
-                            GuidesSection(
-                                guides: viewModel.guides,
-                                currentLocation: currentLocation
-                            ) { place in
-                                selectDiscover(place)
+                            GuidesSection(guides: viewModel.guides) { guide in
+                                activeSheet = .guideDetail(guide)
+                            }
+                            CityGuidesSection(cityGuides: viewModel.cityGuides) { city in
+                                activeSheet = .cityGuideDetail(city)
                             }
                         } else {
                             suggestionsSection
@@ -245,6 +249,32 @@ struct SearchSheet: View {
                 EditFavoriteSheet(favorite: favorite) { title, emoji, colorHex in
                     viewModel.favoritesStore.update(favorite, title: title, emoji: emoji, colorHex: colorHex)
                 }
+            case .guideDetail(let guide):
+                PlaceListDetailSheet(
+                    title: guide.title,
+                    footer: "Assembled from the highest-rated nearby places on Google — not an editorial guide.",
+                    places: guide.places,
+                    photoURL: { viewModel.guides.photoURL(for: $0, maxWidthPx: 200) },
+                    currentLocation: currentLocation,
+                    onSelect: { place in
+                        activeSheet = nil
+                        selectDiscover(place)
+                    },
+                    onDismiss: { activeSheet = nil }
+                )
+            case .cityGuideDetail(let city):
+                PlaceListDetailSheet(
+                    title: city.name,
+                    footer: "Top-rated attractions in \(city.name) on Google — not an editorial guide.",
+                    places: city.places,
+                    photoURL: { viewModel.cityGuides.photoURL(for: $0, maxWidthPx: 200) },
+                    currentLocation: currentLocation,
+                    onSelect: { place in
+                        activeSheet = nil
+                        selectDiscover(place)
+                    },
+                    onDismiss: { activeSheet = nil }
+                )
             }
         }
     }
@@ -557,7 +587,11 @@ struct SearchSheet: View {
                             .foregroundStyle(.primary)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
-                            .background(.quaternary.opacity(0.8), in: Capsule())
+                            // Was a flat `.quaternary` fill — every other control on this screen
+                            // (search field, profile button) is real Liquid Glass, which refracts
+                            // whatever's behind it. The pills sit in that same header area over
+                            // the map, so a flat fill was the one thing that didn't diffuse.
+                            .glassEffect(.regular.interactive(), in: Capsule())
                         }
                         .buttonStyle(.plain)
                     }

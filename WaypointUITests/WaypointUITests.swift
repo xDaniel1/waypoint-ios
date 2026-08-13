@@ -229,6 +229,40 @@ final class WaypointUITests: XCTestCase {
         app.buttons["Done"].tap()
     }
 
+    func test17_cityGuidesShelf() throws {
+        let searchField = app.textFields["searchField"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 10))
+        searchField.tap()
+        XCTAssertTrue(app.buttons["trending-1"].waitForExistence(timeout: 25))
+
+        let header = app.staticTexts["City Guides"]
+        // The header can exist in the hierarchy while still sitting below the fold — the shelf's
+        // cards render below it, so scrolling has to continue until the header is actually
+        // hittable, not just present.
+        var attempts = 0
+        while !(header.exists && header.isHittable) && attempts < 20 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+            attempts += 1
+        }
+        XCTAssertTrue(header.exists, "City Guides section should appear")
+        // One more swipe brings the cards themselves (below the header) fully into view.
+        app.swipeUp()
+        Thread.sleep(forTimeInterval: 1)
+        attachScreenshot("17a-city-guides-shelf")
+
+        let matches = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'United States'"))
+        XCTAssertTrue(matches.firstMatch.waitForExistence(timeout: 10), "A city card should be built from live data")
+        // The shelf's first card can sit partially off-screen after the vertical swipes above —
+        // pick whichever one is actually hittable rather than assuming document order is on-screen.
+        let card = (0..<matches.count).map { matches.element(boundBy: $0) }.first { $0.isHittable } ?? matches.firstMatch
+        card.tap()
+
+        XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 10), "Tapping a city opens its attraction list")
+        attachScreenshot("17b-city-detail")
+        app.buttons["Done"].tap()
+    }
+
     // Map style menu should offer Standard/Satellite/Hybrid and apply a selection.
     func test06_mapStyleMenu() throws {
         let styleButton = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'layer'")).firstMatch

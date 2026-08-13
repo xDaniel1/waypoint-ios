@@ -7,12 +7,15 @@ import SwiftUI
 /// Apple's own guides are licensed editorial with no public API, so these are assembled from
 /// top-rated nearby places instead — and the card says exactly that rather than dressing an
 /// algorithm up as a curator.
+///
+/// Opening a card hands off to the parent (`onOpen`) rather than presenting its own `.sheet`.
+/// This shelf and `CityGuidesSection` are siblings in the same List, and two independent
+/// `.sheet(item:)` modifiers mounted on sibling rows were not reliably both driveable — the
+/// second one presented an empty window. `SearchSheet` owns one sheet for both, the same fix
+/// already applied to its profile/favorites/saved-list sheets.
 struct GuidesSection: View {
     let guides: GuidesViewModel
-    let currentLocation: CLLocation?
-    let onSelect: (DetailedPlace) -> Void
-
-    @State private var openGuide: GuidesViewModel.Guide?
+    let onOpen: (GuidesViewModel.Guide) -> Void
 
     var body: some View {
         if !guides.guides.isEmpty {
@@ -25,7 +28,7 @@ struct GuidesSection: View {
                                 imageURL: guide.coverPlace.flatMap {
                                     guides.photoURL(for: $0, maxWidthPx: 600)
                                 },
-                                action: { openGuide = guide }
+                                action: { onOpen(guide) }
                             )
                         }
                     }
@@ -34,17 +37,6 @@ struct GuidesSection: View {
                 .safeAreaPadding(.horizontal, 16)
                 .listRowInsets(EdgeInsets())
                 .listRowSeparator(.hidden)
-                .sheet(item: $openGuide) { guide in
-                    GuideDetailSheet(
-                        guide: guide,
-                        photoURL: { guides.photoURL(for: $0, maxWidthPx: 200) },
-                        currentLocation: currentLocation,
-                        onSelect: { place in
-                            openGuide = nil
-                            onSelect(place)
-                        }
-                    )
-                }
             }
         }
     }
@@ -94,21 +86,23 @@ private struct GuideCard: View {
     }
 }
 
-/// The places inside a guide, ordered by rating — which is the guide's whole premise, so the
-/// rating is shown on every row rather than hidden.
-private struct GuideDetailSheet: View {
-    let guide: GuidesViewModel.Guide
+/// The places inside a guide or city guide, ordered by rating — which is the whole premise of
+/// both shelves, so the rating is shown on every row rather than hidden. Shared by `GuidesSection`
+/// and `CityGuidesSection` since the two lists are identical apart from title/footer copy.
+struct PlaceListDetailSheet: View {
+    let title: String
+    let footer: String
+    let places: [DetailedPlace]
     let photoURL: (DetailedPlace) -> URL?
     let currentLocation: CLLocation?
     let onSelect: (DetailedPlace) -> Void
-
-    @Environment(\.dismiss) private var dismiss
+    let onDismiss: () -> Void
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    ForEach(guide.places) { place in
+                    ForEach(places) { place in
                         Button {
                             onSelect(place)
                         } label: {
@@ -132,14 +126,14 @@ private struct GuideDetailSheet: View {
                         .buttonStyle(.plain)
                     }
                 } footer: {
-                    Text("Assembled from the highest-rated nearby places on Google — not an editorial guide.")
+                    Text(footer)
                 }
             }
-            .navigationTitle(guide.title)
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button("Done", action: onDismiss)
                 }
             }
         }
