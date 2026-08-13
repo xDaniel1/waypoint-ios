@@ -388,10 +388,6 @@ struct MapScreen: View {
                 .enabled(upThrough: directionsViewModel.isActive ? .height(directionsCardHeight) : .home)
             )
             .presentationSizing(.page)
-            // Without an explicit background the sheet picks up whatever is under it, which had
-            // the directions card tinted teal/green from the water and parks on the map. Apple's
-            // is a neutral frosted panel regardless of what it's sitting over.
-            .presentationBackground(.regularMaterial)
             .presentationCornerRadius(28)
             .interactiveDismissDisabled(true)
             // Chained onto SearchSheet itself, not sibling .sheet() modifiers on MapScreen's own
