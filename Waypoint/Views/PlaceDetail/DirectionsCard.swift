@@ -29,7 +29,9 @@ struct DirectionsCard: View {
             // Header stays pinned so the close button is reachable at every detent height.
             header
                 .padding(.horizontal)
-                .padding(.top, 16)
+                // Clears the sheet's drag indicator — at 16 the grabber drew a line straight
+                // through the "Directions" title.
+                .padding(.top, 30)
                 .padding(.bottom, 10)
 
             // A ScrollView always fills its container regardless of how tall its content
@@ -181,8 +183,8 @@ struct DirectionsCard: View {
                 }
             }
         }
-        .padding(4)
-        .background(Color.black.opacity(0.82), in: Capsule())
+        .padding(3)
+        .background(Color(.tertiarySystemFill), in: Capsule())
         .accessibilityIdentifier("directionsModePicker")
     }
 
@@ -617,12 +619,15 @@ private struct ModeButton: View {
             Image(systemName: mode.symbolName)
                 .font(.system(size: 17, weight: .semibold))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .foregroundStyle(.white)
+                .padding(.vertical, 9)
+                // Selected reads as the foreground colour against a raised white segment, the
+                // way UISegmentedControl does it; unselected sits back in secondary.
+                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
                 .background {
                     if isSelected {
                         Capsule()
-                            .fill(Color(white: 0.42))
+                            .fill(Color(.secondarySystemGroupedBackground))
+                            .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
                             .matchedGeometryEffect(id: "modeHighlight", in: namespace)
                     }
                 }
