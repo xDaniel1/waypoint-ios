@@ -32,12 +32,11 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 
 - [x] **No traffic overlay.** `showsTraffic` is never set on the `Map`. Native, free, one property.
 
-- [ ] **Add Stop sheet doesn't open.** STILL BROKEN — `test11_multiStopRouting` fails on
-      "Add Stop sheet should present a search field". Was marked done; a full suite run on
-      2026-08-12 disproved that. Three structural fixes tried now: enum-backed `.sheet(item:)`,
-      hoisting presentation to `MapScreen`, and consolidating SearchSheet's four chained `.sheet`
-      modifiers into one (that last one was a real latent bug and is worth keeping, but it did not
-      fix this). Root cause still unknown.
+- [x] **Add Stop sheet doesn't open.** FIXED. Root cause was never the sheet: the endpoint row's
+      hit region collapsed to just its text (accessibility frame came back 19.8pt tall for a ~40pt
+      row), so the tap never reached the Button and its action never ran. A `Logger` line in the
+      closure proved it never fired — which is why four structural sheet fixes over three sessions
+      all changed nothing. `.contentShape(Rectangle())` on the row fixes it; `test11` passes.
 
 - [x] **Stop reordering.** Grips now appear only on stop rows, and only with 2+ stops, and open a
       Move Up / Move Down menu wired to `moveStops`. Previously every row (origin, destination,

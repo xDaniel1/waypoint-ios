@@ -321,6 +321,9 @@ struct DirectionsCard: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        // Without this the row's hit region collapses to just its text — the accessibility frame
+        // came back 19.8pt tall for a ~40pt row, and taps on "Add Stop" never reached the button.
+        .contentShape(Rectangle())
     }
 
     // MARK: Drive / Walk / Bike — route options

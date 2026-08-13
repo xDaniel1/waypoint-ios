@@ -1,5 +1,6 @@
 import CoreLocation
 import MapKit
+import OSLog
 import SwiftUI
 
 private let categories: [(title: String, emoji: String, query: String)] = [
@@ -25,6 +26,9 @@ struct SearchSheet: View {
     @Binding var collapsedHeight: CGFloat
     @Binding var sheetHeight: CGFloat
     @Binding var directionsHeight: CGFloat
+    /// Swaps the directions card for the stop-picker in place — see `AddStopSheet` for why this
+    /// isn't a nested sheet, and MapScreen for why the state lives up there.
+    @Binding var isAddingStop: Bool
     let onStartNavigation: (RouteOption) -> Void
     /// Bubbled up to MapScreen, which owns the actual sheet presentation — see the comment on
     /// DirectionsCard's matching properties for why this can't be presented from in here.
@@ -35,19 +39,18 @@ struct SearchSheet: View {
         case profile
         case savedList(HomeList)
         case editFavorite(FavoritePlace)
-        case addDirectionsStop
 
         var id: String {
             switch self {
             case .profile: "profile"
             case .savedList(let list): "list-\(list.id)"
             case .editFavorite(let favorite): "favorite-\(favorite.id)"
-            case .addDirectionsStop: "add-stop"
             }
         }
     }
 
     @State private var activeSheet: ActiveSheet?
+
     /// Stays true for the whole search session — scrolling dismisses the keyboard but must NOT
     /// drop you back to the map, so the results list is driven by this, not by keyboard focus.
     @State private var isSearching = false
@@ -67,14 +70,27 @@ struct SearchSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if directionsViewModel.isActive {
+            if directionsViewModel.isActive, isAddingStop {
+                AddStopSheet(
+                    currentRegion: originRegionForAddStop,
+                    onCancel: { isAddingStop = false }
+                ) { item in
+                    directionsViewModel.addStop(item)
+                    isAddingStop = false
+                }
+                .frame(maxHeight: .infinity)
+            } else if directionsViewModel.isActive {
                 DirectionsCard(
                     viewModel: directionsViewModel,
                     detent: $detent,
                     contentHeight: $directionsHeight,
                     onClose: { directionsViewModel.stop() },
                     onStartNavigation: { route in onStartNavigation(route) },
-                    onAddStop: { activeSheet = .addDirectionsStop },
+                    onAddStop: {
+                        // Needs the full sheet height to be usable as a search screen.
+                        detent = .large
+                        isAddingStop = true
+                    },
                     onShowSteps: onShowSteps
                 )
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -228,10 +244,6 @@ struct SearchSheet: View {
             case .editFavorite(let favorite):
                 EditFavoriteSheet(favorite: favorite) { title, emoji, colorHex in
                     viewModel.favoritesStore.update(favorite, title: title, emoji: emoji, colorHex: colorHex)
-                }
-            case .addDirectionsStop:
-                AddStopSheet(currentRegion: originRegionForAddStop) { item in
-                    directionsViewModel.addStop(item)
                 }
             }
         }

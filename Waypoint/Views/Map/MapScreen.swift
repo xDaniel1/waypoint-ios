@@ -35,6 +35,10 @@ struct MapScreen: View {
     @State private var isRerouting = false
     @State private var isSearchingAlongRoute = false
     @State private var isAddingNavStop = false
+    /// Owned here rather than inside SearchSheet: the sheet's content gets rebuilt when the
+    /// detent changes, which reset SearchSheet's local @State and immediately flipped the stop
+    /// picker back off. `detent` already lives here for the same reason.
+    @State private var isAddingDirectionsStop = false
     @State private var stepsRoute: RouteOption?
     @State private var isReportingIncident = false
     @State private var showingTransitDetails = false
@@ -278,6 +282,7 @@ struct MapScreen: View {
                 collapsedHeight: $collapsedHeight,
                 sheetHeight: $sheetHeight,
                 directionsHeight: $directionsCardHeight,
+                isAddingStop: $isAddingDirectionsStop,
                 onStartNavigation: { route in
                     let name = searchViewModel.selectedResult?.title ?? directionsViewModel.destinationTitle
                     // The route's own endpoint is the most reliable destination coordinate —
@@ -680,8 +685,14 @@ struct MapScreen: View {
                 }
             }
             .sheet(isPresented: $isAddingNavStop) {
-                AddStopSheet(currentRegion: originRegionForAddStop) { item in
+                // Presented from MapScreen's root while navigating, when the search sheet is
+                // down — so this one is a genuine top-level sheet and renders fine.
+                AddStopSheet(
+                    currentRegion: originRegionForAddStop,
+                    onCancel: { isAddingNavStop = false }
+                ) { item in
                     navigationViewModel.addStop(item.placemark.coordinate)
+                    isAddingNavStop = false
                 }
             }
             .confirmationDialog("Report an Incident", isPresented: $isReportingIncident, titleVisibility: .visible) {

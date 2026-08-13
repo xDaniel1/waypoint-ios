@@ -1,17 +1,27 @@
 import MapKit
 import SwiftUI
 
-/// A small search sheet for picking a stop to insert into the active route. Kept independent
+/// A small search screen for picking a stop to insert into the active route. Kept independent
 /// of the main `SearchViewModel` — that drives the whole home/search sheet's state, and this is
-/// a self-contained, one-shot "pick a place" flow that hands the result back and dismisses.
+/// a self-contained, one-shot "pick a place" flow that hands the result back.
+///
+/// Rendered *inline* inside the directions sheet rather than presented as its own sheet. It was a
+/// nested `.sheet`, and on this SDK presenting a sheet from content that is already sheet-presented
+/// creates the window but never renders anything into it — an accessibility dump showed a
+/// full-size second window containing three empty containers and no search field. Apple Maps
+/// pushes this screen inside the same sheet anyway.
 struct AddStopSheet: View {
     let currentRegion: MKCoordinateRegion?
+    let onCancel: () -> Void
     let onAdd: (MKMapItem) -> Void
 
     @State private var completerService = SearchCompleterService()
     @State private var queryText = ""
     @State private var isResolving = false
-    @Environment(\.dismiss) private var dismiss
+    /// `.searchable(isPresented:)` needs a binding it can actually write back to — passing
+    /// `.constant(true)` left SwiftUI unable to drive its own presentation state and the search
+    /// field never materialised, so the sheet opened onto an empty list.
+    @State private var isSearchPresented = true
 
     var body: some View {
         NavigationStack {
@@ -31,7 +41,7 @@ struct AddStopSheet: View {
                 }
             }
             .listStyle(.plain)
-            .searchable(text: $queryText, isPresented: .constant(true), prompt: "Search for a stop")
+            .searchable(text: $queryText, isPresented: $isSearchPresented, prompt: "Search for a stop")
             .onChange(of: queryText) { _, newValue in
                 completerService.updateQuery(newValue)
             }
@@ -39,7 +49,7 @@ struct AddStopSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { onCancel() }
                 }
             }
             .overlay {
@@ -63,7 +73,6 @@ struct AddStopSheet: View {
             let response = try await MKLocalSearch(request: request).start()
             if let item = response.mapItems.first {
                 onAdd(item)
-                dismiss()
             }
         } catch {
             // Silent — the user can just try another result or cancel.
