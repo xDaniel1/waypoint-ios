@@ -393,7 +393,7 @@ struct MapScreen: View {
             // the last row. Plain detents let the sheet size itself to the screen properly.
             // The card draws its own inset glass panel (see SearchSheet), so the sheet's own
             // background and corner radius would just be a second, edge-clipped layer behind it.
-            .presentationBackground(.clear)
+            .presentationBackground { Color.clear }
             .interactiveDismissDisabled(true)
             // Chained onto SearchSheet itself, not sibling .sheet() modifiers on MapScreen's own
             // root: the outer SearchSheet sheet is presented essentially the whole time the user
