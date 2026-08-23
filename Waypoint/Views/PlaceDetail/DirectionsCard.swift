@@ -66,7 +66,7 @@ struct DirectionsCard: View {
     }
 
     private var contentStack: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             modePicker
             endpointsCard
 
@@ -196,11 +196,11 @@ struct DirectionsCard: View {
         ZStack(alignment: .leading) {
             // Vertical connecting line linking origin, intermediate stops, and destination
             VStack(spacing: 0) {
-                Spacer().frame(height: 20)
+                Spacer().frame(height: 25)
                 Rectangle()
                     .fill(Color.secondary.opacity(0.35))
                     .frame(width: 2)
-                Spacer().frame(height: 20)
+                Spacer().frame(height: 25)
             }
             .padding(.leading, 23)
 
@@ -321,8 +321,8 @@ struct DirectionsCard: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 13)
         // Without this the row's hit region collapses to just its text — the accessibility frame
         // came back 19.8pt tall for a ~40pt row, and taps on "Add Stop" never reached the button.
         .contentShape(Rectangle())
