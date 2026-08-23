@@ -165,7 +165,6 @@ struct SearchSheet: View {
                         }
                     }
                     .listStyle(.plain)
-                    .safeAreaPadding(.bottom)
                     .safeAreaInset(edge: .top, spacing: 0) { categoriesBar }
                     // Scrolling puts the keyboard away so you can read results, but the search
                     // page itself stays up until you pick something or close it.
@@ -303,12 +302,12 @@ struct SearchSheet: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 6)
-            .padding(.bottom, 24)
+            // Just enough that the last row clears the rounded corner — no safe-area inset here,
+            // the card is already lifted off the screen edge and stacking both left an empty
+            // band of glass below the content.
+            .padding(.bottom, 14)
         }
         .scrollIndicators(.hidden)
-        // The fixed bottom pad alone didn't clear the home indicator, so the last row rendered
-        // under it and looked cut off. This adds the device's real bottom inset on top.
-        .safeAreaPadding(.bottom)
         .scrollBounceBehavior(.basedOnSize)
     }
 
