@@ -147,7 +147,6 @@ struct SearchSheet: View {
                         if viewModel.queryText.isEmpty {
                             tipSection
                             placesSection
-                            categoriesSection
                             recentsSection
                             DiscoverSections(
                                 discover: viewModel.discover,
@@ -166,6 +165,7 @@ struct SearchSheet: View {
                         }
                     }
                     .listStyle(.plain)
+                    .safeAreaInset(edge: .top, spacing: 0) { categoriesBar }
                     // Scrolling puts the keyboard away so you can read results, but the search
                     // page itself stays up until you pick something or close it.
                     .scrollDismissesKeyboard(.immediately)
@@ -572,35 +572,39 @@ struct SearchSheet: View {
         }
     }
 
-    private var categoriesSection: some View {
-        Section {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(categories, id: \.title) { category in
-                        Button {
-                            viewModel.queryText = category.query
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text(category.emoji).font(.subheadline)
-                                Text(category.title).font(.subheadline.weight(.semibold))
-                            }
-                            .foregroundStyle(.primary)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            // Was a flat `.quaternary` fill — every other control on this screen
-                            // (search field, profile button) is real Liquid Glass, which refracts
-                            // whatever's behind it. The pills sit in that same header area over
-                            // the map, so a flat fill was the one thing that didn't diffuse.
-                            .glassEffect(.regular.interactive(), in: Capsule())
+    /// The category pills, pinned above the results rather than scrolling away with them.
+    ///
+    /// Apple keeps this row fixed under the search field and lets the whole list travel
+    /// underneath it — that pass-under is the entire point of the glass, since there's nothing
+    /// to refract if the row scrolls in lockstep with the content behind it. Attached with
+    /// `.safeAreaInset`, which pins the row *and* insets the scroll content so the first section
+    /// isn't stuck behind it.
+    private var categoriesBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(categories, id: \.title) { category in
+                    Button {
+                        Haptics.tap()
+                        viewModel.queryText = category.query
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(category.emoji).font(.subheadline)
+                            Text(category.title).font(.subheadline.weight(.semibold))
                         }
-                        .buttonStyle(.plain)
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        // Real Liquid Glass, like the search field and profile button. A flat
+                        // `.quaternary` fill was the one control here that didn't refract.
+                        .glassEffect(.regular.interactive(), in: Capsule())
                     }
+                    .buttonStyle(.pressableRow)
                 }
-                .padding(.vertical, 4)
             }
-            .listRowInsets(EdgeInsets())
-            .listRowSeparator(.hidden)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
         }
+        .scrollClipDisabled()
     }
 
     @ViewBuilder

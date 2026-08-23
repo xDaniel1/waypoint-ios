@@ -263,6 +263,29 @@ final class WaypointUITests: XCTestCase {
         app.buttons["Done"].tap()
     }
 
+    // The category pills must stay pinned while the list scrolls under them.
+    func test18_categoryPillsStayPinned() throws {
+        let searchField = app.textFields["searchField"]
+        XCTAssertTrue(searchField.waitForExistence(timeout: 10))
+        searchField.tap()
+
+        let pill = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Gas Stations'")).firstMatch
+        XCTAssertTrue(pill.waitForExistence(timeout: 10), "Category pills should be visible")
+        let before = pill.frame.origin.y
+        attachScreenshot("18a-pills-before-scroll")
+
+        for _ in 0..<4 {
+            app.swipeUp()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        attachScreenshot("18b-pills-after-scroll")
+
+        XCTAssertTrue(pill.exists, "Pills must remain on screen after scrolling")
+        // Pinned means the row does not travel with the content.
+        XCTAssertEqual(pill.frame.origin.y, before, accuracy: 2,
+                       "Category pills should stay pinned, not scroll away")
+    }
+
     // Map style menu should offer Standard/Satellite/Hybrid and apply a selection.
     func test06_mapStyleMenu() throws {
         let styleButton = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'layer'")).firstMatch
