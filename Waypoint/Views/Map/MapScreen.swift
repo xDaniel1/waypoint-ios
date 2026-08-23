@@ -387,7 +387,10 @@ struct MapScreen: View {
             .presentationBackgroundInteraction(
                 .enabled(upThrough: directionsViewModel.isActive ? .height(directionsCardHeight) : .home)
             )
-            .presentationSizing(.page)
+            // No `.presentationSizing(.page)` here: that's an iPad/Mac page-sizing API, and on
+            // iPhone it overrode the detents entirely — the home card rendered at nearly full
+            // screen height regardless of `.fraction(0.45)` and ran off the bottom edge, clipping
+            // the last row. Plain detents let the sheet size itself to the screen properly.
             .presentationCornerRadius(28)
             .interactiveDismissDisabled(true)
             // Chained onto SearchSheet itself, not sibling .sheet() modifiers on MapScreen's own
