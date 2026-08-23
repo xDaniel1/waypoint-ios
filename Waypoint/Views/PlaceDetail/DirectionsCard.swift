@@ -627,12 +627,20 @@ private struct ModeButton: View {
                 .padding(.vertical, 9)
                 // Selected reads as the foreground colour against a raised white segment, the
                 // way UISegmentedControl does it; unselected sits back in secondary.
-                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.55))
                 .background {
                     if isSelected {
                         Capsule()
-                            .fill(Color(.secondarySystemGroupedBackground))
-                            .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
+                            // `secondarySystemGroupedBackground` is near-black in dark mode, which
+                            // read as a solid black slab on the glass track. Apple's selected
+                            // segment is a light translucent pill in dark mode and a solid white
+                            // one in light mode, like UISegmentedControl.
+                            .fill(Color(uiColor: UIColor { traits in
+                                traits.userInterfaceStyle == .dark
+                                    ? UIColor(white: 1, alpha: 0.22)
+                                    : UIColor(white: 1, alpha: 0.95)
+                            }))
+                            .shadow(color: .black.opacity(0.10), radius: 2, y: 1)
                             .matchedGeometryEffect(id: "modeHighlight", in: namespace)
                     }
                 }
