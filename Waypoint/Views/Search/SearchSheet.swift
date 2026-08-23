@@ -175,13 +175,6 @@ struct SearchSheet: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
-        // Apple's card is a floating panel: inset from every edge with all four corners rounded
-        // and map visible around it. A plain sheet is welded to the screen edges, so its bottom
-        // corners get clipped off the bottom of the display. The sheet background is cleared in
-        // MapScreen and the visible card is drawn here instead, inset so the rounding survives.
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 28))
-        .padding(.horizontal, 8)
-        .padding(.bottom, 10)
         .animation(.smooth(duration: 0.3), value: directionsViewModel.isActive)
         .animation(.smooth(duration: 0.3), value: viewModel.selectedResult)
         .animation(.smooth(duration: 0.3), value: isSearching)
