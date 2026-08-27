@@ -12,6 +12,10 @@ struct TransitItinerarySheet: View {
     let destinationName: String
     let onClose: () -> Void
 
+    /// Which rides have their stop list open. Keyed by step so a multi-leg trip tracks each
+    /// ride independently.
+    @State private var expandedStepIDs: Set<UUID> = []
+
     var body: some View {
         NavigationStack {
             List {
@@ -103,21 +107,56 @@ struct TransitItinerarySheet: View {
                 LineGlyph(step: step)
             }
 
-            // The ride itself: boarding stop, how long it takes, exit stop. Google's Routes
-            // response gives the stop *count* but not the names of the stops in between, so those
-            // aren't listed rather than invented.
+            // Boarding stop, the ride, exit stop. When the MTA feed can resolve this line the
+            // intermediate stops expand inline with their scheduled timings; otherwise it stays
+            // a plain count rather than inventing a stop list.
             VStack(alignment: .leading, spacing: 8) {
-                stopRow(name: step.departureStop, isEndpoint: true)
-                HStack(spacing: 10) {
-                    Rectangle()
-                        .fill(Color.secondary.opacity(0.45))
-                        .frame(width: 3, height: 22)
-                        .padding(.leading, 5)
-                    Text(rideSummary(for: step))
-                        .font(.subheadline)
-                        .foregroundStyle(.blue)
+                stopRow(name: step.departureStop, tint: lineColor(step))
+
+                if let stops = intermediateStops(for: step) {
+                    Button {
+                        withAnimation(.snappy(duration: 0.25)) {
+                            if expandedStepIDs.contains(step.id) {
+                                expandedStepIDs.remove(step.id)
+                            } else {
+                                expandedStepIDs.insert(step.id)
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 10) {
+                            connector(tint: lineColor(step))
+                            Text(expandedStepIDs.contains(step.id) ? "Hide stops" : rideSummary(for: step))
+                                .font(.subheadline)
+                                .foregroundStyle(.blue)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    if expandedStepIDs.contains(step.id) {
+                        ForEach(stops, id: \.stop.id) { entry in
+                            HStack(spacing: 10) {
+                                connector(tint: lineColor(step), isStop: true)
+                                Text(entry.stop.name)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.primary)
+                                Spacer(minLength: 0)
+                                Text("\(entry.minutesFromBoarding) min")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } else {
+                    HStack(spacing: 10) {
+                        connector(tint: lineColor(step))
+                        Text(rideSummary(for: step))
+                            .font(.subheadline)
+                            .foregroundStyle(.blue)
+                    }
                 }
-                stopRow(name: step.arrivalStop, isEndpoint: true)
+
+                stopRow(name: step.arrivalStop, tint: lineColor(step))
             }
             .padding(.vertical, 2)
         }
@@ -141,15 +180,47 @@ struct TransitItinerarySheet: View {
         }
     }
 
-    private func stopRow(name: String, isEndpoint: Bool) -> some View {
+    private func stopRow(name: String, tint: Color) -> some View {
         HStack(spacing: 10) {
             Circle()
-                .strokeBorder(Color.secondary, lineWidth: 3)
-                .frame(width: 13, height: 13)
+                .strokeBorder(tint, lineWidth: 3.5)
+                .frame(width: 14, height: 14)
             Text(name)
                 .font(.subheadline.weight(.semibold))
             Spacer(minLength: 0)
         }
+    }
+
+    /// The vertical line running down the ride, in the line's own colour — small hollow dots for
+    /// intermediate stops, matching how Apple draws it.
+    private func connector(tint: Color, isStop: Bool = false) -> some View {
+        ZStack {
+            Rectangle()
+                .fill(tint)
+                .frame(width: 3)
+            if isStop {
+                Circle()
+                    .strokeBorder(tint, lineWidth: 2.5)
+                    .background(Circle().fill(Color(.systemBackground)))
+                    .frame(width: 9, height: 9)
+            }
+        }
+        .frame(width: 14, height: isStop ? 26 : 24)
+    }
+
+    private func lineColor(_ step: TransitStep) -> Color {
+        Color(hex: step.color) ?? .blue
+    }
+
+    private func intermediateStops(for step: TransitStep) -> [(stop: MTASubwayData.Stop, minutesFromBoarding: Int)]? {
+        let stops = MTASubwayData.intermediateStops(
+            line: step.displayLine,
+            from: step.departureStop,
+            to: step.arrivalStop
+        )
+        // The last entry is the exit stop, which is already drawn below the ride.
+        guard let stops, stops.count > 1 else { return nil }
+        return Array(stops.dropLast())
     }
 
     /// "Ride 8 stops, 17 min" — each half dropped when Google didn't supply it.
