@@ -400,7 +400,18 @@ struct MapScreen: View {
             // from the already-open sheet's own content chains it onto the same, single active
             // presentation, which iOS handles correctly.
             .sheet(item: $stepsRoute) { route in
-                RouteStepsSheet(destination: directionsViewModel.destinationTitle, route: route)
+                // Transit has no `RouteStep` list by nature, so the generic steps sheet could
+                // only ever say "turn-by-turn isn't available". The itinerary is the directions
+                // for this mode.
+                if route.transitSteps.isEmpty {
+                    RouteStepsSheet(destination: directionsViewModel.destinationTitle, route: route)
+                } else {
+                    TransitItinerarySheet(
+                        route: route,
+                        destinationName: directionsViewModel.destinationTitle,
+                        onClose: { stepsRoute = nil }
+                    )
+                }
             }
         }
         .sheet(isPresented: $isSearchingAlongRoute) {
@@ -720,10 +731,9 @@ struct MapScreen: View {
             }
             .sheet(isPresented: $showingTransitDetails) {
                 if let route = navigationViewModel.route {
-                    TransitNavigationDetailSheet(
-                        destinationName: navigationViewModel.destinationName,
-                        destinationAddress: searchViewModel.selectedResult?.subtitle,
+                    TransitItinerarySheet(
                         route: route,
+                        destinationName: navigationViewModel.destinationName,
                         onClose: { showingTransitDetails = false }
                     )
                 }
@@ -1126,25 +1136,31 @@ private struct TransitNavigationCardView: View {
                     .buttonStyle(.plain)
                 }
 
-                Text("0.3 miles, about 7 min")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                // Was a hardcoded "0.3 miles, about 7 min" — this is the real first walk leg
+                // from the transit response, and it's omitted when there isn't one.
+                if let walkMinutes = route.firstWalkMinutes {
+                    Text("About \(walkMinutes) min walk")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
 
                 HStack(spacing: 8) {
                     if let firstStep = route.transitSteps.first {
                         LineBadge(step: firstStep)
 
-                        Text("Departs at 11:35 PM")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                        if let departure = route.departureText {
+                            Text(departure)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
 
-                        Text("Now 11:40 PM")
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(.orange)
-
-                        Image(systemName: "wifi")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.orange)
+                        // Previously a hardcoded "Now 11:40 PM" next to a live-data wifi glyph,
+                        // which implied realtime tracking we don't have.
+                        if let minutes = route.minutesUntilDeparture {
+                            Text(minutes <= 0 ? "Departing now" : "in \(minutes) min")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(.orange)
+                        }
                     }
 
                     Spacer(minLength: 0)

@@ -213,3 +213,20 @@ extension MKRoute {
         return coords
     }
 }
+
+extension RouteOption {
+    /// Minutes of the first walking leg, when the route starts with one.
+    var firstWalkMinutes: Int? {
+        for leg in transitLegs {
+            if case .walk(let minutes) = leg { return minutes }
+        }
+        return nil
+    }
+
+    /// Minutes until the first ride departs, from the transit response's own departure time.
+    var minutesUntilDeparture: Int? {
+        guard let iso = transitSteps.first?.departureISO,
+              let date = ISO8601DateFormatter().date(from: iso) else { return nil }
+        return max(0, Int(date.timeIntervalSinceNow / 60))
+    }
+}
