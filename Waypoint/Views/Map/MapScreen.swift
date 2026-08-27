@@ -142,8 +142,10 @@ struct MapScreen: View {
                     }
                 }
                 if let selected = directionsViewModel.selectedRoute {
+                    // Transit rides draw in the operator's own line colour (the J's gold, the
+                    // G's green) rather than generic blue, matching how Apple colours the route.
                     MapPolyline(selected.polyline)
-                        .stroke(Color.blue, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                        .stroke(selected.routeTint, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
                     // Colored on top of the base line wherever Google's live traffic data says
                     // this stretch is actually slower than free-flow — not just the whole-route
                     // "has traffic" badge.
@@ -450,10 +452,14 @@ struct MapScreen: View {
                 }
             }
         }
-        .onChange(of: directionsCardHeight) { _, newHeight in
-            if directionsViewModel.isActive && searchDetent != .large {
-                searchDetent = .height(newHeight)
-            }
+        .onChange(of: directionsCardHeight) { oldHeight, newHeight in
+            guard directionsViewModel.isActive else { return }
+            // Only re-snap when the sheet is still sitting exactly where the last measurement
+            // put it. Unconditionally assigning here fought the user's drag: every layout pass
+            // re-measured the card, which snapped the detent back mid-gesture, which relaid out
+            // the card and re-measured again — that loop is what made dragging feel laggy.
+            guard searchDetent == .height(oldHeight) else { return }
+            searchDetent = .height(newHeight)
         }
     }
 

@@ -57,7 +57,12 @@ struct DirectionsCard: View {
             // this VStack's own measured height regardless of what's inside it (confirmed with a
             // 10pt placeholder in place of the route pager, same gap) — some fixed overhead in
             // how the .height() detent maps to the rendered sheet, not anything content-specific.
-            contentHeight = max(160, newValue - 39)
+            // Quantized to 8pt: raw layout jitter of a point or two would otherwise publish a
+            // new height on every pass and keep the sheet re-evaluating its detents.
+            let measured = max(160, newValue - 39)
+            let quantized = (measured / 8).rounded() * 8
+            guard abs(quantized - contentHeight) >= 8 else { return }
+            contentHeight = quantized
         }
         .animation(.smooth(duration: 0.3), value: viewModel.mode)
         .animation(.smooth(duration: 0.3), value: viewModel.selectedRouteID)

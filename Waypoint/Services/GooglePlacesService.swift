@@ -108,7 +108,10 @@ struct GooglePlacesService {
         coordinate: CLLocationCoordinate2D,
         radius: Double = 2000,
         maxResults: Int = 8,
-        primaryTypesOnly: Bool = false
+        primaryTypesOnly: Bool = false,
+        /// Set for results that don't meaningfully change day to day, so they cache for a week
+        /// instead of a couple of hours.
+        longLived: Bool = false
     ) async throws -> [DetailedPlace] {
         guard isConfigured else { throw GooglePlacesError.missingAPIKey }
 
@@ -118,7 +121,7 @@ struct GooglePlacesService {
             radius: radius,
             primaryTypesOnly: primaryTypesOnly
         )
-        if let cached = await NearbyCache.places(forKey: key) { return cached }
+        if let cached = await NearbyCache.places(forKey: key, longLived: longLived) { return cached }
 
         var request = URLRequest(url: URL(string: "https://places.googleapis.com/v1/places:searchNearby")!)
         request.httpMethod = "POST"
@@ -149,7 +152,7 @@ struct GooglePlacesService {
         let (data, response) = try await session.data(for: request)
         try Self.validate(response)
         let places = try JSONDecoder().decode(NearbyResponse.self, from: data).places ?? []
-        await NearbyCache.store(places, forKey: key)
+        await NearbyCache.store(places, forKey: key, longLived: longLived)
         return places
     }
 
@@ -218,13 +221,16 @@ private enum DetailsCache {
 /// relaunch free without letting open/closed state drift badly.
 private enum NearbyCache {
     private static let store = DiskCache<[DetailedPlace]>(name: "nearby", ttl: 2 * 3600)
+    /// City guides search fixed city-centre coordinates for landmarks and museums — that answer
+    /// is the same next week. Re-billing 6 searches every 2 hours for it was pure waste.
+    private static let longLivedStore = DiskCache<[DetailedPlace]>(name: "nearby-longlived", ttl: 7 * 24 * 3600)
 
-    static func places(forKey key: String) async -> [DetailedPlace]? {
-        await store.value(forKey: key)
+    static func places(forKey key: String, longLived: Bool) async -> [DetailedPlace]? {
+        await (longLived ? longLivedStore : store).value(forKey: key)
     }
 
-    static func store(_ places: [DetailedPlace], forKey key: String) async {
-        await store.store(places, forKey: key)
+    static func store(_ places: [DetailedPlace], forKey key: String, longLived: Bool) async {
+        await (longLived ? longLivedStore : store).store(places, forKey: key)
     }
 
     /// Coordinate rounded to ~1km: the search radius already spans multiple km, so finer

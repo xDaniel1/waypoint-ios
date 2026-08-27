@@ -230,3 +230,13 @@ extension RouteOption {
         return max(0, Int(date.timeIntervalSinceNow / 60))
     }
 }
+
+extension RouteOption {
+    /// The colour this route draws in. Transit uses the operator's own line colour when the
+    /// response carried one — Apple draws the J in its gold, the G in its green — and everything
+    /// else falls back to the standard route blue.
+    var routeTint: Color {
+        guard let step = transitSteps.first, let color = Color(hex: step.color) else { return .blue }
+        return color
+    }
+}

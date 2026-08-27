@@ -93,7 +93,8 @@ final class CityGuidesViewModel {
                             coordinate: city.coordinate,
                             radius: 12000,
                             maxResults: 12,
-                            primaryTypesOnly: true
+                            primaryTypesOnly: true,
+                            longLived: true
                         )
                         return (index, places)
                     } catch {
