@@ -44,7 +44,7 @@ struct GooglePlacesService {
         guard isConfigured else { throw GooglePlacesError.missingAPIKey }
 
         let key = DetailsCache.lookupKey(name: name, coordinate: coordinate)
-        if let cached = await DetailsCache.shared.place(forKey: key) { return cached }
+        if let cached = await DetailsCache.place(forKey: key) { return cached }
 
         var request = URLRequest(url: URL(string: "https://places.googleapis.com/v1/places:searchText")!)
         request.httpMethod = "POST"
@@ -71,13 +71,13 @@ struct GooglePlacesService {
         }
 
         let place = try await details(placeID: placeID)
-        await DetailsCache.shared.store(place, forKey: key)
+        await DetailsCache.store(place, forKey: key)
         return place
     }
 
     func details(placeID: String) async throws -> DetailedPlace {
         guard isConfigured else { throw GooglePlacesError.missingAPIKey }
-        if let cached = await DetailsCache.shared.place(forID: placeID) { return cached }
+        if let cached = await DetailsCache.place(forID: placeID) { return cached }
 
         var request = URLRequest(url: URL(string: "https://places.googleapis.com/v1/places/\(placeID)")!)
         request.setValue(apiKey, forHTTPHeaderField: "X-Goog-Api-Key")
@@ -89,7 +89,7 @@ struct GooglePlacesService {
         // DetailedPlace's Codable keys already mirror the Places v1 JSON exactly, so the API
         // response decodes straight into the model the place card is built against.
         let place = try JSONDecoder().decode(DetailedPlace.self, from: data)
-        await DetailsCache.shared.store(place, forKey: nil)
+        await DetailsCache.store(place, forKey: nil)
         return place
     }
 
@@ -118,7 +118,7 @@ struct GooglePlacesService {
             radius: radius,
             primaryTypesOnly: primaryTypesOnly
         )
-        if let cached = await NearbyCache.shared.places(forKey: key) { return cached }
+        if let cached = await NearbyCache.places(forKey: key) { return cached }
 
         var request = URLRequest(url: URL(string: "https://places.googleapis.com/v1/places:searchNearby")!)
         request.httpMethod = "POST"
@@ -149,7 +149,7 @@ struct GooglePlacesService {
         let (data, response) = try await session.data(for: request)
         try Self.validate(response)
         let places = try JSONDecoder().decode(NearbyResponse.self, from: data).places ?? []
-        await NearbyCache.shared.store(places, forKey: key)
+        await NearbyCache.store(places, forKey: key)
         return places
     }
 
@@ -184,38 +184,24 @@ struct GooglePlacesService {
 
 /// Reopening the same place — a favorite, a recent, the same search result twice — costs zero
 /// extra Details calls within the TTL. This is the main thing keeping the hybrid bill small.
-private actor DetailsCache {
-    static let shared = DetailsCache()
+/// Place details, persisted across launches — see `DiskCache`.
+private enum DetailsCache {
+    /// 6 hours: long enough that reopening the same place all day is free, short enough that
+    /// ratings and opening hours don't drift far.
+    private static let store = DiskCache<DetailedPlace>(name: "details", ttl: 6 * 3600)
+    private static let byIDStore = DiskCache<DetailedPlace>(name: "details-by-id", ttl: 6 * 3600)
 
-    private struct Entry {
-        let place: DetailedPlace
-        let cachedAt: Date
+    static func place(forKey key: String) async -> DetailedPlace? {
+        await store.value(forKey: key)
     }
 
-    /// Long enough to absorb repeat taps in a session, short enough that hours and ratings don't
-    /// go stale for somewhere the user keeps returning to.
-    private let ttl: TimeInterval = 3600
-    private var byKey: [String: Entry] = [:]
-    private var byID: [String: Entry] = [:]
-
-    func place(forKey key: String) -> DetailedPlace? {
-        guard let entry = byKey[key], isFresh(entry) else { return nil }
-        return entry.place
+    static func place(forID id: String) async -> DetailedPlace? {
+        await byIDStore.value(forKey: id)
     }
 
-    func place(forID id: String) -> DetailedPlace? {
-        guard let entry = byID[id], isFresh(entry) else { return nil }
-        return entry.place
-    }
-
-    func store(_ place: DetailedPlace, forKey key: String?) {
-        let entry = Entry(place: place, cachedAt: Date())
-        byID[place.id] = entry
-        if let key { byKey[key] = entry }
-    }
-
-    private func isFresh(_ entry: Entry) -> Bool {
-        Date().timeIntervalSince(entry.cachedAt) < ttl
+    static func store(_ place: DetailedPlace, forKey key: String?) async {
+        await byIDStore.store(place, forKey: place.id)
+        if let key { await store.store(place, forKey: key) }
     }
 
     /// Name + coordinate rounded to ~11m, matching the Text Search bias radius, so two lookups of
@@ -227,26 +213,18 @@ private actor DetailsCache {
     }
 }
 
-/// Nearby results don't need the hour-long freshness place details get — 10 minutes absorbs
-/// repeat opens of the search sheet without letting open/closed state go stale.
-private actor NearbyCache {
-    static let shared = NearbyCache()
+/// Nearby results, persisted across launches. Guide and city-guide shelves are the bulk of the
+/// billed Nearby Search volume and their contents barely move hour to hour, so 2 hours keeps a
+/// relaunch free without letting open/closed state drift badly.
+private enum NearbyCache {
+    private static let store = DiskCache<[DetailedPlace]>(name: "nearby", ttl: 2 * 3600)
 
-    private struct Entry {
-        let places: [DetailedPlace]
-        let cachedAt: Date
+    static func places(forKey key: String) async -> [DetailedPlace]? {
+        await store.value(forKey: key)
     }
 
-    private let ttl: TimeInterval = 600
-    private var entries: [String: Entry] = [:]
-
-    func places(forKey key: String) -> [DetailedPlace]? {
-        guard let entry = entries[key], Date().timeIntervalSince(entry.cachedAt) < ttl else { return nil }
-        return entry.places
-    }
-
-    func store(_ places: [DetailedPlace], forKey key: String) {
-        entries[key] = Entry(places: places, cachedAt: Date())
+    static func store(_ places: [DetailedPlace], forKey key: String) async {
+        await store.store(places, forKey: key)
     }
 
     /// Coordinate rounded to ~1km: the search radius already spans multiple km, so finer
@@ -259,8 +237,6 @@ private actor NearbyCache {
     ) -> String {
         let lat = (coordinate.latitude * 100).rounded() / 100
         let lng = (coordinate.longitude * 100).rounded() / 100
-        // The flag is part of the key because the two modes return genuinely different results
-        // for the same types — without it a loose result set would be served to a strict caller.
         return "\(includedTypes.joined(separator: ","))|\(lat)|\(lng)|\(Int(radius))|\(primaryTypesOnly)"
     }
 }

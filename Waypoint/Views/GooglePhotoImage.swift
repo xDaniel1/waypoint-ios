@@ -19,8 +19,16 @@ struct GooglePhotoImage<Content: View>: View {
     var body: some View {
         content(phase)
             .task(id: url) {
+                guard let url else {
+                    phase = .empty
+                    return
+                }
+                // Photos are billed per request, so check the disk cache before spending one.
+                if let cached = await PhotoCache.shared.image(for: url) {
+                    phase = .success(Image(uiImage: cached))
+                    return
+                }
                 phase = .empty
-                guard let url else { return }
                 var request = URLRequest(url: url)
                 GoogleAPIRequest.addBundleIdentifierHeader(to: &request)
                 guard let (data, _) = try? await URLSession.shared.data(for: request),
@@ -28,6 +36,7 @@ struct GooglePhotoImage<Content: View>: View {
                     phase = .failure
                     return
                 }
+                await PhotoCache.shared.store(data, image: uiImage, for: url)
                 phase = .success(Image(uiImage: uiImage))
             }
     }
