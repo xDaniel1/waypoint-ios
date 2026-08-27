@@ -16,6 +16,10 @@ extension PresentationDetent {
     /// Where the card rests when the app opens: search bar, the Places row, and the top of
     /// Recents — the same partial height Apple Maps starts at before you pull it up.
     static let home = PresentationDetent.fraction(0.45)
+
+    /// Where the directions card rests. A fixed fraction rather than a measured content height:
+    /// a detent whose value moves makes the whole detent set unstable and breaks the drag.
+    static let directionsRest = PresentationDetent.fraction(0.55)
 }
 
 struct SearchSheet: View {

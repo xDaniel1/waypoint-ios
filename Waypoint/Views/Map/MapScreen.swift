@@ -387,7 +387,7 @@ struct MapScreen: View {
             // Must name a detent that's actually in `sheetDetents` — otherwise the whole map
             // behind the sheet stops receiving touches.
             .presentationBackgroundInteraction(
-                .enabled(upThrough: directionsViewModel.isActive ? .height(directionsCardHeight) : .home)
+                .enabled(upThrough: directionsViewModel.isActive ? .directionsRest : .home)
             )
             // No `.presentationSizing(.page)` here: that's an iPad/Mac page-sizing API, and on
             // iPhone it overrode the detents entirely — the home card rendered at nearly full
@@ -437,7 +437,7 @@ struct MapScreen: View {
         }
         .onChange(of: directionsViewModel.isActive) { oldValue, active in
             if active {
-                searchDetent = .height(directionsCardHeight)
+                searchDetent = .directionsRest
             } else if oldValue == true {
                 searchDetent = .home
                 if let currentCamera, currentCamera.pitch > 1 {
@@ -452,20 +452,16 @@ struct MapScreen: View {
                 }
             }
         }
-        .onChange(of: directionsCardHeight) { oldHeight, newHeight in
-            guard directionsViewModel.isActive else { return }
-            // Only re-snap when the sheet is still sitting exactly where the last measurement
-            // put it. Unconditionally assigning here fought the user's drag: every layout pass
-            // re-measured the card, which snapped the detent back mid-gesture, which relaid out
-            // the card and re-measured again — that loop is what made dragging feel laggy.
-            guard searchDetent == .height(oldHeight) else { return }
-            searchDetent = .height(newHeight)
-        }
     }
 
     private var sheetDetents: Set<PresentationDetent> {
         if directionsViewModel.isActive {
-            return [.height(190), .height(directionsCardHeight), .large]
+            // Fixed stops on purpose. This used to include `.height(directionsCardHeight)`, a
+            // value that changed every time the card re-measured — so the detent *set* changed
+            // identity mid-gesture and SwiftUI rebuilt the sheet's drag behaviour underneath the
+            // user's finger. That's what made pulling the card down stick, jump, and land on a
+            // height the content didn't fit. A stable set drags smoothly.
+            return [.height(190), .directionsRest, .large]
         }
         return [.height(collapsedHeight), .home, .large]
     }
