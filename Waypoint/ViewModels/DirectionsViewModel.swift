@@ -99,6 +99,7 @@ final class DirectionsViewModel {
     private var origin: CLLocation?
     private var calcTask: Task<Void, Never>?
     private let routesService = AppleRoutesService()
+    private let transitService = GoogleTransitService()
 
     func start(destination: MKMapItem, from origin: CLLocation?) {
         self.destination = destination
@@ -169,16 +170,27 @@ final class DirectionsViewModel {
         onRoutesChanged?([], nil)
 
         do {
-            let options = try await routesService.computeRoutes(
-                from: origin.coordinate,
-                to: destination,
-                stops: stops.map(\.mapItem),
-                transportType: mode.mkTransportType,
-                avoidTolls: avoidTolls,
-                avoidHighways: avoidHighways,
-                departureDate: departureDate,
-                arrivalDate: arrivalDate
-            )
+            let options: [RouteOption]
+            if mode == .transit {
+                // MapKit can't do this at all — `MKDirections.calculate()` never returns transit
+                // routes, so this mode always failed until it was moved to Google.
+                options = try await transitService.routes(
+                    from: origin.coordinate,
+                    to: destination.placemark.coordinate,
+                    departureDate: departureDate
+                )
+            } else {
+                options = try await routesService.computeRoutes(
+                    from: origin.coordinate,
+                    to: destination,
+                    stops: stops.map(\.mapItem),
+                    transportType: mode.mkTransportType,
+                    avoidTolls: avoidTolls,
+                    avoidHighways: avoidHighways,
+                    departureDate: departureDate,
+                    arrivalDate: arrivalDate
+                )
+            }
             applyOptions(options, emptyMessage: "No \(mode.label.lowercased()) route found.")
         } catch {
             errorMessage = "Couldn't calculate a \(mode.label.lowercased()) route."

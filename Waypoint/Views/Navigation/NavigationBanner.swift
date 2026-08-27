@@ -2,9 +2,11 @@ import SwiftUI
 
 /// Top-of-screen next-maneuver banner during driving navigation.
 ///
-/// Shaped the way Apple Maps shapes it: the panel runs full width and bleeds all the way to the
-/// top edge so the status bar sits *on* it, with only the bottom two corners rounded. A floating
-/// card with four rounded corners and map visible above it is the Google Maps look, not Apple's.
+/// A floating glass card, matching every other surface in this app.
+///
+/// This used to be a flat opaque navy slab bleeding edge-to-edge under the status bar with square
+/// top corners — which is the Google Maps treatment, not Apple's. It now sits inset with all four
+/// corners rounded on a tinted glass material, so the map shows around and through it.
 struct NavigationBanner: View {
     let currentInstruction: String
     let nextInstruction: String?
@@ -48,8 +50,9 @@ struct NavigationBanner: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, nextInstruction == nil ? 18 : 14)
+            .padding(.horizontal, 18)
+            .padding(.top, 14)
+            .padding(.bottom, nextInstruction == nil ? 16 : 12)
 
             // Apple renders the upcoming maneuver as a "Then" line on a slightly darker shelf
             // inside the same panel, not as a second full-strength banner.
@@ -71,23 +74,22 @@ struct NavigationBanner: View {
                 .padding(.vertical, 9)
                 .frame(maxWidth: .infinity)
                 .background(
-                    UnevenRoundedRectangle(bottomLeadingRadius: 22, bottomTrailingRadius: 22)
-                        .fill(Color.black.opacity(0.18))
+                    UnevenRoundedRectangle(bottomLeadingRadius: 26, bottomTrailingRadius: 26)
+                        .fill(Color.black.opacity(0.16))
                 )
             }
         }
         // The status bar sits on the blue, so the panel has to start above the safe area and pad
         // its content back down out from under the clock.
-        .padding(.top, 8)
         .background {
-            // The rounded shape has to live *inside* the background so it can grow into the
-            // ignored top safe area. Clipping the whole banner instead trimmed the blue back to
-            // the safe-area bounds, which left the status bar sitting on the map.
-            UnevenRoundedRectangle(bottomLeadingRadius: 22, bottomTrailingRadius: 22)
-                .fill(bannerBlue)
-                .ignoresSafeArea(edges: .top)
-                .shadow(color: .black.opacity(0.22), radius: 10, y: 3)
+            // Blue tint *under* the glass rather than a flat fill, so the material still
+            // refracts the map behind it instead of reading as a painted rectangle.
+            RoundedRectangle(cornerRadius: 26)
+                .fill(bannerBlue.opacity(0.82))
         }
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 26))
+        .padding(.horizontal, 10)
+        .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
         // Scales with the user's text size, but capped: past accessibility1 the maneuver text
         // pushes the banner far enough down the windshield view to hide the road ahead. Apple
         // constrains its driving UI the same way.
