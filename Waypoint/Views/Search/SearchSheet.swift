@@ -39,7 +39,7 @@ extension PresentationDetent {
     /// aligned, so lowering the card's top edge carries the mode picker, endpoints and route
     /// card down with it. Shrink the content first if you shrink this further; going tighter
     /// without that clips the route card and drops the page dots onto it.
-    static let directionsRest = PresentationDetent.fraction(0.49)
+    static let directionsRest = PresentationDetent.fraction(0.46)
 }
 
 struct SearchSheet: View {
@@ -207,14 +207,6 @@ struct SearchSheet: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
-        // Drawn as our own panel, inset slightly on every side, because the system sheet's
-        // background runs the full width and can't be narrowed. Cleared in MapScreen so only
-        // this one shows — two backgrounds is what produced the nested double card before.
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 28))
-        .padding(.horizontal, 10)
-        // 8 wasn't enough to lift the panel clear of the screen edge, so its bottom rounded
-        // corners were being cut flat. This floats it properly, like the home card.
-        .padding(.bottom, 22)
         .animation(.smooth(duration: 0.3), value: directionsViewModel.isActive)
         .animation(.smooth(duration: 0.3), value: viewModel.selectedResult)
         .animation(.smooth(duration: 0.3), value: isSearching)

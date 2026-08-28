@@ -411,7 +411,6 @@ struct MapScreen: View {
             // iPhone it overrode the detents entirely — the home card rendered at nearly full
             // screen height regardless of `.fraction(0.45)` and ran off the bottom edge, clipping
             // the last row. Plain detents let the sheet size itself to the screen properly.
-            .presentationBackground { Color.clear }
             .interactiveDismissDisabled(true)
             // Chained onto SearchSheet itself, not sibling .sheet() modifiers on MapScreen's own
             // root: the outer SearchSheet sheet is presented essentially the whole time the user
