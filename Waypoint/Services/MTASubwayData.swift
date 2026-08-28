@@ -73,6 +73,25 @@ enum MTASubwayData {
         return nil
     }
 
+    /// GTFS station ids for a ride, so realtime feeds can be matched to it. Returns nil when
+    /// either end can't be resolved, same as `intermediateStops`.
+    static func stationIDs(line: String, from boardingStop: String, to exitStop: String) -> (boarding: String, exit: String)? {
+        guard let directions = patterns[normalizedLine(line)] else { return nil }
+        for pattern in directions.values {
+            guard let start = index(of: boardingStop, in: pattern.stops),
+                  let end = index(of: exitStop, in: pattern.stops),
+                  start < end else { continue }
+            return (pattern.stops[start].id, pattern.stops[end].id)
+        }
+        return nil
+    }
+
+    /// The GTFS route id, normalised from whatever Google called the line.
+    static func routeID(for line: String) -> String? {
+        let id = normalizedLine(line)
+        return patterns[id] != nil ? id : nil
+    }
+
     private static func index(of name: String, in stops: [Stop]) -> Int? {
         let target = normalized(name)
         guard !target.isEmpty else { return nil }

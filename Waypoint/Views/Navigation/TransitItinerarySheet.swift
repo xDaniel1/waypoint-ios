@@ -15,6 +15,7 @@ struct TransitItinerarySheet: View {
     /// Which rides have their stop list open. Keyed by step so a multi-leg trip tracks each
     /// ride independently.
     @State private var expandedStepIDs: Set<UUID> = []
+    @State private var realtime = MTARealtimeService()
 
     var body: some View {
         NavigationStack {
@@ -53,6 +54,23 @@ struct TransitItinerarySheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .task {
+            guard let ride = route.transitSteps.first else { return }
+            await realtime.load(
+                line: ride.displayLine,
+                boardingStop: ride.departureStop,
+                exitStop: ride.arrivalStop
+            )
+        }
+    }
+
+    /// "Departs in 6, 12 min" — the next couple of real trains, the way Apple phrases it.
+    private var liveDepartureText: String {
+        let minutes = realtime.departures.map(\.minutesAway)
+        guard let first = minutes.first else { return "" }
+        let rest = minutes.dropFirst().prefix(2).map(String.init)
+        let list = ([first == 0 ? "now" : String(first)] + rest).joined(separator: ", ")
+        return "Departs in \(list) min"
     }
 
     private func walkRow(minutes: Int, isFirst: Bool) -> some View {
@@ -97,10 +115,34 @@ struct TransitItinerarySheet: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
-                    if let departure = formattedTime(step.departureISO) {
+                    if !realtime.departures.isEmpty {
+                        // Live from the MTA feed. The green glyph is Apple's convention for
+                        // realtime data and is only shown when the times genuinely are.
+                        HStack(spacing: 6) {
+                            Text(liveDepartureText)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.primary)
+                            Image(systemName: "dot.radiowaves.up.forward")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.green)
+                        }
+                    } else if let departure = formattedTime(step.departureISO) {
                         Text("Departs \(departure)")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.primary)
+                    }
+
+                    ForEach(realtime.alerts, id: \.self) { alert in
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.yellow)
+                            Text(alert)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.top, 2)
                     }
                 }
             } icon: {
