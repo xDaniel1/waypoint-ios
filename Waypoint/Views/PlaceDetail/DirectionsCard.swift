@@ -314,7 +314,7 @@ struct DirectionsCard: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 13)
+        .padding(.vertical, 12)
         // Without this the row's hit region collapses to just its text — the accessibility frame
         // came back 19.8pt tall for a ~40pt row, and taps on "Add Stop" never reached the button.
         .contentShape(Rectangle())
@@ -328,9 +328,9 @@ struct DirectionsCard: View {
         TabView(selection: pagedSelection) {
             ForEach(viewModel.routeOptions) { option in
                 routeCard(option, isSelected: false)
-                    // Apple leaves roughly twice this much air between the route card and the
-                    // page dots; at 22 the dots sat right against the card.
-                    .padding(.bottom, 34)
+                    // Apple leaves ~55px between the route card and the page dots; ours had
+                    // grown to ~80, which is part of why the card sat too high.
+                    .padding(.bottom, 26)
                     .tag(option.id)
             }
         }
@@ -342,7 +342,7 @@ struct DirectionsCard: View {
         // The route card sits centred in this frame and the dots pin to its bottom, so making it
         // taller is what moves both down the card — measured against Apple, whose route card
         // ends ~70px lower and whose dots sit ~30px nearer the card's bottom edge than ours did.
-        .frame(height: 185)
+        .frame(height: 170)
         .accessibilityIdentifier("routePager")
     }
 
