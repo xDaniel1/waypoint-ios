@@ -31,7 +31,7 @@ struct DirectionsCard: View {
                 .padding(.horizontal)
                 // Clears the sheet's drag indicator — at 16 the grabber drew a line straight
                 // through the "Directions" title.
-                .padding(.top, 26)
+                .padding(.top, 34)
                 .padding(.bottom, 10)
 
             // A ScrollView always fills its container regardless of how tall its content
@@ -329,7 +329,7 @@ struct DirectionsCard: View {
             ForEach(viewModel.routeOptions) { option in
                 routeCard(option, isSelected: false)
                     // Route card sits just clear of the page dots.
-                    .padding(.bottom, 14)
+                    .padding(.bottom, 10)
                     .tag(option.id)
             }
         }
@@ -341,7 +341,7 @@ struct DirectionsCard: View {
         // The route card sits centred in this frame and the dots pin to its bottom, so making it
         // taller is what moves both down the card — measured against Apple, whose route card
         // ends ~70px lower and whose dots sit ~30px nearer the card's bottom edge than ours did.
-        .frame(height: 140)
+        .frame(height: 136)
         .accessibilityIdentifier("routePager")
     }
 
