@@ -29,10 +29,11 @@ struct DirectionsCard: View {
             // Header stays pinned so the close button is reachable at every detent height.
             header
                 .padding(.horizontal)
-                // Clears the sheet's drag indicator — at 16 the grabber drew a line straight
-                // through the "Directions" title.
-                .padding(.top, 26)
-                .padding(.bottom, 10)
+                // Clears the sheet's drag indicator — at 26 the grabber still cut across the top
+                // of the "Directions" glyphs. The extra 8pt here is paid for out of the bottom
+                // padding below, so the title moves down without the card growing.
+                .padding(.top, 34)
+                .padding(.bottom, 4)
 
             // A ScrollView always fills its container regardless of how tall its content
             // actually is — that's what left dead space below the route card at rest. Only
