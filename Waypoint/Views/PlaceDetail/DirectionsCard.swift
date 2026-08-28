@@ -337,8 +337,12 @@ struct DirectionsCard: View {
         .tabViewStyle(.page(indexDisplayMode: viewModel.routeOptions.count > 1 ? .always : .never))
         .indexViewStyle(.page(backgroundDisplayMode: .interactive))
         // Fixed on purpose: letting this fill the sheet stretched the TabView, which clipped the
-        // route card and laid the page dots over it. 150 covers the card plus the dot row.
-        .frame(height: 150)
+        // route card and laid the page dots over it.
+        //
+        // The route card sits centred in this frame and the dots pin to its bottom, so making it
+        // taller is what moves both down the card — measured against Apple, whose route card
+        // ends ~70px lower and whose dots sit ~30px nearer the card's bottom edge than ours did.
+        .frame(height: 185)
         .accessibilityIdentifier("routePager")
     }
 
