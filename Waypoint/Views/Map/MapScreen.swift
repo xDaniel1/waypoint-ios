@@ -30,6 +30,10 @@ struct MapScreen: View {
     /// the camera within the same window — that fight was the source of the stutter/snapping.
     @State private var lastCameraAnimation: Date = .distantPast
     @State private var navBarHeight: CGFloat = 120
+    /// Measured from the transit card, which replaces the driving bottom bar during a transit
+    /// trip — without this the map controls were spaced off a bar that wasn't on screen and ended
+    /// up sitting directly on the card.
+    @State private var transitCardHeight: CGFloat = 150
     @State private var voiceGuidance = VoiceGuidanceService()
     @State private var speedLimitService = SpeedLimitService()
     @State private var navigationNotifications = NavigationNotificationService()
@@ -454,6 +458,13 @@ struct MapScreen: View {
         }
     }
 
+    /// How much room the bottom controls need to clear whatever is docked below them — the
+    /// driving bar, or the transit card when a transit trip is running.
+    private var bottomControlClearance: CGFloat {
+        let isTransit = navigationViewModel.route.map { !$0.transitSteps.isEmpty } ?? false
+        return (isTransit ? transitCardHeight : navBarHeight) + 14
+    }
+
     private var sheetDetents: Set<PresentationDetent> {
         if directionsViewModel.isActive {
             // Fixed stops on purpose. This used to include `.height(directionsCardHeight)`, a
@@ -656,7 +667,7 @@ struct MapScreen: View {
                         navigationSideButtons
                     }
                     .padding(.horizontal, 16)
-                    .padding(.bottom, navBarHeight + 14)
+                    .padding(.bottom, bottomControlClearance)
                     .animation(.smooth(duration: 0.35), value: navBarHeight)
                 }
 
@@ -674,6 +685,13 @@ struct MapScreen: View {
                         )
                         .padding(.horizontal, 12)
                         .padding(.bottom, 24)
+                        .onGeometryChange(for: CGFloat.self) { proxy in
+                            proxy.size.height
+                        } action: { newValue in
+                            let quantized = (newValue / 8).rounded() * 8
+                            guard abs(quantized - transitCardHeight) >= 8 else { return }
+                            transitCardHeight = quantized
+                        }
                     }
                 } else {
                     VStack {
@@ -1180,6 +1198,18 @@ private struct TransitNavigationCardView: View {
         .padding(16)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 26))
         .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
+        // Tapping anywhere on the card opens the full itinerary, the way Apple's does; the
+        // "More" link stays so the affordance is still visible.
+        .contentShape(RoundedRectangle(cornerRadius: 26))
+        .onTapGesture { onMore() }
+        // Pulling up on the card opens it too, which is how riders instinctively reach for more
+        // detail on a docked card.
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 18)
+                .onEnded { value in
+                    if value.translation.height < -18 { onMore() }
+                }
+        )
     }
 }
 
