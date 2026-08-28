@@ -10,7 +10,8 @@ import OSLog
 /// rather than fetched — no per-request cost, no network dependency, and it works underground
 /// where the app has no signal, which is exactly when a rider needs the stop list.
 ///
-/// Scope is honest: NYC subway only. Buses and other cities fall back to the stop count.
+/// Covers the NYC subway and all five boroughs' bus routes. Other cities fall back to the plain
+/// stop count.
 @MainActor
 enum MTASubwayData {
     struct Stop: Decodable, Identifiable, Equatable {
@@ -32,19 +33,24 @@ enum MTASubwayData {
         let stops: [Stop]
     }
 
-    /// route id -> direction id -> the full-length run for that direction.
+    /// route id -> direction id -> the full-length run for that direction. Subway and bus are
+    /// merged; route ids don't collide (subway is letters/digits, bus is "B43", "M15" and so on).
     private static let patterns: [String: [String: Pattern]] = {
-        guard let url = Bundle.main.url(forResource: "MTASubwayStops", withExtension: "json"),
-              let data = try? Data(contentsOf: url) else {
-            Logger.navigation.error("MTASubwayStops.json missing from the bundle")
-            return [:]
+        var merged: [String: [String: Pattern]] = [:]
+        for resource in ["MTASubwayStops", "MTABusStops"] {
+            guard let url = Bundle.main.url(forResource: resource, withExtension: "json"),
+                  let data = try? Data(contentsOf: url) else {
+                Logger.navigation.error("\(resource).json missing from the bundle")
+                continue
+            }
+            do {
+                let decoded = try JSONDecoder().decode([String: [String: Pattern]].self, from: data)
+                merged.merge(decoded) { existing, _ in existing }
+            } catch {
+                Logger.navigation.error("\(resource) failed to decode: \(error.localizedDescription)")
+            }
         }
-        do {
-            return try JSONDecoder().decode([String: [String: Pattern]].self, from: data)
-        } catch {
-            Logger.navigation.error("MTA stop data failed to decode: \(error.localizedDescription)")
-            return [:]
-        }
+        return merged
     }()
 
     /// The stops between boarding and exit, exclusive of both, each with minutes from boarding.
@@ -111,8 +117,8 @@ enum MTASubwayData {
         return matches.count == 1 ? matches[0] : nil
     }
 
-    /// Google returns things like "J", "J Line", "Subway J". The GTFS route ids are bare letters
-    /// and numbers.
+    /// Google returns things like "J", "J Line", "Subway J", "B43". GTFS route ids are bare
+    /// letters and numbers for subway, and the route code for buses.
     private static func normalizedLine(_ line: String) -> String {
         let cleaned = line
             .replacingOccurrences(of: "Line", with: "")

@@ -43,6 +43,8 @@ final class MTARealtimeService {
         case "L": suffix = "gtfs-l"
         case "SI", "SIR": suffix = "gtfs-si"
         case "1", "2", "3", "4", "5", "6", "7", "GS": suffix = "gtfs"
+        // Buses have their own realtime system (SIRI, not GTFS-RT) with a different shape, so
+        // bus rides keep the scheduled times rather than getting wrong live ones.
         default: return nil
         }
         return URL(string: base + suffix)

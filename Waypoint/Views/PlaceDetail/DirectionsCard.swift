@@ -441,7 +441,17 @@ struct DirectionsCard: View {
                         option: option,
                         isSelected: option.id == viewModel.selectedRoute?.id,
                         onSelect: { viewModel.select(option) },
-                        onGo: { viewModel.select(option); onShowSteps(option) }
+                        // GO starts the trip, same as every other mode. This used to call
+                        // `onShowSteps`, which layered the itinerary sheet on top of a directions
+                        // card that was still sitting there behind it.
+                        onGo: {
+                            viewModel.select(option)
+                            onStartNavigation(option)
+                        },
+                        onShowDetails: {
+                            viewModel.select(option)
+                            onShowSteps(option)
+                        }
                     )
                 }
             }
@@ -467,9 +477,11 @@ private struct TransitCard: View {
     let isSelected: Bool
     let onSelect: () -> Void
     let onGo: () -> Void
+    /// Tapping the card body opens the itinerary; GO starts the trip.
+    let onShowDetails: () -> Void
 
     var body: some View {
-        Button(action: onSelect) {
+        Button(action: onShowDetails) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 3) {

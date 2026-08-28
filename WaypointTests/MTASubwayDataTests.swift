@@ -29,9 +29,21 @@ final class MTASubwayDataTests: XCTestCase {
         XCTAssertNotNil(MTASubwayData.intermediateStops(line: "G", from: "Nassau Av", to: "Court Sq"))
     }
 
+    func testResolvesBusStopsFromTheScreenshotTrip() throws {
+        // Exactly the stop names Google returned for the B43 ride in the screenshots. MTA writes
+        // them in caps ("GRAHAM AV/COOK ST"), Google in title case.
+        let stops = try XCTUnwrap(
+            MTASubwayData.intermediateStops(line: "B43", from: "Graham Av/Cook St", to: "Driggs Av/Leonard St"),
+            "The B43 ride should resolve against the bus feed"
+        )
+        XCTAssertGreaterThan(stops.count, 3, "Expected the intermediate bus stops")
+        XCTAssertEqual(stops.last?.stop.name.uppercased(), "DRIGGS AV/LEONARD ST")
+        let minutes = stops.map(\.minutesFromBoarding)
+        XCTAssertEqual(minutes, minutes.sorted(), "Stop timings should increase along the ride")
+    }
+
     func testUnknownLinesAndStopsReturnNilRatherThanGuessing() {
-        XCTAssertNil(MTASubwayData.intermediateStops(line: "B43", from: "Graham Av/Cook St", to: "Driggs Av"),
-                     "Buses aren't in the subway feed and must not fuzzy-match onto it")
+        XCTAssertNil(MTASubwayData.intermediateStops(line: "Q999", from: "Nowhere", to: "Elsewhere"))
         XCTAssertNil(MTASubwayData.intermediateStops(line: "J", from: "Nowhere St", to: "Fulton St"))
     }
 
