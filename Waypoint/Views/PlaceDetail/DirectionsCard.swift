@@ -78,6 +78,7 @@ struct DirectionsCard: View {
         }
         .padding(.horizontal)
         .padding(.bottom, 0)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     // MARK: Header
@@ -328,13 +329,18 @@ struct DirectionsCard: View {
         TabView(selection: pagedSelection) {
             ForEach(viewModel.routeOptions) { option in
                 routeCard(option, isSelected: false)
-                    .padding(.bottom, 22)
+                    // Apple leaves roughly twice this much air between the route card and the
+                    // page dots; at 22 the dots sat right against the card.
+                    .padding(.bottom, 34)
                     .tag(option.id)
             }
         }
         .tabViewStyle(.page(indexDisplayMode: viewModel.routeOptions.count > 1 ? .always : .never))
         .indexViewStyle(.page(backgroundDisplayMode: .interactive))
-        .frame(height: 122)
+        // Was a fixed 122, which ended the card's content well short of the sheet and left a
+        // block of dead space underneath. Filling the remaining height puts the dots near the
+        // bottom of the card, where Apple's are, and absorbs the gap.
+        .frame(maxHeight: .infinity)
         .accessibilityIdentifier("routePager")
     }
 

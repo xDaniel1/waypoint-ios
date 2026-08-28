@@ -14,13 +14,14 @@ struct WeatherWidgetView: View {
                     .font(.subheadline.weight(.semibold))
             }
             if let airQualityIndex {
+                // Apple puts the status dot after the number, not before it.
                 HStack(spacing: 4) {
-                    Circle()
-                        .fill(aqiColor(airQualityIndex))
-                        .frame(width: 6, height: 6)
                     Text("AQI \(airQualityIndex)")
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(.secondary)
+                    Circle()
+                        .fill(aqiColor(airQualityIndex))
+                        .frame(width: 6, height: 6)
                 }
             }
         }

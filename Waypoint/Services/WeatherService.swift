@@ -21,7 +21,9 @@ final class WeatherService {
             )
             symbolName = weather.currentWeather.symbolName
             errorMessage = nil
-            airQualityIndex = nil // Air quality is dropped to remove Google API cost
+            // WeatherKit doesn't expose air quality, and this used to be dropped entirely to
+            // avoid Google's billed API. Open-Meteo publishes US AQI free and keyless.
+            airQualityIndex = await fetchAirQuality(for: location)
         } catch {
             // WeatherKit needs a working service token, and it fails outright in the simulator
             // and intermittently on device. Open-Meteo is free, keyless and unmetered, so it
@@ -53,7 +55,26 @@ final class WeatherService {
         temperature = "\(Int(reading.temperature_2m.rounded()))°"
         symbolName = Self.symbol(forWMOCode: reading.weather_code)
         errorMessage = nil
-        airQualityIndex = nil
+        airQualityIndex = await fetchAirQuality(for: location)
+    }
+
+    private func fetchAirQuality(for location: CLLocation) async -> Int? {
+        var components = URLComponents(string: "https://air-quality-api.open-meteo.com/v1/air-quality")
+        components?.queryItems = [
+            URLQueryItem(name: "latitude", value: String(location.coordinate.latitude)),
+            URLQueryItem(name: "longitude", value: String(location.coordinate.longitude)),
+            URLQueryItem(name: "current", value: "us_aqi"),
+        ]
+        guard let url = components?.url,
+              let data = try? await URLSession.shared.data(from: url).0,
+              let decoded = try? JSONDecoder().decode(AirQualityResponse.self, from: data),
+              let aqi = decoded.current?.us_aqi else { return nil }
+        return Int(aqi.rounded())
+    }
+
+    private struct AirQualityResponse: Decodable {
+        let current: Current?
+        struct Current: Decodable { let us_aqi: Double? }
     }
 
     private var usesFahrenheit: Bool {
