@@ -16,6 +16,7 @@ struct TransitItinerarySheet: View {
     /// ride independently.
     @State private var expandedStepIDs: Set<UUID> = []
     @State private var realtime = MTARealtimeService()
+    @State private var busRealtime = MTABusRealtimeService()
 
     var body: some View {
         NavigationStack {
@@ -61,12 +62,27 @@ struct TransitItinerarySheet: View {
                 boardingStop: ride.departureStop,
                 exitStop: ride.arrivalStop
             )
+            // Buses aren't on GTFS-RT, so when the subway feeds have nothing for this line try
+            // Bus Time with the boarding stop's GTFS id.
+            if realtime.departures.isEmpty,
+               let ids = MTASubwayData.stationIDs(
+                   line: ride.displayLine, from: ride.departureStop, to: ride.arrivalStop
+               ) {
+                await busRealtime.load(line: ride.displayLine, boardingStopID: "MTA_\(ids.boarding)")
+            }
         }
     }
 
-    /// "Departs in 6, 12 min" — the next couple of real trains, the way Apple phrases it.
+    /// Live minutes from whichever feed serves this mode — GTFS-RT for subway, SIRI for buses.
+    private var liveMinutes: [Int] {
+        realtime.departures.isEmpty
+            ? busRealtime.arrivals.map(\.minutesAway)
+            : realtime.departures.map(\.minutesAway)
+    }
+
+    /// "Departs in 6, 12 min" — the next couple of real vehicles, the way Apple phrases it.
     private var liveDepartureText: String {
-        let minutes = realtime.departures.map(\.minutesAway)
+        let minutes = liveMinutes
         guard let first = minutes.first else { return "" }
         let rest = minutes.dropFirst().prefix(2).map(String.init)
         let list = ([first == 0 ? "now" : String(first)] + rest).joined(separator: ", ")
@@ -115,9 +131,9 @@ struct TransitItinerarySheet: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
-                    if !realtime.departures.isEmpty {
-                        // Live from the MTA feed. The green glyph is Apple's convention for
-                        // realtime data and is only shown when the times genuinely are.
+                    if !liveMinutes.isEmpty {
+                        // Live from the MTA. The green glyph is Apple's realtime convention and
+                        // only appears when the times genuinely are live.
                         HStack(spacing: 6) {
                             Text(liveDepartureText)
                                 .font(.subheadline.weight(.medium))
@@ -130,6 +146,11 @@ struct TransitItinerarySheet: View {
                         Text("Departs \(departure)")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.primary)
+                    }
+
+                    if !liveMinutes.isEmpty {
+                        DepartureBoard(minutes: liveMinutes, tint: lineColor(step))
+                            .padding(.top, 6)
                     }
 
                     ForEach(realtime.alerts, id: \.self) { alert in
@@ -307,5 +328,48 @@ struct LineGlyph: View {
 
     private var lineColor: Color {
         Color(hex: step.color) ?? .blue
+    }
+}
+
+/// Apple's "Upcoming Departures" strip: the next few real departures as chips, minutes on top
+/// and the live indicator beneath, in the line's own colour.
+struct DepartureBoard: View {
+    let minutes: [Int]
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Upcoming Departures")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(minutes.prefix(4).enumerated()), id: \.offset) { index, value in
+                        VStack(spacing: 2) {
+                            HStack(spacing: 3) {
+                                Text(value == 0 ? "Now" : "\(value) min")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                Image(systemName: "dot.radiowaves.up.forward")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(.green)
+                            }
+                            Text("On time")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                // The first chip is the one you're catching, so it carries the
+                                // line's colour the way Apple highlights the active departure.
+                                .fill(index == 0 ? tint.opacity(0.22) : Color.secondary.opacity(0.12))
+                        )
+                    }
+                }
+            }
+        }
     }
 }
