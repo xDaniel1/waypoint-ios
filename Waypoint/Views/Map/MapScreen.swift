@@ -23,6 +23,9 @@ struct MapScreen: View {
     @State private var directionsCardHeight: CGFloat = 180
     @State private var sheetHeight: CGFloat = 90
     @State private var mapStyle: MapStyle = .standard(showsTraffic: true)
+    /// Transit map mode — MapKit has no such style, so the subway lines are drawn from bundled
+    /// MTA geometry. See `MTASubwayLines`.
+    @State private var showsTransitLines = false
     @State private var mapCenter: CLLocationCoordinate2D?
     @State private var currentCamera: MapCamera?
     @State private var trackingMode: UserTrackingMode = .off
@@ -118,6 +121,13 @@ struct MapScreen: View {
                 } else {
                     UserAnnotation()
                 }
+                if shouldDrawTransitLines {
+                    ForEach(MTASubwayLines.all) { line in
+                        MapPolyline(coordinates: line.coordinates)
+                            .stroke(line.color, style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round))
+                    }
+                }
+
                 if let result = searchViewModel.selectedResult {
                     Marker(result.title, coordinate: result.coordinate)
                         .tint(.indigo)
@@ -465,6 +475,17 @@ struct MapScreen: View {
         return (isTransit ? transitCardHeight : navBarHeight) + 14
     }
 
+    /// Transit lines are only drawn in transit mode, inside the region they describe, and only
+    /// once zoomed in enough for them to mean anything — at state level 29 overlapping polylines
+    /// are just noise.
+    private var shouldDrawTransitLines: Bool {
+        guard showsTransitLines, let center = mapCenter else { return false }
+        let inRegion = (40.4...41.1).contains(center.latitude)
+            && (-74.35...(-73.6)).contains(center.longitude)
+        let zoomedIn = (currentCamera?.distance ?? 0) < 45_000
+        return inRegion && zoomedIn
+    }
+
     private var sheetDetents: Set<PresentationDetent> {
         if directionsViewModel.isActive {
             // Fixed stops on purpose. This used to include `.height(directionsCardHeight)`, a
@@ -594,6 +615,7 @@ struct MapScreen: View {
                     }
                     FusedRightControls(
                         mapStyle: $mapStyle,
+                        showsTransitLines: $showsTransitLines,
                         trackingMode: trackingMode,
                         onRecenter: handleLocationButtonTap
                     )
@@ -940,6 +962,8 @@ private struct ClearMapButton<Label: View>: View {
 /// matching Apple Maps rather than rendering as two separate circular buttons.
 private struct FusedRightControls: View {
     @Binding var mapStyle: MapStyle
+    /// Transit mode isn't a MapKit style, so it rides alongside the style selection.
+    @Binding var showsTransitLines: Bool
     let trackingMode: UserTrackingMode
     let onRecenter: () -> Void
 
@@ -969,9 +993,24 @@ private struct FusedRightControls: View {
                     .overlay(Color.primary.opacity(0.15))
 
                 Menu {
-                    Button("Standard") { mapStyle = .standard(showsTraffic: true) }
-                    Button("Satellite") { mapStyle = .imagery }
-                    Button("Hybrid") { mapStyle = .hybrid(showsTraffic: true) }
+                    Button("Standard") {
+                        showsTransitLines = false
+                        mapStyle = .standard(showsTraffic: true)
+                    }
+                    Button("Transit") {
+                        // Traffic off: Apple's transit map drops the road congestion colouring so
+                        // the subway lines are the thing you read.
+                        showsTransitLines = true
+                        mapStyle = .standard(showsTraffic: false)
+                    }
+                    Button("Satellite") {
+                        showsTransitLines = false
+                        mapStyle = .imagery
+                    }
+                    Button("Hybrid") {
+                        showsTransitLines = false
+                        mapStyle = .hybrid(showsTraffic: true)
+                    }
                 } label: {
                     Image(systemName: "square.3.layers.3d")
                         .scaledFont(size: 18, weight: .medium, relativeTo: .body)

@@ -138,7 +138,10 @@ struct SearchSheet: View {
                     }
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                // Extra room up top so the sheet's drag indicator clears the search field
+                // instead of resting against it.
+                .padding(.top, 24)
+                .padding(.bottom, 10)
                 .onGeometryChange(for: CGFloat.self) { proxy in
                     proxy.size.height
                 } action: { newValue in
@@ -291,7 +294,8 @@ struct SearchSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 placesRow
-                aroundMeSection
+                // No "Around Me" here — Apple's home card is just Places and Recents, and the
+                // category shortcuts already live in the pinned pill row once you start a search.
                 if !viewModel.recentsStore.recents.isEmpty {
                     recentsCard
                 }
