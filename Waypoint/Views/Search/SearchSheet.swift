@@ -15,7 +15,7 @@ private let categories: [(title: String, emoji: String, query: String)] = [
 extension PresentationDetent {
     /// Where the card rests when the app opens: search bar, the Places row, and the top of
     /// Recents — the same partial height Apple Maps starts at before you pull it up.
-    static let home = PresentationDetent.fraction(0.45)
+    static let home = PresentationDetent.fraction(0.47)
 
     /// Where the directions card rests. A fixed fraction rather than a measured content height:
     /// a detent whose value moves makes the whole detent set unstable and breaks the drag.
@@ -137,11 +137,14 @@ struct SearchSheet: View {
                         profileButton
                     }
                 }
-                .padding(.horizontal, 12)
-                // Extra room up top so the sheet's drag indicator clears the search field
-                // instead of resting against it.
-                .padding(.top, 24)
-                .padding(.bottom, 10)
+                // Measured against Apple's card on the same device: their field is inset further
+                // from the card edges than ours was, which is what made ours read as wider and
+                // more crowded.
+                .padding(.horizontal, 16)
+                // Enough room for the sheet's drag indicator to clear the field. Measured at
+                // ~70px on Apple's card, ~66px on ours — this is already right, so it stays.
+                .padding(.top, 22)
+                .padding(.bottom, 12)
                 .onGeometryChange(for: CGFloat.self) { proxy in
                     proxy.size.height
                 } action: { newValue in
