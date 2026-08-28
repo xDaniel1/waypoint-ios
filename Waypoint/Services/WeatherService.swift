@@ -29,3 +29,11 @@ final class WeatherService {
         }
     }
 }
+
+extension WeatherService {
+    /// Whether a fetch has actually produced conditions, so callers can retry until it has
+    /// rather than assuming the first attempt worked.
+    var hasCurrentConditions: Bool {
+        temperature != nil && symbolName != nil
+    }
+}

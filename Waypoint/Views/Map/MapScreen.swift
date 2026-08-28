@@ -14,7 +14,7 @@ struct MapScreen: View {
     @State private var directionsViewModel = DirectionsViewModel()
     @State private var navigationViewModel = NavigationViewModel()
     @State private var weatherService = WeatherService()
-    @State private var hasFetchedWeather = false
+    @State private var lastWeatherAttempt: Date = .distantPast
     @State private var searchDetent: PresentationDetent = .home
     @State private var collapsedHeight: CGFloat = 90
     /// Measured live from DirectionsCard's actual content so the sheet hugs it exactly instead
@@ -295,8 +295,12 @@ struct MapScreen: View {
                         viewModel.recenterKeepingZoom(on: location, camera: currentCamera)
                     }
                 }
-                guard !hasFetchedWeather else { return }
-                hasFetchedWeather = true
+                // Marking this fetched *before* awaiting meant a single failure — no network yet
+                // on launch, WeatherKit not warmed up — permanently suppressed the widget for the
+                // rest of the session. Retry until it actually succeeds.
+                guard !weatherService.hasCurrentConditions else { return }
+                guard Date().timeIntervalSince(lastWeatherAttempt) > 20 else { return }
+                lastWeatherAttempt = Date()
                 Task { await weatherService.refresh(for: location) }
             }
             directionsViewModel.onRoutesChanged = { _, selected in

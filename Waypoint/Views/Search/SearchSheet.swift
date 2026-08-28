@@ -143,13 +143,15 @@ struct SearchSheet: View {
                 .padding(.horizontal, 16)
                 // Enough room for the sheet's drag indicator to clear the field. Measured at
                 // ~70px on Apple's card, ~66px on ours — this is already right, so it stays.
-                .padding(.top, 22)
-                .padding(.bottom, 12)
+                .padding(.top, 16)
+                .padding(.bottom, 10)
                 .onGeometryChange(for: CGFloat.self) { proxy in
                     proxy.size.height
                 } action: { newValue in
                     // Hug the bar: just the row plus its own padding, no trailing dead space.
-                    collapsedHeight = newValue + 8
+                    // Measured against Apple's collapsed bar, which sits ~12pt shorter than ours
+                    // did — the extra slack here was most of that difference.
+                    collapsedHeight = newValue + 2
                 }
 
                 if isSearching {
