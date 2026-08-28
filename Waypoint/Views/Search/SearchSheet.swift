@@ -20,8 +20,12 @@ extension PresentationDetent {
     /// Where the directions card rests. A fixed fraction rather than a measured content height:
     /// a detent whose value moves makes the whole detent set unstable and breaks the drag.
     ///
-    /// Sized to the content, not guessed: header ~80 + mode picker ~50 + endpoints ~144 +
-    /// route pager 132 + spacing ~24 ≈ 430pt, against ~440pt at 0.46 on a Pro Max.
+    /// Sized to the content, not guessed: header ~80 + mode picker ~46 + endpoints ~138 +
+    /// route pager 140 + spacing ~24 ≈ 428pt, against ~440pt at 0.46 on a Pro Max.
+    ///
+    /// The pager needs ~30pt more than the route card itself, because a TabView reserves that
+    /// much of its frame for the page indicator. Sizing it to the card alone clips the card's
+    /// top corners.
     ///
     /// This is close to the floor. The rows and route card can't shrink much further without
     /// looking cramped, so moving the card lower again means finding the height somewhere else

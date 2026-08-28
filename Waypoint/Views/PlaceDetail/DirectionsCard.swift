@@ -268,9 +268,9 @@ struct DirectionsCard: View {
             // Measured against Apple's card: their endpoint glyphs are noticeably larger than
             // ours were, which is most of why our rows read as thinner than theirs.
             Image(systemName: symbol)
-                .scaledFont(size: 26, weight: .semibold, relativeTo: .title2)
+                .scaledFont(size: 24, weight: .semibold, relativeTo: .title2)
                 .foregroundStyle(symbolColor)
-                .frame(width: 30, height: 30)
+                .frame(width: 28, height: 28)
 
             Text(text)
                 .font(.subheadline.weight(.medium))
@@ -341,7 +341,7 @@ struct DirectionsCard: View {
         // The route card sits centred in this frame and the dots pin to its bottom, so making it
         // taller is what moves both down the card — measured against Apple, whose route card
         // ends ~70px lower and whose dots sit ~30px nearer the card's bottom edge than ours did.
-        .frame(height: 132)
+        .frame(height: 140)
         .accessibilityIdentifier("routePager")
     }
 
@@ -377,7 +377,7 @@ struct DirectionsCard: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(option.shortDuration)
-                        .scaledFont(size: 28, weight: .bold, relativeTo: .title)
+                        .scaledFont(size: 26, weight: .bold, relativeTo: .title)
                         .foregroundStyle(option.hasTraffic ? .orange : .primary)
                     if option.hasTraffic {
                         Image(systemName: "car.side.and.exclamationmark")
@@ -427,7 +427,7 @@ struct DirectionsCard: View {
                 onStartNavigation(option)
             }
         }
-        .padding(14)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18))
         .overlay(
@@ -613,9 +613,9 @@ private struct GoButton: View {
     var body: some View {
         Button(action: action) {
             Text("GO")
-                .scaledFont(size: 22, weight: .bold, design: .rounded, relativeTo: .title2)
+                .scaledFont(size: 20, weight: .bold, design: .rounded, relativeTo: .title2)
                 .foregroundStyle(.white)
-                .frame(width: 68, height: 68)
+                .frame(width: 62, height: 62)
                 .background(Color(red: 0.2, green: 0.82, blue: 0.35), in: RoundedRectangle(cornerRadius: 18))
                 .shadow(color: Color.green.opacity(0.3), radius: 6, y: 3)
         }
@@ -635,7 +635,7 @@ private struct ModeButton: View {
             Image(systemName: mode.symbolName)
                 .scaledFont(size: 17, weight: .semibold, relativeTo: .body)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 9)
+                .padding(.vertical, 8)
                 // Selected reads as the foreground colour against a raised white segment, the
                 // way UISegmentedControl does it; unselected sits back in secondary.
                 .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.55))
