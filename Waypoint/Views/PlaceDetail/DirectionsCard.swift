@@ -56,7 +56,7 @@ struct DirectionsCard: View {
     }
 
     private var contentStack: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 12) {
             modePicker
             endpointsCard
 
@@ -314,7 +314,7 @@ struct DirectionsCard: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.vertical, 9)
         // Without this the row's hit region collapses to just its text — the accessibility frame
         // came back 19.8pt tall for a ~40pt row, and taps on "Add Stop" never reached the button.
         .contentShape(Rectangle())
@@ -328,9 +328,8 @@ struct DirectionsCard: View {
         TabView(selection: pagedSelection) {
             ForEach(viewModel.routeOptions) { option in
                 routeCard(option, isSelected: false)
-                    // Tightened again so the route card sits just above the dots rather than
-                    // floating well clear of them.
-                    .padding(.bottom, 18)
+                    // Route card sits just clear of the page dots.
+                    .padding(.bottom, 14)
                     .tag(option.id)
             }
         }
@@ -342,7 +341,7 @@ struct DirectionsCard: View {
         // The route card sits centred in this frame and the dots pin to its bottom, so making it
         // taller is what moves both down the card — measured against Apple, whose route card
         // ends ~70px lower and whose dots sit ~30px nearer the card's bottom edge than ours did.
-        .frame(height: 140)
+        .frame(height: 132)
         .accessibilityIdentifier("routePager")
     }
 
