@@ -19,6 +19,10 @@ extension PresentationDetent {
 
     /// Where the directions card rests. A fixed fraction rather than a measured content height:
     /// a detent whose value moves makes the whole detent set unstable and breaks the drag.
+    ///
+    /// 0.52 is deliberate. The card's content runs ~480pt on a Pro Max; anything tighter clips
+    /// the route card and drops the page dots onto it, which is exactly what happened when the
+    /// pager was allowed to fill instead of using a fixed height.
     static let directionsRest = PresentationDetent.fraction(0.52)
 }
 

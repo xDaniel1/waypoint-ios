@@ -78,7 +78,6 @@ struct DirectionsCard: View {
         }
         .padding(.horizontal)
         .padding(.bottom, 0)
-        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     // MARK: Header
@@ -337,10 +336,9 @@ struct DirectionsCard: View {
         }
         .tabViewStyle(.page(indexDisplayMode: viewModel.routeOptions.count > 1 ? .always : .never))
         .indexViewStyle(.page(backgroundDisplayMode: .interactive))
-        // Was a fixed 122, which ended the card's content well short of the sheet and left a
-        // block of dead space underneath. Filling the remaining height puts the dots near the
-        // bottom of the card, where Apple's are, and absorbs the gap.
-        .frame(maxHeight: .infinity)
+        // Fixed on purpose: letting this fill the sheet stretched the TabView, which clipped the
+        // route card and laid the page dots over it. 150 covers the card plus the dot row.
+        .frame(height: 150)
         .accessibilityIdentifier("routePager")
     }
 
