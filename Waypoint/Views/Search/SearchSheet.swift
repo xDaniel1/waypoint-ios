@@ -20,15 +20,18 @@ extension PresentationDetent {
     /// Where the directions card rests. A fixed fraction rather than a measured content height:
     /// a detent whose value moves makes the whole detent set unstable and breaks the drag.
     ///
-    /// Sized to the content, not guessed: header ~70 + mode picker ~50 + endpoints ~162 +
-    /// route pager 170 + spacing ~28 ≈ 480pt, and 0.50 of a Pro Max is ~478pt with the sheet's
-    /// own insets making up the rest.
+    /// Sized to the content, not guessed: header ~84 + mode picker ~50 + endpoints ~150 +
+    /// route pager 140 + spacing ~28 ≈ 452pt, against ~459pt at 0.48 on a Pro Max.
+    ///
+    /// The previous pass had this at 0.50 with ~500pt of content, which overflowed and clipped
+    /// the "Directions" header off the top of the card — the content is top aligned, so an
+    /// overflow eats the header first.
     ///
     /// A shorter sheet is what moves the whole stack *down* the screen — the content is top
     /// aligned, so lowering the card's top edge carries the mode picker, endpoints and route
     /// card down with it. Shrink the content first if you shrink this further; going tighter
     /// without that clips the route card and drops the page dots onto it.
-    static let directionsRest = PresentationDetent.fraction(0.50)
+    static let directionsRest = PresentationDetent.fraction(0.48)
 }
 
 struct SearchSheet: View {
