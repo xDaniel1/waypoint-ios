@@ -231,20 +231,19 @@ struct SearchSheet: View {
             detent = .home
         }
         .onChange(of: directionsViewModel.isActive) { _, active in
-            // Content height isn't measured yet on the very first frame the card appears, so
-            // .medium is a reasonable placeholder until DirectionsCard reports its real height
-            // and this re-fires — the .height(directionsHeight) below then takes over.
-            if active { detent = directionsViewModel.mode == .transit ? .large : .medium }
+            // Every mode rests at the same stop now. Transit used to be forced to `.large` here
+            // on the theory that its list needed room, but that made picking transit slam the
+            // card to full screen instead of resting like driving does — the list scrolls
+            // inside the card, so it doesn't need the whole screen.
+            if active { detent = .directionsRest }
         }
-        .onChange(of: directionsViewModel.mode) { _, newMode in
+        .onChange(of: directionsViewModel.mode) { _, _ in
             guard directionsViewModel.isActive else { return }
-            // Transit shows a scrollable list of options, so give it room; other modes size to
-            // the card's own measured content instead of a fixed fraction of the screen.
-            detent = newMode == .transit ? .large : .height(directionsHeight)
-        }
-        .onChange(of: directionsHeight) { _, newValue in
-            guard directionsViewModel.isActive, directionsViewModel.mode != .transit, detent != .large else { return }
-            detent = .height(newValue)
+            // Switching modes keeps the card where it is unless it's parked at the collapsed
+            // stop, in which case bring it back to the resting height so the routes are visible.
+            if detent != .large, detent != .directionsRest {
+                detent = .directionsRest
+            }
         }
         .onChange(of: viewModel.speechService.transcript) { _, newValue in
             guard viewModel.speechService.isRecording else { return }
