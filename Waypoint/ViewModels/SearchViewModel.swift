@@ -130,6 +130,9 @@ final class SearchViewModel {
     }
 
     func clearSelection() {
+        // Panning away sets this; without clearing it here the pill stayed on screen forever
+        // once you dismissed the search that raised it.
+        showSearchHereButton = false
         selectedResult = nil
     }
 

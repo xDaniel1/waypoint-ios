@@ -186,11 +186,11 @@ struct DirectionsCard: View {
         ZStack(alignment: .leading) {
             // Vertical connecting line linking origin, intermediate stops, and destination
             VStack(spacing: 0) {
-                Spacer().frame(height: 25)
+                Spacer().frame(height: 28)
                 Rectangle()
                     .fill(Color.secondary.opacity(0.35))
                     .frame(width: 2)
-                Spacer().frame(height: 25)
+                Spacer().frame(height: 28)
             }
             .padding(.leading, 23)
 
@@ -265,10 +265,12 @@ struct DirectionsCard: View {
         onRemove: (() -> Void)? = nil
     ) -> some View {
         HStack(spacing: 12) {
+            // Measured against Apple's card: their endpoint glyphs are noticeably larger than
+            // ours were, which is most of why our rows read as thinner than theirs.
             Image(systemName: symbol)
-                .scaledFont(size: 20, weight: .semibold, relativeTo: .title3)
+                .scaledFont(size: 26, weight: .semibold, relativeTo: .title2)
                 .foregroundStyle(symbolColor)
-                .frame(width: 24, height: 24)
+                .frame(width: 30, height: 30)
 
             Text(text)
                 .font(.subheadline.weight(.medium))

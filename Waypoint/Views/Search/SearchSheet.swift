@@ -19,7 +19,7 @@ extension PresentationDetent {
 
     /// Where the directions card rests. A fixed fraction rather than a measured content height:
     /// a detent whose value moves makes the whole detent set unstable and breaks the drag.
-    static let directionsRest = PresentationDetent.fraction(0.55)
+    static let directionsRest = PresentationDetent.fraction(0.52)
 }
 
 struct SearchSheet: View {
