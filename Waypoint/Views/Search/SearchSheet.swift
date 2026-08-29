@@ -3,16 +3,17 @@ import MapKit
 import OSLog
 import SwiftUI
 
-// Matched emoji-for-emoji against Apple Maps' own category pills, not just picked for looking
-// food-adjacent — "Dinner" read as 🍽️ where Apple's equivalent "Restaurants" pill is the plainer
-// 🍴, and Apple's Fast Food pill is a sandwich (🥪), not a burger.
-private let categories: [(title: String, emoji: String, query: String)] = [
-    ("Restaurants", "🍴", "Restaurants"),
-    ("Fast Food", "🥪", "Fast Food"),
-    ("Gas Stations", "⛽", "Gas Station"),
-    ("Coffee", "☕", "Coffee Shop"),
-    ("Groceries", "🛒", "Grocery Store"),
-    ("Movies", "🍿", "Movie Theater"),
+// Emoji matched against Apple Maps' own category pills rather than picked for looking
+// food-adjacent. `types` are Google Places (New) place types, each verified against the live API
+// rather than guessed — the pills *browse* by type the way Apple's do, instead of pushing the
+// word through autocomplete. `symbol` is what the results' map pins wear.
+private let categories: [(title: String, emoji: String, symbol: String, types: [String])] = [
+    ("Restaurants", "🍴", "fork.knife", ["restaurant"]),
+    ("Fast Food", "🥪", "takeoutbag.and.cup.and.straw.fill", ["fast_food_restaurant"]),
+    ("Gas Stations", "⛽", "fuelpump.fill", ["gas_station"]),
+    ("Coffee", "☕", "cup.and.saucer.fill", ["coffee_shop"]),
+    ("Groceries", "🛒", "cart.fill", ["supermarket"]),
+    ("Movies", "🍿", "popcorn.fill", ["movie_theater"]),
 ]
 
 extension PresentationDetent {
@@ -145,6 +146,7 @@ struct SearchSheet: View {
                             isFieldFocused = false
                             isSearching = false
                             isAddingFavorite = false
+                            viewModel.clearCategory()
                             viewModel.queryText = ""
                         } label: {
                             Image(systemName: "xmark")
@@ -178,7 +180,9 @@ struct SearchSheet: View {
 
                 if isSearching {
                     List {
-                        if viewModel.queryText.isEmpty {
+                        if viewModel.activeCategory != nil {
+                            categoryResultsSection
+                        } else if viewModel.queryText.isEmpty {
                             tipSection
                             recentsSection
                             DiscoverSections(
@@ -211,6 +215,13 @@ struct SearchSheet: View {
         .animation(.smooth(duration: 0.3), value: directionsViewModel.isActive)
         .animation(.smooth(duration: 0.3), value: viewModel.selectedResult)
         .animation(.smooth(duration: 0.3), value: isSearching)
+        // Typing anything other than the category's own name means the user has moved on from
+        // browsing that category, so the results give way to normal search suggestions.
+        .onChange(of: viewModel.queryText) { _, newValue in
+            if let active = viewModel.activeCategory, newValue != active {
+                viewModel.clearCategory()
+            }
+        }
         .onChange(of: isFieldFocused) { _, focused in
             // Gaining focus enters search mode; losing it (e.g. from scrolling) does not leave it.
             guard focused else { return }
@@ -501,6 +512,43 @@ struct SearchSheet: View {
     }
 
     /// Straight-line distance — honest about what it is: it's not a routed driving distance.
+    /// What a category pill shows instead of autocomplete suggestions: the real nearby places
+    /// of that type, in the same row style the Suggested Places shelf uses.
+    @ViewBuilder
+    private var categoryResultsSection: some View {
+        if viewModel.isLoadingCategory {
+            Section {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 28)
+                    .listRowSeparator(.hidden)
+            }
+        } else if let message = viewModel.categoryErrorMessage {
+            Section {
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 28)
+                    .listRowSeparator(.hidden)
+            }
+        } else {
+            Section {
+                ForEach(viewModel.categoryResults) { place in
+                    SuggestedRow(
+                        place: place,
+                        imageURL: viewModel.photoURL(forCategoryResult: place),
+                        distance: place.coordinate.flatMap { distanceText(to: $0) }
+                    ) {
+                        selectDiscover(place)
+                    }
+                    .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))
+                    .listRowSeparator(.hidden)
+                }
+            }
+        }
+    }
+
     private func distanceText(to coordinate: CLLocationCoordinate2D) -> String? {
         guard let currentLocation else { return nil }
         let meters = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
@@ -598,7 +646,13 @@ struct SearchSheet: View {
                     ForEach(categories, id: \.title) { category in
                         Button {
                             Haptics.tap()
-                            viewModel.queryText = category.query
+                            isFieldFocused = false
+                            viewModel.browseCategory(
+                                title: category.title,
+                                symbol: category.symbol,
+                                includedTypes: category.types,
+                                near: currentLocation?.coordinate
+                            )
                         } label: {
                             HStack(spacing: 6) {
                                 Text(category.emoji).font(.callout)
@@ -609,7 +663,12 @@ struct SearchSheet: View {
                             // device — ours were reading noticeably daintier next to theirs.
                             .padding(.horizontal, 16)
                             .padding(.vertical, 10)
-                            .glassEffect(.regular.interactive(), in: Capsule())
+                            .glassEffect(
+                                viewModel.activeCategory == category.title
+                                    ? .regular.tint(.blue.opacity(0.5)).interactive()
+                                    : .regular.interactive(),
+                                in: Capsule()
+                            )
                         }
                         .buttonStyle(.pressableRow)
                     }
@@ -619,16 +678,6 @@ struct SearchSheet: View {
             .padding(.vertical, 10)
         }
         .scrollClipDisabled()
-        // The pills' own glass only covered their own capsules — the gaps between them were
-        // plain transparent space, so list rows scrolling underneath showed through those gaps
-        // completely sharp and unblurred. That's what read as the list "sliding past" the row
-        // instead of settling behind it: one continuous glass panel spanning the whole bar (not
-        // just the pill shapes) is what Apple's own diffusion is actually sitting on.
-        .background {
-            Rectangle()
-                .fill(.clear)
-                .glassEffect(.regular, in: Rectangle())
-        }
     }
 
     @ViewBuilder

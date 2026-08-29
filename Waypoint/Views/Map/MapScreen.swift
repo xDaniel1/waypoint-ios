@@ -138,6 +138,21 @@ struct MapScreen: View {
                     Marker(result.title, coordinate: result.coordinate)
                         .tint(.indigo)
                 }
+                // Browsing a category drops a pin for every hit, the way Apple fills the map
+                // when you tap "Restaurants" — the list alone told you what was nearby without
+                // showing you where any of it actually was.
+                if searchViewModel.selectedResult == nil {
+                    ForEach(searchViewModel.categoryResults) { place in
+                        if let coordinate = place.coordinate {
+                            Marker(
+                                place.displayName?.text ?? "Place",
+                                systemImage: searchViewModel.categorySymbol,
+                                coordinate: coordinate
+                            )
+                            .tint(.orange)
+                        }
+                    }
+                }
                 ForEach(directionsViewModel.stops) { stop in
                     Marker(stop.title, coordinate: stop.coordinate)
                         .tint(.orange)

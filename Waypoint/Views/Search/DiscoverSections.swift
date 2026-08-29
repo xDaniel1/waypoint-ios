@@ -113,7 +113,8 @@ struct DiscoverSections: View {
     }
 }
 
-private struct SuggestedRow: View {
+/// Also used by SearchSheet for the category-browse results list, which is the same row.
+struct SuggestedRow: View {
     let place: DetailedPlace
     let imageURL: URL?
     let distance: String?
