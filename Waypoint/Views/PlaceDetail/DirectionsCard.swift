@@ -618,7 +618,7 @@ struct LineBadge: View {
     let step: TransitStep
 
     var body: some View {
-        let bg = Color(hex: step.color) ?? (step.isSubway ? Color.blue : Color.orange)
+        let bg = step.tintColor
         let line = step.displayLine
         let isSingleOrDouble = line.count <= 2
 

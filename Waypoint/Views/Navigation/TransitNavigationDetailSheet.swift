@@ -140,7 +140,7 @@ struct TransitNavigationDetailSheet: View {
                 .frame(width: 32, alignment: .center)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("Board the \(step.lineName)")
+                Text("Board the \(step.displayLine)")
                     .scaledFont(size: 20, weight: .bold, relativeTo: .title3)
                     .foregroundStyle(.primary)
 

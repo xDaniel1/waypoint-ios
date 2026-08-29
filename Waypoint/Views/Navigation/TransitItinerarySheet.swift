@@ -272,7 +272,7 @@ struct TransitItinerarySheet: View {
     }
 
     private func lineColor(_ step: TransitStep) -> Color {
-        Color(hex: step.color) ?? .blue
+        step.tintColor
     }
 
     private func intermediateStops(for step: TransitStep) -> [(stop: MTASubwayData.Stop, minutesFromBoarding: Int)]? {
@@ -327,7 +327,7 @@ struct LineGlyph: View {
     }
 
     private var lineColor: Color {
-        Color(hex: step.color) ?? .blue
+        step.tintColor
     }
 }
 

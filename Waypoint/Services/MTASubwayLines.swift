@@ -50,4 +50,17 @@ enum MTASubwayLines {
         }
     }()
 
+    /// The MTA's own published colour for a subway line's letter/number — Google's transit
+    /// colour data doesn't reliably match brand colour (the J sometimes comes back generic
+    /// brown-ish, sometimes not brown at all), and this bundle is already the source of truth
+    /// for the colour the line draws on the map, so badges and the same line should match it.
+    /// `nil` for anything that isn't one of these 29 lines — buses and other agencies fall back
+    /// to whatever Google supplied.
+    static func officialColor(forLine line: String) -> Color? {
+        byID[line.uppercased()]
+    }
+
+    private static let byID: [String: Color] = Dictionary(
+        uniqueKeysWithValues: all.map { ($0.id, $0.color) }
+    )
 }

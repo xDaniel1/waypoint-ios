@@ -172,6 +172,18 @@ struct TransitStep: Identifiable {
         default: "tram.fill"
         }
     }
+
+    /// The colour this ride draws and badges in — the MTA's own published colour for subway
+    /// lines, since Google's transit colour data doesn't reliably match what the MTA actually
+    /// brands each line (the J isn't always the right brown coming back from Google). Buses and
+    /// other agencies fall back to whatever Google supplied.
+    @MainActor
+    var tintColor: Color {
+        if isSubway, let official = MTASubwayLines.officialColor(forLine: displayLine) {
+            return official
+        }
+        return Color(hex: color) ?? (isSubway ? .blue : .orange)
+    }
 }
 
 /// One leg of a transit itinerary: either a walk of N minutes, or a transit ride.
@@ -235,8 +247,9 @@ extension RouteOption {
     /// The colour this route draws in. Transit uses the operator's own line colour when the
     /// response carried one — Apple draws the J in its gold, the G in its green — and everything
     /// else falls back to the standard route blue.
+    @MainActor
     var routeTint: Color {
-        guard let step = transitSteps.first, let color = Color(hex: step.color) else { return .blue }
-        return color
+        guard let step = transitSteps.first else { return .blue }
+        return step.tintColor
     }
 }
