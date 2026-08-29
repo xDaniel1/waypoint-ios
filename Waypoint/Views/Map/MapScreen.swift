@@ -229,7 +229,11 @@ struct MapScreen: View {
             }
             .mapStyle(navigationViewModel.isActive ? .standard(elevation: .realistic, showsTraffic: true) : mapStyle)
             .mapControls { MapScaleView(scope: mapScope) }
-            .safeAreaPadding(.bottom, navigationViewModel.isActive ? navBarHeight : (mapControlsBottomPadding - 12))
+            // Deliberately no bottom `safeAreaPadding` here. MapKit pins its own mandatory
+            // attribution ("Maps · Legal") to the bottom of the *map's safe area*, so insetting
+            // the bottom by the sheet's height lifted that text off the bottom edge and parked it
+            // in the middle of the map. Leaving the safe area alone keeps it tucked in the
+            // bottom-left corner behind the sheet, where it was before and where it isn't in the way.
             .onMapCameraChange(frequency: .onEnd) { context in
                 searchViewModel.updateSearchRegion(context.region)
                 mapCenter = context.region.center

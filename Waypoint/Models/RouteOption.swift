@@ -146,8 +146,45 @@ struct TransitStep: Identifiable {
     var departureISO: String? = nil
     var arrivalISO: String? = nil
 
+    /// The bare service letter/number a rider actually calls the line — "L", not "L Line" or
+    /// "Canarsie Local".
+    ///
+    /// Google's `nameShort` is usually already that, but it's optional, and when it's missing the
+    /// only thing left is the full route name ("14 St-Canarsie Local"), which is what was ending
+    /// up on the badges. So the name is checked against the MTA's real service designations and
+    /// reduced to the bare token when one is in there; anything that isn't an MTA subway service
+    /// (buses, other agencies) keeps whatever Google supplied rather than being mangled.
     var displayLine: String {
-        lineShortName ?? lineName
+        let candidate = lineShortName ?? lineName
+        if let service = Self.mtaService(in: candidate) { return service }
+        return candidate
+    }
+
+    /// The MTA's own service designations. Hardcoding them is safe in a way a guess wouldn't be —
+    /// this is the fixed, published set of NYC subway services, and it's the same set the bundled
+    /// line geometry in `MTASubwayLines.json` is keyed by.
+    private static let mtaServices: Set<String> = [
+        "1", "2", "3", "4", "5", "6", "7", "6X", "7X",
+        "A", "B", "C", "D", "E", "F", "FX", "G", "J", "L", "M", "N", "Q", "R", "W", "Z",
+        "H", "FS", "GS", "SI",
+    ]
+
+    /// Pulls the service designation out of a line label, tolerating the shapes Google actually
+    /// returns: "L", "L Line", "L Train", "MTA Subway L".
+    private static func mtaService(in label: String) -> String? {
+        let cleaned = label
+            .replacingOccurrences(of: "MTA", with: " ", options: .caseInsensitive)
+            .replacingOccurrences(of: "Subway", with: " ", options: .caseInsensitive)
+            .replacingOccurrences(of: "Train", with: " ", options: .caseInsensitive)
+            .replacingOccurrences(of: "Line", with: " ", options: .caseInsensitive)
+        let tokens = cleaned
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+        // Only a label that reduces to exactly one token is a service designation. "14 St-Canarsie
+        // Local" leaves several, and guessing one of those would put the wrong letter on the badge.
+        guard tokens.count == 1, let token = tokens.first else { return nil }
+        let upper = token.uppercased()
+        return mtaServices.contains(upper) ? upper : nil
     }
 
     var isSubway: Bool {
