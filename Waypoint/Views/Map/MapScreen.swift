@@ -632,12 +632,25 @@ struct MapScreen: View {
     }
 
     /// How far up from the bottom the floating map buttons (recenter/layers, compass) sit —
-    /// tied directly to the fixed fraction the sheet is actually resting at (see `.home` /
-    /// `.directionsRest`) rather than a measured content height, which ran the buttons a
-    /// card's-height too high above the directions card.
+    /// tied directly to the fixed height/fraction the sheet is actually resting at, rather than
+    /// a measured content height, which ran the buttons a card's-height too high above the
+    /// directions card.
+    ///
+    /// This has to check every detent in `sheetDetents`, not just the resting one — collapsing
+    /// the sheet to its short peek height used to leave the buttons stranded up at the home
+    /// detent's fraction because this only ever accounted for `.home`/`.directionsRest`.
     private var mapControlsBottomPadding: CGFloat {
-        let fraction: CGFloat = directionsViewModel.isActive ? 0.46 : 0.47
-        return screenHeight * fraction + 12
+        if searchDetent == .large {
+            // The sheet covers nearly the whole screen at `.large`; hug the controls just under
+            // the search bar's row instead of a bottom offset that'd sit under the sheet.
+            return screenHeight - 140
+        }
+        if directionsViewModel.isActive {
+            if searchDetent == .height(190) { return 190 + 12 }
+            return screenHeight * 0.46 + 12
+        }
+        if searchDetent == .height(collapsedHeight) { return collapsedHeight + 12 }
+        return screenHeight * 0.47 + 12
     }
 
     private var mapControlsOverlay: some View {
@@ -688,6 +701,7 @@ struct MapScreen: View {
             .padding(.horizontal, 12)
             .padding(.bottom, mapControlsBottomPadding)
             .animation(.smooth(duration: 0.3), value: directionsViewModel.isActive)
+            .animation(.smooth(duration: 0.3), value: searchDetent)
             .animation(.snappy(duration: 0.35), value: isCloseEnoughForStreetControls)
         }
         .animation(.smooth(duration: 0.3), value: searchViewModel.showSearchHereButton)
