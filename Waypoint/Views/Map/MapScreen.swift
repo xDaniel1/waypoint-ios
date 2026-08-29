@@ -35,6 +35,7 @@ struct MapScreen: View {
     @State private var mapCenter: CLLocationCoordinate2D?
     /// One-shot: the discover shelves are warmed on the first camera settle, not on every pan.
     @State private var hasPrefetchedDiscover = false
+    @State private var networkMonitor = NetworkMonitor.shared
     @State private var currentCamera: MapCamera?
     @State private var trackingMode: UserTrackingMode = .off
     /// Shared between the GPS-fix and compass-heading update paths so they never both animate
@@ -227,6 +228,7 @@ struct MapScreen: View {
                 }
             }
             .mapStyle(navigationViewModel.isActive ? .standard(elevation: .realistic, showsTraffic: true) : mapStyle)
+            .mapControls { MapScaleView(scope: mapScope) }
             .safeAreaPadding(.bottom, navigationViewModel.isActive ? navBarHeight : (mapControlsBottomPadding - 12))
             .onMapCameraChange(frequency: .onEnd) { context in
                 searchViewModel.updateSearchRegion(context.region)
@@ -273,6 +275,16 @@ struct MapScreen: View {
                 LocationPermissionDeniedView()
             }
 
+            if !networkMonitor.isConnected {
+                VStack {
+                    OfflineBanner()
+                        .padding(.top, 8)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             if !navigationViewModel.isActive {
                 mapControlsOverlay
                     .transition(.opacity)
@@ -285,6 +297,7 @@ struct MapScreen: View {
             }
         }
         .animation(.smooth(duration: 0.4), value: navigationViewModel.isActive)
+        .animation(.smooth(duration: 0.3), value: networkMonitor.isConnected)
         .mapScope(mapScope)
         // `.task` covers a cold launch from Siri; the `onChange` covers an intent firing while
         // the app is already open, which `.task` alone would miss.

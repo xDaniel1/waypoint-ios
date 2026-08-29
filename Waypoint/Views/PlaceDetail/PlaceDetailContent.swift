@@ -74,6 +74,7 @@ struct PlaceDetailContent: View {
             }
             .scrollIndicators(.hidden)
             .scrollClipDisabled(false)
+            .coordinateSpace(name: "placeDetailScroll")
 
             floatingHeaderControls
         }
@@ -141,26 +142,36 @@ struct PlaceDetailContent: View {
     }
 
     /// Edge-to-edge hero photo with a gradient scrim, like Apple's place cards.
+    ///
+    /// Pulling down on an Apple place card stretches the photo to fill the overscroll instead of
+    /// exposing empty space above it. `GeometryReader` reads how far the header has been dragged
+    /// past its resting position (a positive `minY` in the scroll view's own coordinate space) and
+    /// grows the photo by exactly that amount while pulling it back up by the same amount, so its
+    /// bottom edge never moves — only the top stretches.
     @ViewBuilder
     private func heroHeader(_ place: DetailedPlace) -> some View {
         if let photo = place.photos?.first {
-            Button {
-                openLightbox(place.photos ?? [], at: 0)
-            } label: {
-                photoImage(photo, contentMode: .fill)
-                    .frame(height: 210)
-                    .frame(maxWidth: .infinity)
-                    .clipped()
-                    .overlay(alignment: .bottom) {
-                        LinearGradient(
-                            colors: [.clear, Color(uiColor: .systemBackground)],
-                            startPoint: .center,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 90)
-                    }
+            GeometryReader { proxy in
+                let stretch = max(0, proxy.frame(in: .named("placeDetailScroll")).minY)
+                Button {
+                    openLightbox(place.photos ?? [], at: 0)
+                } label: {
+                    photoImage(photo, contentMode: .fill)
+                        .frame(width: proxy.size.width, height: 210 + stretch)
+                        .clipped()
+                        .overlay(alignment: .bottom) {
+                            LinearGradient(
+                                colors: [.clear, Color(uiColor: .systemBackground)],
+                                startPoint: .center,
+                                endPoint: .bottom
+                            )
+                            .frame(height: 90)
+                        }
+                }
+                .buttonStyle(.plain)
+                .offset(y: -stretch)
             }
-            .buttonStyle(.plain)
+            .frame(height: 210)
         } else {
             Color.clear.frame(height: 56)
         }
