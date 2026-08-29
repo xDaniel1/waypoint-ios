@@ -590,22 +590,25 @@ struct SearchSheet: View {
             // Each pill had its own isolated `.glassEffect`, sampling only its own sliver of
             // whatever scrolled underneath — next to Apple's version, which blends the whole
             // row into one glass surface, ours read as flat, barely-tinted capsules instead of
-            // catching color off the content passing beneath. A shared `GlassEffectContainer` is
-            // what makes them read as one continuous piece of glass instead of six separate ones.
-            GlassEffectContainer(spacing: 8) {
-                HStack(spacing: 8) {
+            // catching color off the content passing beneath. A shared `GlassEffectContainer`,
+            // with enough spacing for neighboring pills to actually read as connected, is what
+            // makes them merge into one continuous piece of glass instead of six separate ones.
+            GlassEffectContainer(spacing: 14) {
+                HStack(spacing: 10) {
                     ForEach(categories, id: \.title) { category in
                         Button {
                             Haptics.tap()
                             viewModel.queryText = category.query
                         } label: {
                             HStack(spacing: 6) {
-                                Text(category.emoji).font(.subheadline)
-                                Text(category.title).font(.subheadline.weight(.semibold))
+                                Text(category.emoji).font(.callout)
+                                Text(category.title).font(.callout.weight(.semibold))
                             }
                             .foregroundStyle(.primary)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
+                            // A size step up from Apple's own pills, measured on the same
+                            // device — ours were reading noticeably daintier next to theirs.
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
                             .glassEffect(.regular.interactive(), in: Capsule())
                         }
                         .buttonStyle(.pressableRow)
@@ -613,9 +616,19 @@ struct SearchSheet: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.vertical, 10)
         }
         .scrollClipDisabled()
+        // The pills' own glass only covered their own capsules — the gaps between them were
+        // plain transparent space, so list rows scrolling underneath showed through those gaps
+        // completely sharp and unblurred. That's what read as the list "sliding past" the row
+        // instead of settling behind it: one continuous glass panel spanning the whole bar (not
+        // just the pill shapes) is what Apple's own diffusion is actually sitting on.
+        .background {
+            Rectangle()
+                .fill(.clear)
+                .glassEffect(.regular, in: Rectangle())
+        }
     }
 
     @ViewBuilder
