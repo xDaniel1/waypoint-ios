@@ -177,7 +177,6 @@ struct SearchSheet: View {
                     List {
                         if viewModel.queryText.isEmpty {
                             tipSection
-                            placesSection
                             recentsSection
                             DiscoverSections(
                                 discover: viewModel.discover,
@@ -573,32 +572,6 @@ struct SearchSheet: View {
             }
             .listRowInsets(EdgeInsets())
             .listRowSeparator(.hidden)
-        }
-    }
-
-    @ViewBuilder
-    private var placesSection: some View {
-        let canAddSelection = viewModel.selectedResult.map { !viewModel.favoritesStore.isFavorite($0) } ?? false
-        if !viewModel.favoritesStore.favorites.isEmpty || canAddSelection {
-            Section("Places") {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 16) {
-                        ForEach(viewModel.favoritesStore.favorites) { favorite in
-                            FavoriteCircle(favorite: favorite, onEdit: { activeSheet = .editFavorite(favorite) }) {
-                                select(favorite: favorite)
-                            }
-                        }
-                        if let selected = viewModel.selectedResult, canAddSelection {
-                            AddFavoriteCircle {
-                                viewModel.favoritesStore.toggle(selected)
-                            }
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-                .listRowInsets(EdgeInsets())
-                .listRowSeparator(.hidden)
-            }
         }
     }
 
@@ -1195,66 +1168,6 @@ private struct AroundMeResultCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("aroundMeResult-\(place.id)")
-    }
-}
-
-private struct FavoriteCircle: View {
-    let favorite: FavoritePlace
-    var onEdit: (() -> Void)? = nil
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Circle()
-                    .fill((Color(hex: favorite.colorHex) ?? .indigo).gradient)
-                    .frame(width: 44, height: 44)
-                    .overlay {
-                        if let emoji = favorite.emoji, !emoji.isEmpty {
-                            Text(emoji).font(.callout)
-                        } else {
-                            Text(favorite.title.prefix(1))
-                                .font(.headline)
-                                .foregroundStyle(.white)
-                        }
-                    }
-                Text(favorite.displayTitle)
-                    .font(.caption2)
-                    .lineLimit(1)
-                    .frame(width: 60)
-            }
-        }
-        .buttonStyle(.plain)
-        .contextMenu {
-            if let onEdit {
-                Button(action: onEdit) {
-                    Label("Edit", systemImage: "pencil")
-                }
-            }
-        }
-    }
-}
-
-private struct AddFavoriteCircle: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Circle()
-                    .strokeBorder(Color.secondary, style: StrokeStyle(lineWidth: 1.5, dash: [4]))
-                    .frame(width: 44, height: 44)
-                    .overlay {
-                        Image(systemName: "plus")
-                            .foregroundStyle(.secondary)
-                    }
-                Text("Add")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("addFavoriteButton")
     }
 }
 
