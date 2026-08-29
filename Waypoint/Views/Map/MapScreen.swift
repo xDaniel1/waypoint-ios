@@ -33,6 +33,8 @@ struct MapScreen: View {
     /// MTA geometry. See `MTASubwayLines`.
     @State private var showsTransitLines = false
     @State private var mapCenter: CLLocationCoordinate2D?
+    /// One-shot: the discover shelves are warmed on the first camera settle, not on every pan.
+    @State private var hasPrefetchedDiscover = false
     @State private var currentCamera: MapCamera?
     @State private var trackingMode: UserTrackingMode = .off
     /// Shared between the GPS-fix and compass-heading update paths so they never both animate
@@ -229,6 +231,15 @@ struct MapScreen: View {
                 mapCenter = context.region.center
                 withAnimation(.smooth(duration: 0.35)) {
                     currentCamera = context.camera
+                }
+                // Warm the search page's shelves once the map knows where we are, instead of
+                // waiting for the user to tap the field and then watch it load. Bounded on
+                // purpose: `loadIfNeeded` no-ops within 500m of the last load and every call
+                // underneath is disk-cached for 2h+, so this is a couple of requests per session,
+                // and they're the same ones opening search would have spent anyway.
+                if !hasPrefetchedDiscover {
+                    hasPrefetchedDiscover = true
+                    searchViewModel.loadDiscover()
                 }
             }
             // Any touch on the map hands control back to the user: auto-follow stops re-centering

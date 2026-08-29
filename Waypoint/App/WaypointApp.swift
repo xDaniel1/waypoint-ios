@@ -16,6 +16,9 @@ struct WaypointApp: App {
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .background {
                 crashReporting.markCleanShutdown()
+                // Caches batch their writes on a short timer; make sure the last one lands
+                // before the process is suspended rather than being dropped.
+                Task { await DiskCacheRegistry.flushAll() }
             }
         }
     }

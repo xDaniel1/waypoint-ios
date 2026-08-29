@@ -119,6 +119,7 @@ struct GooglePlacesService {
             includedTypes: includedTypes,
             coordinate: coordinate,
             radius: radius,
+            maxResults: maxResults,
             primaryTypesOnly: primaryTypesOnly
         )
         if let cached = await NearbyCache.places(forKey: key, longLived: longLived) { return cached }
@@ -239,10 +240,14 @@ private enum NearbyCache {
         includedTypes: [String],
         coordinate: CLLocationCoordinate2D,
         radius: Double,
+        maxResults: Int,
         primaryTypesOnly: Bool
     ) -> String {
         let lat = (coordinate.latitude * 100).rounded() / 100
         let lng = (coordinate.longitude * 100).rounded() / 100
-        return "\(includedTypes.joined(separator: ","))|\(lat)|\(lng)|\(Int(radius))|\(primaryTypesOnly)"
+        // `maxResults` belongs in the key: without it a caller asking for 20 could be served a
+        // cached 8-result answer stored by a different caller with the same type and radius, and
+        // silently show a short list it had no way to tell was truncated.
+        return "\(includedTypes.joined(separator: ","))|\(lat)|\(lng)|\(Int(radius))|\(maxResults)|\(primaryTypesOnly)"
     }
 }
