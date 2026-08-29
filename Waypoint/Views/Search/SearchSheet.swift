@@ -3,9 +3,12 @@ import MapKit
 import OSLog
 import SwiftUI
 
+// Matched emoji-for-emoji against Apple Maps' own category pills, not just picked for looking
+// food-adjacent — "Dinner" read as 🍽️ where Apple's equivalent "Restaurants" pill is the plainer
+// 🍴, and Apple's Fast Food pill is a sandwich (🥪), not a burger.
 private let categories: [(title: String, emoji: String, query: String)] = [
-    ("Fast Food", "🍔", "Fast Food"),
-    ("Dinner", "🍽️", "Dinner Restaurants"),
+    ("Restaurants", "🍴", "Restaurants"),
+    ("Fast Food", "🥪", "Fast Food"),
     ("Gas Stations", "⛽", "Gas Station"),
     ("Coffee", "☕", "Coffee Shop"),
     ("Groceries", "🛒", "Grocery Store"),
@@ -584,24 +587,29 @@ struct SearchSheet: View {
     /// isn't stuck behind it.
     private var categoriesBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(categories, id: \.title) { category in
-                    Button {
-                        Haptics.tap()
-                        viewModel.queryText = category.query
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text(category.emoji).font(.subheadline)
-                            Text(category.title).font(.subheadline.weight(.semibold))
+            // Each pill had its own isolated `.glassEffect`, sampling only its own sliver of
+            // whatever scrolled underneath — next to Apple's version, which blends the whole
+            // row into one glass surface, ours read as flat, barely-tinted capsules instead of
+            // catching color off the content passing beneath. A shared `GlassEffectContainer` is
+            // what makes them read as one continuous piece of glass instead of six separate ones.
+            GlassEffectContainer(spacing: 8) {
+                HStack(spacing: 8) {
+                    ForEach(categories, id: \.title) { category in
+                        Button {
+                            Haptics.tap()
+                            viewModel.queryText = category.query
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(category.emoji).font(.subheadline)
+                                Text(category.title).font(.subheadline.weight(.semibold))
+                            }
+                            .foregroundStyle(.primary)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .glassEffect(.regular.interactive(), in: Capsule())
                         }
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        // Real Liquid Glass, like the search field and profile button. A flat
-                        // `.quaternary` fill was the one control here that didn't refract.
-                        .glassEffect(.regular.interactive(), in: Capsule())
+                        .buttonStyle(.pressableRow)
                     }
-                    .buttonStyle(.pressableRow)
                 }
             }
             .padding(.horizontal, 16)
