@@ -21,7 +21,13 @@ struct MapScreen: View {
     /// of leaving dead space the way a fixed `.medium` fraction did. 420 is just a first-frame
     /// placeholder before any measurement has come back.
     @State private var directionsCardHeight: CGFloat = 180
-    @State private var sheetHeight: CGFloat = 90
+    /// The search sheet's own content report (via `GeometryReader` inside `SearchSheet`) ran
+    /// well taller than where its card actually starts once `.fixedSize` settles it — chasing
+    /// that number left the floating map buttons hovering a card's-height above the card instead
+    /// of just clear of it. The sheet only ever rests at one of a few fixed fractions of the
+    /// screen anyway, so this multiplies that fraction directly instead of trusting the
+    /// measured value.
+    @State private var screenHeight: CGFloat = 956
     @State private var mapStyle: MapStyle = .standard(showsTraffic: true)
     /// Transit map mode — MapKit has no such style, so the subway lines are drawn from bundled
     /// MTA geometry. See `MTASubwayLines`.
@@ -343,7 +349,6 @@ struct MapScreen: View {
                 currentLocation: viewModel.currentLocation,
                 detent: $searchDetent,
                 collapsedHeight: $collapsedHeight,
-                sheetHeight: $sheetHeight,
                 directionsHeight: $directionsCardHeight,
                 isAddingStop: $isAddingDirectionsStop,
                 onStartNavigation: { route in
@@ -470,6 +475,11 @@ struct MapScreen: View {
                 }
             }
         }
+        .background {
+            GeometryReader { proxy in
+                Color.clear.onAppear { screenHeight = proxy.size.height }
+            }
+        }
     }
 
     /// How much room the bottom controls need to clear whatever is docked below them — the
@@ -580,6 +590,15 @@ struct MapScreen: View {
         }
     }
 
+    /// How far up from the bottom the floating map buttons (recenter/layers, compass) sit —
+    /// tied directly to the fixed fraction the sheet is actually resting at (see `.home` /
+    /// `.directionsRest`) rather than a measured content height, which ran the buttons a
+    /// card's-height too high above the directions card.
+    private var mapControlsBottomPadding: CGFloat {
+        let fraction: CGFloat = directionsViewModel.isActive ? 0.46 : 0.47
+        return screenHeight * fraction + 12
+    }
+
     private var mapControlsOverlay: some View {
         VStack {
             if searchViewModel.showSearchHereButton && !directionsViewModel.isActive {
@@ -626,8 +645,8 @@ struct MapScreen: View {
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.bottom, sheetHeight + 20)
-            .animation(.smooth(duration: 0.3), value: sheetHeight)
+            .padding(.bottom, mapControlsBottomPadding)
+            .animation(.smooth(duration: 0.3), value: directionsViewModel.isActive)
             .animation(.snappy(duration: 0.35), value: isCloseEnoughForStreetControls)
         }
         .animation(.smooth(duration: 0.3), value: searchViewModel.showSearchHereButton)

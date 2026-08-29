@@ -236,12 +236,13 @@ struct DirectionsCard: View {
                     isPlaceholder: false
                 )
                 
-                // Transit routing can't honour waypoints, and Apple leaves the row out in that
-                // mode for the same reason. Dropping it is also what buys the transit route card
-                // the height it needs — with Add Stop present the card overflowed the sheet, and
-                // an overflowing top-aligned stack clips its header, which is what put the
-                // grabber through the "Directions" title.
-                if viewModel.mode != .transit {
+                // Only driving supports waypoints — walking/cycling/transit routing can't
+                // honour a stop in the middle, and Apple leaves the row out in those modes too.
+                // Dropping it in transit also buys the route card the height it needs: with Add
+                // Stop present the card overflowed the sheet, and an overflowing top-aligned
+                // stack clips its header, which is what put the grabber through the "Directions"
+                // title.
+                if viewModel.mode == .automobile {
                     Divider().padding(.leading, 44)
                     Button {
                         onAddStop()

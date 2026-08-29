@@ -48,7 +48,6 @@ struct SearchSheet: View {
     let currentLocation: CLLocation?
     @Binding var detent: PresentationDetent
     @Binding var collapsedHeight: CGFloat
-    @Binding var sheetHeight: CGFloat
     @Binding var directionsHeight: CGFloat
     /// Swaps the directions card for the stop-picker in place — see `AddStopSheet` for why this
     /// isn't a nested sheet, and MapScreen for why the state lives up there.
@@ -210,11 +209,6 @@ struct SearchSheet: View {
         .animation(.smooth(duration: 0.3), value: directionsViewModel.isActive)
         .animation(.smooth(duration: 0.3), value: viewModel.selectedResult)
         .animation(.smooth(duration: 0.3), value: isSearching)
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
-        } action: { newValue in
-            sheetHeight = newValue
-        }
         .onChange(of: isFieldFocused) { _, focused in
             // Gaining focus enters search mode; losing it (e.g. from scrolling) does not leave it.
             guard focused else { return }
