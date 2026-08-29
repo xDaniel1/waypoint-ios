@@ -29,10 +29,7 @@ struct DirectionsCard: View {
             // Header stays pinned so the close button is reachable at every detent height.
             header
                 .padding(.horizontal)
-                // Clears the sheet's drag indicator — at 26 the grabber still cut across the top
-                // of the "Directions" glyphs. The extra 8pt here is paid for out of the bottom
-                // padding below, so the title moves down without the card growing.
-                .padding(.top, 34)
+                .padding(.top, 44)
                 .padding(.bottom, 4)
 
             // A ScrollView always fills its container regardless of how tall its content
@@ -68,10 +65,12 @@ struct DirectionsCard: View {
             } else if let errorMessage = viewModel.errorMessage {
                 errorView(errorMessage)
             } else if !viewModel.routeOptions.isEmpty {
-                if viewModel.mode == .transit {
-                    transitList
-                } else if isExpanded {
-                    routeList
+                if isExpanded {
+                    if viewModel.mode == .transit {
+                        transitList
+                    } else {
+                        routeList
+                    }
                 } else {
                     pagedRoutes
                 }
@@ -151,10 +150,13 @@ struct DirectionsCard: View {
 
     private func headerCircleIcon(_ systemName: String) -> some View {
         Image(systemName: systemName)
-            .scaledFont(size: 15, weight: .semibold, relativeTo: .subheadline)
+            .scaledFont(size: 17, weight: .semibold, relativeTo: .subheadline)
             .foregroundStyle(.primary)
-            .frame(width: 32, height: 32)
-            .background(.thickMaterial, in: Circle())
+            // Apple's share/close buttons are noticeably chunkier than ours were, and they're
+            // glass rather than a flat material disc — on a dark map the material read as a
+            // solid black circle instead of picking up what's behind it.
+            .frame(width: 40, height: 40)
+            .glassEffect(.regular.interactive(), in: Circle())
     }
 
     private var shareSummary: String {
@@ -234,19 +236,26 @@ struct DirectionsCard: View {
                     isPlaceholder: false
                 )
                 
-                Divider().padding(.leading, 44)
-                Button {
-                    onAddStop()
-                } label: {
-                    endpointRow(
-                        symbol: "plus.circle.fill",
-                        symbolColor: .blue,
-                        text: "Add Stop",
-                        isPlaceholder: true,
-                        showMic: true
-                    )
+                // Transit routing can't honour waypoints, and Apple leaves the row out in that
+                // mode for the same reason. Dropping it is also what buys the transit route card
+                // the height it needs — with Add Stop present the card overflowed the sheet, and
+                // an overflowing top-aligned stack clips its header, which is what put the
+                // grabber through the "Directions" title.
+                if viewModel.mode != .transit {
+                    Divider().padding(.leading, 44)
+                    Button {
+                        onAddStop()
+                    } label: {
+                        endpointRow(
+                            symbol: "plus.circle.fill",
+                            symbolColor: .blue,
+                            text: "Add Stop",
+                            isPlaceholder: true,
+                            showMic: true
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(.vertical, 4)
@@ -328,10 +337,28 @@ struct DirectionsCard: View {
     private var pagedRoutes: some View {
         TabView(selection: pagedSelection) {
             ForEach(viewModel.routeOptions) { option in
-                routeCard(option, isSelected: false)
-                    // Route card sits just clear of the page dots.
+                if viewModel.mode == .transit {
+                    TransitCard(
+                        option: option,
+                        isSelected: false,
+                        onSelect: { viewModel.select(option) },
+                        onGo: {
+                            viewModel.select(option)
+                            onStartNavigation(option)
+                        },
+                        onShowDetails: {
+                            viewModel.select(option)
+                            onShowSteps(option)
+                        }
+                    )
                     .padding(.bottom, 14)
                     .tag(option.id)
+                } else {
+                    routeCard(option, isSelected: false)
+                        // Route card sits just clear of the page dots.
+                        .padding(.bottom, 14)
+                        .tag(option.id)
+                }
             }
         }
         .tabViewStyle(.page(indexDisplayMode: viewModel.routeOptions.count > 1 ? .always : .never))
@@ -342,7 +369,7 @@ struct DirectionsCard: View {
         // The route card sits centred in this frame and the dots pin to its bottom, so making it
         // taller is what moves both down the card — measured against Apple, whose route card
         // ends ~70px lower and whose dots sit ~30px nearer the card's bottom edge than ours did.
-        .frame(height: 140)
+        .frame(height: viewModel.mode == .transit ? 170 : 140)
         .accessibilityIdentifier("routePager")
     }
 
@@ -490,6 +517,13 @@ private struct TransitCard: View {
     /// Tapping the card body opens the itinerary; GO starts the trip.
     let onShowDetails: () -> Void
 
+    /// "Departs 1:55 PM · 2:40 ETA", dropping the departure half when Google didn't give one.
+    private var subtitle: String {
+        let eta = "\(option.formattedETA) ETA"
+        guard let departure = option.departureText else { return eta }
+        return "\(departure) · \(eta)"
+    }
+
     var body: some View {
         Button(action: onShowDetails) {
             VStack(alignment: .leading, spacing: 6) {
@@ -500,32 +534,26 @@ private struct TransitCard: View {
                                 .scaledFont(size: 28, weight: .bold, relativeTo: .title)
                                 .foregroundStyle(.primary)
 
-                            Text(option.fare ?? "$3.00")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Color.secondary.opacity(0.15), in: Capsule())
+                            // Only when Google actually priced the trip. The fallback here used
+                            // to be a hardcoded "$3.00", which is a guess dressed up as a fare.
+                            if let fare = option.fare {
+                                Text(fare)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Color.secondary.opacity(0.15), in: Capsule())
+                            }
                         }
 
-                        HStack(spacing: 4) {
-                            Text(option.departureText ?? "Bus departs at 11:35 PM")
-                                .font(.subheadline.weight(.regular))
-                                .foregroundStyle(.secondary)
-
-                            Text("Now 11:41 PM")
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(.orange)
-
-                            Image(systemName: "wifi")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(.orange)
-
-                            Text("\(option.formattedETA) ETA")
-                                .font(.subheadline.weight(.regular))
-                                .foregroundStyle(.secondary)
-                        }
-                        .lineLimit(1)
+                        // One plain "Departs … · … ETA" line, like Apple's. The old version
+                        // padded this out with a hardcoded "Now 11:41 PM" and a wifi glyph that
+                        // were literals, not live data — they read as a realtime feed while
+                        // showing the same clock time on every route, forever.
+                        Text(subtitle)
+                            .font(.subheadline.weight(.regular))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                     Spacer()
                     GoButton(action: onGo)
