@@ -152,6 +152,7 @@ struct MapScreen: View {
                                 coordinate: coordinate
                             )
                             .tint(.orange)
+                            .annotationTitles(.hidden)
                         }
                     }
                 }
@@ -226,6 +227,7 @@ struct MapScreen: View {
                 }
             }
             .mapStyle(navigationViewModel.isActive ? .standard(elevation: .realistic, showsTraffic: true) : mapStyle)
+            .safeAreaPadding(.bottom, navigationViewModel.isActive ? navBarHeight : (mapControlsBottomPadding - 12))
             .onMapCameraChange(frequency: .onEnd) { context in
                 searchViewModel.updateSearchRegion(context.region)
                 mapCenter = context.region.center

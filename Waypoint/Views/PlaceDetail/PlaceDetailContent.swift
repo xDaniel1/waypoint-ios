@@ -11,6 +11,7 @@ struct PlaceDetailContent: View {
 
     @State private var viewModel = PlaceDetailViewModel()
     @State private var lightbox: LightboxSelection?
+    @State private var lookAroundScene: MKLookAroundScene?
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -34,6 +35,8 @@ struct PlaceDetailContent: View {
                             photoShowcase(photos)
                                 .padding(.top, 20)
                         }
+
+                        lookAroundSection()
 
                         aboutSection(place)
                         ratingsSection(place)
@@ -75,6 +78,8 @@ struct PlaceDetailContent: View {
             floatingHeaderControls
         }
         .task(id: result.id) {
+            let request = MKLookAroundSceneRequest(coordinate: result.coordinate)
+            lookAroundScene = try? await request.scene
             await viewModel.load(for: result)
         }
         .fullScreenCover(item: $lightbox) { selection in
@@ -321,6 +326,17 @@ struct PlaceDetailContent: View {
                 }
             }
             .padding(.horizontal)
+        }
+    }
+
+    @ViewBuilder
+    private func lookAroundSection() -> some View {
+        if let scene = lookAroundScene {
+            LookAroundPreview(initialScene: scene)
+                .frame(height: 150)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .padding(.horizontal)
+                .padding(.top, 20)
         }
     }
 

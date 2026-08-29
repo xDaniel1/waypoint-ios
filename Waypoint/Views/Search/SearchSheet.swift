@@ -440,6 +440,7 @@ struct SearchSheet: View {
                             imageURL: aroundMe.photoURL(for: place),
                             distanceText: place.coordinate.map { distanceText(to: $0) ?? "" }
                         ) {
+                            Haptics.select()
                             selectDiscover(place)
                         }
                     }
@@ -540,6 +541,7 @@ struct SearchSheet: View {
                         imageURL: viewModel.photoURL(forCategoryResult: place),
                         distance: place.coordinate.flatMap { distanceText(to: $0) }
                     ) {
+                        Haptics.select()
                         selectDiscover(place)
                     }
                     .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 0, trailing: 4))

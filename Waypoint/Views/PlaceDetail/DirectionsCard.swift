@@ -380,6 +380,9 @@ struct DirectionsCard: View {
             get: { viewModel.selectedRoute?.id ?? viewModel.routeOptions.first?.id ?? UUID() },
             set: { newValue in
                 guard let option = viewModel.routeOptions.first(where: { $0.id == newValue }) else { return }
+                if viewModel.selectedRoute?.id != newValue {
+                    Haptics.select()
+                }
                 viewModel.select(option)
             }
         )
