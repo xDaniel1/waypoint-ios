@@ -27,11 +27,14 @@ actor PhotoCache {
 
     /// Forces the bitmap decode now, off the main thread.
     ///
-    /// `UIImage(data:)` doesn't actually decode — it defers that until the image is first drawn,
-    /// which happens on the main thread mid-scroll. That's a per-image hitch on a list of photo
-    /// cards, and it's the single biggest cause of the scrolling not feeling like Apple's.
+    /// We use `byPreparingThumbnail(ofSize:)` instead of `byPreparingForDisplay()` to aggressively
+    /// downsample large 4K Google photos into memory-friendly thumbnails. Without this, scrolling
+    /// the discover shelves spikes RAM by hundreds of megabytes.
     private static func decoded(_ image: UIImage) async -> UIImage {
-        await image.byPreparingForDisplay() ?? image
+        // A generous maximum bounds for our place cards (usually ~200x150 up to full width).
+        // Preserves aspect ratio natively.
+        let targetSize = CGSize(width: 800, height: 800)
+        return await image.byPreparingThumbnail(ofSize: targetSize) ?? image
     }
 
     /// Rough byte cost of a decoded bitmap, so `totalCostLimit` is in real memory rather than

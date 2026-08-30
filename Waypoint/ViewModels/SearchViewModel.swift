@@ -31,6 +31,7 @@ final class SearchViewModel {
 
     private let completerService = SearchCompleterService()
     private var lastRegionCenter: CLLocationCoordinate2D?
+    private var regionUpdateTask: Task<Void, Never>?
 
     // MARK: Category browse
 
@@ -123,7 +124,14 @@ final class SearchViewModel {
             }
         }
         lastRegionCenter = newCenter
-        Task { await nearbyService.refresh(around: region) }
+        
+        regionUpdateTask?.cancel()
+        regionUpdateTask = Task {
+            // Debounce map pans by 500ms so we don't spam the Places API while the user is actively swiping.
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            await nearbyService.refresh(around: region)
+        }
     }
     
     func searchInCurrentRegion(center: CLLocationCoordinate2D) {
