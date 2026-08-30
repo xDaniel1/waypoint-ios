@@ -42,5 +42,7 @@
 	<string>$(GOOGLE_PLACES_API_KEY)</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
