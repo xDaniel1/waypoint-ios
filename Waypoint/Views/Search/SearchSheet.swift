@@ -661,10 +661,13 @@ struct SearchSheet: View {
                                 Text(category.title).font(.callout.weight(.semibold))
                             }
                             .foregroundStyle(.primary)
-                            // A size step up from Apple's own pills, measured on the same
-                            // device — ours were reading noticeably daintier next to theirs.
+                            // Sized off Apple's own pills rather than by eye: measured on the
+                            // same device, theirs stand ~42pt tall and ours came in at ~38pt,
+                            // which is the whole of why they read bigger. Width already matches
+                            // (ours is a shade wider, since this label is semibold and theirs
+                            // isn't), so only the vertical padding moves.
                             .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
+                            .padding(.vertical, 12)
                             .glassEffect(
                                 viewModel.activeCategory == category.title
                                     ? .regular.tint(.blue.opacity(0.5)).interactive()
