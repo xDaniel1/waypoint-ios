@@ -26,6 +26,12 @@ struct RouteOption: Identifiable {
     var departureText: String?
     /// Named stops along the selected transit ride, for drawing on the map.
     var transitStops: [NamedStop] = []
+    /// The route broken into the individual legs you actually travel — each walk and each ride
+    /// separately — so the map can draw a J ride in the J's brown and the A you transfer to in
+    /// the A's blue, instead of painting the whole trip one colour. Empty for non-transit
+    /// routes, and empty for transit routes where the provider didn't return per-step geometry;
+    /// `MapScreen` falls back to a single `routeTint` line in that case.
+    var transitSegments: [TransitSegment] = []
 
     var polyline: MKPolyline {
         MKPolyline(coordinates: coordinates, count: coordinates.count)
@@ -63,6 +69,46 @@ struct RouteOption: Identifiable {
 
     var formattedETA: String {
         return Formatters.bareClockTime.string(from: Date().addingTimeInterval(travelTime))
+    }
+}
+
+/// One leg of a transit trip as a drawable stretch of the map, in the colour of the service
+/// you're on for that stretch.
+///
+/// Apple Maps colours a transit route per ride: the J's brown up to the transfer, the A's blue
+/// after it, with the walk to and from the station in grey. Doing that needs the geometry split
+/// the same way the itinerary is, which is why the Routes request asks for each step's own
+/// polyline rather than just the whole-route one.
+struct TransitSegment: Identifiable {
+    let id = UUID()
+    let coordinates: [CLLocationCoordinate2D]
+    /// Where this leg sits inside `RouteOption.coordinates`, so navigation progress (a single
+    /// index along the whole route) can tell which part of this leg is already behind you.
+    let range: Range<Int>
+    let isWalk: Bool
+    /// The bare service designation — "J", "A", "M14A-SBS" — or nil for a walk.
+    let lineLabel: String?
+    /// Whatever colour the provider supplied, used only for operators the MTA bundle doesn't
+    /// cover. Subway lines always use the MTA's own published colour.
+    let providerColor: String?
+    let isSubway: Bool
+
+    /// Walking legs draw in the same grey Apple uses, so the coloured stretches read as "this
+    /// is the part where you're on a train."
+    @MainActor
+    var color: Color {
+        if isWalk { return Color(.systemGray) }
+        if isSubway, let label = lineLabel, let official = MTASubwayLines.officialColor(forLine: label) {
+            return official
+        }
+        return Color(hex: providerColor) ?? (isSubway ? .blue : .orange)
+    }
+
+    /// Apple dots the walking legs rather than drawing them solid.
+    var strokeStyle: StrokeStyle {
+        isWalk
+            ? StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round, dash: [1, 9])
+            : StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round)
     }
 }
 
@@ -276,12 +322,21 @@ extension RouteOption {
 }
 
 extension RouteOption {
-    /// The colour this route draws in. Transit uses the operator's own line colour when the
-    /// response carried one — Apple draws the J in its gold, the G in its green — and everything
-    /// else falls back to the standard route blue.
+    /// The colour this route draws in when it can't be drawn leg by leg. Transit uses the
+    /// operator's own line colour when the response carried one — Apple draws the J in its gold,
+    /// the G in its green — and everything else falls back to the standard route blue.
+    ///
+    /// Prefer `transitSegments` where it's non-empty: this only ever knows about the *first*
+    /// ride, so a J-then-A trip drawn with it is brown the whole way.
     @MainActor
     var routeTint: Color {
         guard let step = transitSteps.first else { return .blue }
         return step.tintColor
+    }
+
+    /// The leg you're on at a given point along the route, by the same index navigation tracks
+    /// progress with. Used to tint the banner and the remaining-line while riding.
+    func transitSegment(at index: Int) -> TransitSegment? {
+        transitSegments.first { $0.range.contains(index) } ?? transitSegments.last
     }
 }

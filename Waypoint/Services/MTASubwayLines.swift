@@ -20,6 +20,10 @@ enum MTASubwayLines {
         let id: String
         let color: Color
         let coordinates: [CLLocationCoordinate2D]
+        /// Built once at load. The map's content closure re-runs on every location fix, and
+        /// handing `MapPolyline` raw coordinates there meant re-copying all 29 lines' points
+        /// each time — for a rider moving through the city, several times a second.
+        let polyline: MKPolyline
     }
 
     private struct Raw: Decodable {
@@ -36,12 +40,14 @@ enum MTASubwayLines {
         do {
             let decoded = try JSONDecoder().decode([String: Raw].self, from: data)
             return decoded.map { id, raw in
-                Line(
+                let coordinates = raw.points.compactMap {
+                    $0.count == 2 ? CLLocationCoordinate2D(latitude: $0[0], longitude: $0[1]) : nil
+                }
+                return Line(
                     id: id,
                     color: Color(hex: raw.color) ?? .gray,
-                    coordinates: raw.points.compactMap {
-                        $0.count == 2 ? CLLocationCoordinate2D(latitude: $0[0], longitude: $0[1]) : nil
-                    }
+                    coordinates: coordinates,
+                    polyline: MKPolyline(coordinates: coordinates, count: coordinates.count)
                 )
             }
         } catch {

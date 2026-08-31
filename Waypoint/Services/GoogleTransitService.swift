@@ -45,6 +45,11 @@ struct GoogleTransitService {
                 "routes.duration", "routes.distanceMeters", "routes.polyline.encodedPolyline",
                 "routes.description", "routes.legs.steps.transitDetails",
                 "routes.legs.steps.travelMode", "routes.legs.steps.staticDuration",
+                // Per-step geometry, so each ride can be drawn in its own line's colour rather
+                // than the whole trip taking the first ride's. This doesn't move the request to
+                // a pricier SKU — `routes.legs.steps.transitDetails` above already puts it in
+                // the advanced tier, and step polylines ride along in the same one.
+                "routes.legs.steps.polyline.encodedPolyline",
                 "routes.travelAdvisory.transitFare",
             ].joined(separator: ","),
             forHTTPHeaderField: "X-Goog-FieldMask"
@@ -113,6 +118,7 @@ private struct RoutesResponse: Codable {
         let travelMode: String?
         let staticDuration: String?
         let transitDetails: TransitDetails?
+        let polyline: Polyline?
     }
 
     struct TransitDetails: Codable {
@@ -154,6 +160,10 @@ private struct ParsedRoute: Codable {
     var fare: String?
     var steps: [ParsedTransitStep]
     var walkMinutes: [Int]
+    /// Every step's own geometry, in trip order. Optional so a cache file written before this
+    /// existed still decodes — those entries just fall back to the single-colour whole-route
+    /// line until their 3-minute TTL expires.
+    var stepGeometry: [ParsedStepGeometry]?
 
     init(_ route: RoutesResponse.Route) {
         seconds = ParsedRoute.parseDuration(route.duration)
@@ -169,6 +179,24 @@ private struct ParsedRoute: Codable {
             guard step.travelMode == "WALK" else { return nil }
             let minutes = Int(ParsedRoute.parseDuration(step.staticDuration) / 60)
             return minutes > 0 ? minutes : nil
+        }
+        // Walk the steps once more to pair each stretch of geometry with the ride it belongs to.
+        // `transitStepIndex` points back into `steps`, which only holds the rides, so the walks
+        // in between carry no index and draw grey.
+        var transitStepIndex = 0
+        stepGeometry = allSteps.map { step in
+            let index: Int?
+            if step.transitDetails != nil {
+                index = transitStepIndex
+                transitStepIndex += 1
+            } else {
+                index = nil
+            }
+            return ParsedStepGeometry(
+                encodedPolyline: step.polyline?.encodedPolyline ?? "",
+                isWalk: step.travelMode == "WALK" || step.transitDetails == nil,
+                transitStepIndex: index
+            )
         }
 
         summary = steps.first.map { "via \($0.displayLine)" } ?? route.description ?? "Transit"
@@ -188,13 +216,19 @@ private struct ParsedRoute: Codable {
 
     var routeOption: RouteOption {
         let transitSteps = steps.map(\.transitStep)
+        let split = Self.split(stepGeometry, rides: transitSteps)
         var option = RouteOption(
-            coordinates: PolylineDecoder.decode(encodedPolyline),
+            // When every step came back with geometry, the route's coordinates *are* the legs
+            // stitched together — which keeps the indices `TransitSegment.range` refers to and
+            // the ones navigation tracks progress with as the same numbers. Otherwise fall back
+            // to the whole-route polyline and let the map draw one tinted line.
+            coordinates: split.isEmpty ? PolylineDecoder.decode(encodedPolyline) : split.coordinates,
             travelTime: seconds,
             distanceMeters: distanceMeters,
             summary: summary,
             transitSteps: transitSteps
         )
+        option.transitSegments = split.segments
         option.fare = fare
         option.transitStops = steps.flatMap(\.namedStops)
         // Walk legs first, then each ride, in the order Google returned them.
@@ -206,6 +240,67 @@ private struct ParsedRoute: Codable {
         }
         option.departureText = steps.first?.departureText
         return option
+    }
+}
+
+/// One step's raw geometry plus which ride (if any) it belongs to.
+private struct ParsedStepGeometry: Codable {
+    var encodedPolyline: String
+    var isWalk: Bool
+    var transitStepIndex: Int?
+}
+
+extension ParsedRoute {
+    /// Stitches the per-step polylines into one coordinate array and records which slice of it
+    /// each leg occupies.
+    ///
+    /// Returns empty when any step is missing geometry — a partially-coloured route would draw
+    /// with gaps where the missing steps were, which is worse than one honest solid line.
+    static func split(
+        _ geometry: [ParsedStepGeometry]?,
+        rides: [TransitStep]
+    ) -> (coordinates: [CLLocationCoordinate2D], segments: [TransitSegment], isEmpty: Bool) {
+        guard let geometry, !geometry.isEmpty,
+              geometry.allSatisfy({ !$0.encodedPolyline.isEmpty }) else {
+            return ([], [], true)
+        }
+
+        var merged: [CLLocationCoordinate2D] = []
+        var segments: [TransitSegment] = []
+
+        for step in geometry {
+            var coordinates = PolylineDecoder.decode(step.encodedPolyline)
+            // Consecutive steps repeat the coordinate they meet at; keeping both would leave a
+            // zero-length hop between legs.
+            if let tail = merged.last, let head = coordinates.first, isSamePoint(tail, head) {
+                coordinates.removeFirst()
+            }
+            guard !coordinates.isEmpty else { continue }
+
+            let start = merged.count
+            merged.append(contentsOf: coordinates)
+            let ride = step.transitStepIndex.flatMap { rides.indices.contains($0) ? rides[$0] : nil }
+            segments.append(
+                TransitSegment(
+                    // Reach back one point into the previous leg so the colours butt up against
+                    // each other instead of leaving a hairline gap at the transfer.
+                    coordinates: Array(merged[max(0, start - 1)..<merged.count]),
+                    range: start..<merged.count,
+                    isWalk: ride == nil,
+                    lineLabel: ride?.displayLine,
+                    providerColor: ride?.color,
+                    isSubway: ride?.isSubway ?? false
+                )
+            )
+        }
+
+        guard merged.count > 1, !segments.isEmpty else { return ([], [], true) }
+        return (merged, segments, false)
+    }
+
+    /// ~1cm at NYC latitudes — tight enough that only a genuinely repeated joint matches.
+    private static func isSamePoint(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Bool {
+        abs(a.latitude - b.latitude) < 1e-7 && abs(a.longitude - b.longitude) < 1e-7
     }
 }
 

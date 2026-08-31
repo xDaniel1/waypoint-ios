@@ -26,6 +26,12 @@ final class MapViewModel {
         locationManager.currentHeadingAccuracy
     }
 
+    /// Radius the current fix is confident to, in metres; drives the accuracy halo under the
+    /// blue dot. Negative when there's no valid fix yet.
+    var horizontalAccuracy: CLLocationAccuracy {
+        locationManager.horizontalAccuracy
+    }
+
     /// Called on every location update; consumers should debounce/guard for one-shot work like a weather fetch.
     var onLocationUpdate: ((CLLocation) -> Void)?
 
@@ -47,15 +53,19 @@ final class MapViewModel {
     /// Called when turn-by-turn navigation starts — the contextually-right moment to ask for
     /// Always authorization (Apple rejects apps that ask upfront) and to let updates keep
     /// flowing if the driver backgrounds the app mid-trip.
-    func beginBackgroundTracking() {
+    func beginBackgroundTracking(driving: Bool) {
         locationManager.requestAlwaysPermission()
         locationManager.setBackgroundUpdatesEnabled(true)
+        // Road snapping is a help in a car and a liability on a train — it drags the fix onto
+        // the nearest street, which for an above-ground subway is the avenue beside the tracks.
+        locationManager.setProfile(driving ? .driving : .navigating)
     }
 
     /// Called when navigation ends, so the app isn't tracking location in the background once
     /// there's no active trip to track.
     func endBackgroundTracking() {
         locationManager.setBackgroundUpdatesEnabled(false)
+        locationManager.setProfile(.navigating)
     }
 
     func centerCamera(on coordinate: CLLocationCoordinate2D) {
@@ -101,6 +111,37 @@ final class MapViewModel {
     func recenterOnUser() {
         guard let location = currentLocation else { return }
         centerCamera(on: location.coordinate)
+    }
+
+    /// Apple Maps' compass mode: the second tap of the location button. It spins the map so the
+    /// direction you're facing points up — and that is *all* it does. The zoom you picked and
+    /// whether you were tilted both survive.
+    ///
+    /// This used to route through `followUser`, which hard-codes a 400m tilted navigation
+    /// camera, so asking for "point the map where I'm facing" while browsing slammed you into
+    /// a 3D street-level view you never asked for.
+    func orientToHeading(at location: CLLocation, heading: CLLocationDirection, camera: MapCamera?) {
+        cameraPosition = .camera(
+            MapCamera(
+                centerCoordinate: location.coordinate,
+                distance: camera?.distance ?? 1000,
+                heading: heading >= 0 ? heading : 0,
+                pitch: camera?.pitch ?? 0
+            )
+        )
+    }
+
+    /// Leaving compass mode: swing back to north-up over the user without throwing away their
+    /// zoom, which `recenterOnUser`'s fixed 0.01° span was doing.
+    func straightenToNorth(at location: CLLocation, camera: MapCamera?) {
+        cameraPosition = .camera(
+            MapCamera(
+                centerCoordinate: location.coordinate,
+                distance: camera?.distance ?? 1000,
+                heading: 0,
+                pitch: camera?.pitch ?? 0
+            )
+        )
     }
 
     /// Keeps the map centered on a moving user without rotating it or resetting the zoom

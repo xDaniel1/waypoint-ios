@@ -76,6 +76,18 @@ final class NavigationViewModel {
     var onStopAdded: (() -> Void)?
     var onIncidentReported: (() -> Void)?
 
+    /// Projected copy of `route.coordinates`, built once when a route is set.
+    ///
+    /// Progress used to be measured by building two `CLLocation` objects per polyline point and
+    /// calling `distance(from:)` — over the whole route, twice, on the main actor, on every GPS
+    /// fix. A cross-Brooklyn transit route is thousands of points, so that was thousands of
+    /// object allocations a second competing with the map for the main thread. `MKMapPoint` is a
+    /// struct and its `distance(to:)` is plain arithmetic.
+    private var mapPoints: [MKMapPoint] = []
+    /// Metres from each point to the end of the route, so "how much is left" is a lookup rather
+    /// than a fresh walk of the remaining polyline every fix.
+    private var metresRemaining: [Double] = []
+
     private var announcedUpcomingForStep: Int?
     private var announcedImmediateForStep = -1
     private var hasAnnouncedArrival = false
@@ -84,6 +96,15 @@ final class NavigationViewModel {
     /// Two consecutive fixes further than this from the route (not one — GPS jitters near
     /// overpasses/parking lots) before we treat it as actually off-route.
     private let offRouteThreshold: CLLocationDistance = 45
+
+    /// The route as the map should draw it right now: for a drive, the road ahead bright and
+    /// the part behind dimmed; for a transit trip, each leg in its own line's colour, split at
+    /// wherever you've got to.
+    ///
+    /// Recomputed only when progress actually moves to a new polyline point, not on every view
+    /// evaluation — the arrays here get rebuilt, and the map's content closure runs far more
+    /// often than the rider moves 25 metres.
+    private(set) var drawableSegments: [DrawableRouteSegment] = []
 
     /// The portion of the route still ahead, drawn bright/thick like Apple Maps.
     var remainingCoordinates: [CLLocationCoordinate2D] {
@@ -168,6 +189,8 @@ final class NavigationViewModel {
         hasAnnouncedArrival = false
         offRouteStreak = 0
         lastRerouteRequest = .distantPast
+        cacheGeometry(of: route)
+        rebuildDrawableSegments()
         announceFirstStep(of: route)
     }
 
@@ -180,6 +203,9 @@ final class NavigationViewModel {
         progressIndex = 0
         remainingTime = 0
         remainingDistance = 0
+        mapPoints = []
+        metresRemaining = []
+        drawableSegments = []
     }
 
     /// Swaps in a freshly-calculated route after drifting off the original path. Unlike
@@ -193,6 +219,8 @@ final class NavigationViewModel {
         remainingDistance = newRoute.distanceMeters
         announcedUpcomingForStep = nil
         announcedImmediateForStep = -1
+        cacheGeometry(of: newRoute)
+        rebuildDrawableSegments()
         onAnnouncement?("Rerouting")
         announceFirstStep(of: newRoute)
     }
@@ -254,9 +282,12 @@ final class NavigationViewModel {
         // Recompute remaining distance from the closest polyline point to the destination, and
         // track how far off that closest point actually is — that distance IS the off-route
         // check, no separate calculation needed.
-        let (idx, offRouteDistance) = closestPointIndex(to: location.coordinate, in: route.coordinates)
-        progressIndex = idx
-        let remaining = pathDistance(from: idx, in: route.coordinates)
+        let (idx, offRouteDistance) = closestPointIndex(to: location.coordinate)
+        if idx != progressIndex {
+            progressIndex = idx
+            rebuildDrawableSegments()
+        }
+        let remaining = metresRemaining.indices.contains(idx) ? metresRemaining[idx] : 0
         remainingDistance = remaining
         let totalDistance = route.distanceMeters
         if totalDistance > 0 {
@@ -285,30 +316,102 @@ final class NavigationViewModel {
         return route.coordinates[i]
     }
 
-    private func closestPointIndex(to point: CLLocationCoordinate2D, in coords: [CLLocationCoordinate2D])
-        -> (index: Int, distance: CLLocationDistance)
-    {
-        var bestIndex = 0
-        var bestDist = CLLocationDistance.greatestFiniteMagnitude
-        let target = CLLocation(latitude: point.latitude, longitude: point.longitude)
-        for (i, c) in coords.enumerated() {
-            let d = target.distance(from: CLLocation(latitude: c.latitude, longitude: c.longitude))
-            if d < bestDist {
-                bestDist = d
-                bestIndex = i
-            }
+    /// Projects the route once and precomputes the distance-to-end table.
+    private func cacheGeometry(of route: RouteOption) {
+        mapPoints = route.coordinates.map(MKMapPoint.init)
+        metresRemaining = Array(repeating: 0, count: mapPoints.count)
+        guard mapPoints.count > 1 else { return }
+        for i in stride(from: mapPoints.count - 2, through: 0, by: -1) {
+            metresRemaining[i] = metresRemaining[i + 1] + mapPoints[i].distance(to: mapPoints[i + 1])
         }
-        return (bestIndex, bestDist)
     }
 
-    private func pathDistance(from startIndex: Int, in coords: [CLLocationCoordinate2D]) -> Double {
-        guard coords.indices.contains(startIndex) else { return 0 }
-        var total: Double = 0
-        for i in startIndex..<(coords.count - 1) {
-            let a = CLLocation(latitude: coords[i].latitude, longitude: coords[i].longitude)
-            let b = CLLocation(latitude: coords[i + 1].latitude, longitude: coords[i + 1].longitude)
-            total += a.distance(from: b)
+    /// Nearest polyline point to the rider, plus how far off it they are — that distance *is*
+    /// the off-route check.
+    ///
+    /// Searches a window around where they were last, since a trip moves forward along the line
+    /// rather than teleporting, and only falls back to scanning the whole route when nothing in
+    /// the window is close — which is exactly the case (fresh start, reroute, genuinely off
+    /// path) where the full scan is worth paying for.
+    private func closestPointIndex(to point: CLLocationCoordinate2D)
+        -> (index: Int, distance: CLLocationDistance)
+    {
+        guard !mapPoints.isEmpty else { return (0, 0) }
+        let target = MKMapPoint(point)
+
+        func scan(_ range: Range<Int>) -> (index: Int, distance: CLLocationDistance) {
+            var bestIndex = range.lowerBound
+            var bestDistance = CLLocationDistance.greatestFiniteMagnitude
+            for i in range {
+                let d = target.distance(to: mapPoints[i])
+                if d < bestDistance {
+                    bestDistance = d
+                    bestIndex = i
+                }
+            }
+            return (bestIndex, bestDistance)
         }
-        return total
+
+        let window = 200
+        let lower = max(0, progressIndex - window / 4)
+        let upper = min(mapPoints.count, progressIndex + window)
+        let near = scan(lower..<upper)
+        if near.distance <= offRouteThreshold * 2 { return near }
+        return scan(0..<mapPoints.count)
     }
+
+    /// Rebuilds what the map draws for the current progress. Drives are one blue line split in
+    /// two; transit trips keep each leg's own colour so a transfer reads as a colour change.
+    private func rebuildDrawableSegments() {
+        guard let route else {
+            drawableSegments = []
+            return
+        }
+
+        guard !route.transitSegments.isEmpty else {
+            let driveStyle = StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round)
+            var pieces: [DrawableRouteSegment] = []
+            let traveled = traveledCoordinates
+            if traveled.count > 1 {
+                pieces.append(.init(id: "traveled", coordinates: traveled, color: .blue, strokeStyle: driveStyle, isTraveled: true))
+            }
+            let remaining = remainingCoordinates
+            if remaining.count > 1 {
+                pieces.append(.init(id: "remaining", coordinates: remaining, color: .blue, strokeStyle: driveStyle, isTraveled: false))
+            }
+            drawableSegments = pieces
+            return
+        }
+
+        var pieces: [DrawableRouteSegment] = []
+        for (n, segment) in route.transitSegments.enumerated() {
+            // `segment.coordinates` reaches one point back into the previous leg so the colours
+            // meet cleanly, so the offset between a route-wide index and a local one is 1 for
+            // every leg but the first.
+            let offset = segment.range.lowerBound > 0 ? 1 : 0
+            let split = progressIndex - segment.range.lowerBound + offset
+            let colour = segment.color
+            let style = segment.strokeStyle
+
+            if split <= 0 {
+                pieces.append(.init(id: "\(n)-ahead", coordinates: segment.coordinates, color: colour, strokeStyle: style, isTraveled: false))
+            } else if split >= segment.coordinates.count - 1 {
+                pieces.append(.init(id: "\(n)-done", coordinates: segment.coordinates, color: colour, strokeStyle: style, isTraveled: true))
+            } else {
+                pieces.append(.init(id: "\(n)-done", coordinates: Array(segment.coordinates[0...split]), color: colour, strokeStyle: style, isTraveled: true))
+                pieces.append(.init(id: "\(n)-ahead", coordinates: Array(segment.coordinates[split...]), color: colour, strokeStyle: style, isTraveled: false))
+            }
+        }
+        drawableSegments = pieces
+    }
+}
+
+/// One stroke the map draws for the active trip.
+struct DrawableRouteSegment: Identifiable {
+    let id: String
+    let coordinates: [CLLocationCoordinate2D]
+    let color: Color
+    let strokeStyle: StrokeStyle
+    /// Already behind the rider, so it renders dimmed.
+    let isTraveled: Bool
 }

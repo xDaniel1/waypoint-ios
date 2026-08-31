@@ -41,6 +41,11 @@ struct MapScreen: View {
     /// Shared between the GPS-fix and compass-heading update paths so they never both animate
     /// the camera within the same window — that fight was the source of the stutter/snapping.
     @State private var lastCameraAnimation: Date = .distantPast
+    /// Compass rotation gets its own clock — see `animateHeading`.
+    @State private var lastHeadingAnimation: Date = .distantPast
+    /// Ground metres covered by one screen point at the current zoom, refreshed whenever the
+    /// camera settles. Only used to size the blue dot's accuracy halo.
+    @State private var metresPerPoint: Double = 1
     @State private var navBarHeight: CGFloat = 120
     /// Measured from the transit card, which replaces the driving bottom bar during a transit
     /// trip — without this the map controls were spaced off a bar that wasn't on screen and ended
@@ -122,7 +127,8 @@ struct MapScreen: View {
                         } else {
                             UserLocationDot(
                                 heading: viewModel.currentHeading,
-                                headingAccuracy: viewModel.currentHeadingAccuracy ?? 30
+                                headingAccuracy: viewModel.currentHeadingAccuracy ?? 30,
+                                accuracyRadiusPoints: accuracyRadiusInPoints
                             )
                         }
                     }
@@ -131,8 +137,11 @@ struct MapScreen: View {
                     UserAnnotation()
                 }
                 if shouldDrawTransitLines {
+                    // `MapPolyline(_:)` over a prebuilt MKPolyline, not `MapPolyline(coordinates:)`
+                    // — the map's content closure re-runs on every location fix, and the
+                    // coordinates form re-copied all 29 lines' points each time.
                     ForEach(MTASubwayLines.all) { line in
-                        MapPolyline(coordinates: line.coordinates)
+                        MapPolyline(line.polyline)
                             .stroke(line.color, style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round))
                     }
                 }
@@ -181,10 +190,20 @@ struct MapScreen: View {
                     }
                 }
                 if let selected = directionsViewModel.selectedRoute {
-                    // Transit rides draw in the operator's own line colour (the J's gold, the
-                    // G's green) rather than generic blue, matching how Apple colours the route.
-                    MapPolyline(selected.polyline)
-                        .stroke(selected.routeTint, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                    if selected.transitSegments.isEmpty {
+                        // Transit rides draw in the operator's own line colour (the J's gold, the
+                        // G's green) rather than generic blue, matching how Apple colours the route.
+                        MapPolyline(selected.polyline)
+                            .stroke(selected.routeTint, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                    } else {
+                        // A trip with a transfer isn't one colour. Each leg draws in the colour of
+                        // the service you're on for it — the J brown up to the transfer, the A blue
+                        // after — with the walks between them dotted grey, the way Apple does it.
+                        ForEach(selected.transitSegments) { segment in
+                            MapPolyline(coordinates: segment.coordinates)
+                                .stroke(segment.color, style: segment.strokeStyle)
+                        }
+                    }
                     // Colored on top of the base line wherever Google's live traffic data says
                     // this stretch is actually slower than free-flow — not just the whole-route
                     // "has traffic" badge.
@@ -209,15 +228,15 @@ struct MapScreen: View {
                 }
                 // Active navigation route: dim the traveled portion, keep the road ahead bright.
                 if navigationViewModel.isActive {
-                    let traveled = navigationViewModel.traveledCoordinates
-                    if traveled.count > 1 {
-                        MapPolyline(coordinates: traveled)
-                            .stroke(Color.blue.opacity(0.35), style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
-                    }
-                    let remaining = navigationViewModel.remainingCoordinates
-                    if remaining.count > 1 {
-                        MapPolyline(coordinates: remaining)
-                            .stroke(Color.blue, style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
+                    // A transit trip in progress keeps its per-line colours — the leg you're on
+                    // and the ones still ahead at full strength, the ones already ridden dimmed,
+                    // so a glance tells you both where you are and which train you're on next.
+                    ForEach(navigationViewModel.drawableSegments) { piece in
+                        MapPolyline(coordinates: piece.coordinates)
+                            .stroke(
+                                piece.color.opacity(piece.isTraveled ? 0.35 : 1),
+                                style: piece.strokeStyle
+                            )
                     }
                     if let route = navigationViewModel.route {
                         ForEach(route.congestionSegments) { segment in
@@ -237,6 +256,10 @@ struct MapScreen: View {
             .onMapCameraChange(frequency: .onEnd) { context in
                 searchViewModel.updateSearchRegion(context.region)
                 mapCenter = context.region.center
+                // 111_320m is a degree of latitude; longitude varies with latitude but the halo
+                // is a circle either way, so the vertical scale is the one that matters.
+                let visibleMetres = context.region.span.latitudeDelta * 111_320
+                metresPerPoint = max(visibleMetres / max(screenHeight, 1), 0.0001)
                 withAnimation(.smooth(duration: 0.35)) {
                     currentCamera = context.camera
                 }
@@ -337,12 +360,15 @@ struct MapScreen: View {
                     let heading = trackingMode == .followHeading
                         ? (viewModel.currentHeading ?? (location.course >= 0 ? location.course : 0))
                         : 0
-                    animateCamera(duration: 0.9) {
+                    // Linear, not `.smooth`: fixes now arrive faster than the animation lasts,
+                    // so an eased curve restarted every fix read as a pulse — accelerate, coast,
+                    // decelerate, repeat. Linear segments chain into one continuous glide.
+                    animateCamera(duration: 0.9, linear: true) {
                         viewModel.followUser(at: location, heading: heading)
                     }
                 } else if trackingMode == .follow, !isCameraUserControlled {
                     // Recenter without rotating — the map stays north-up, only the dot moves.
-                    animateCamera(duration: 0.6) {
+                    animateCamera(duration: 0.6, linear: true) {
                         viewModel.recenterKeepingZoom(on: location, camera: currentCamera)
                     }
                 }
@@ -383,8 +409,15 @@ struct MapScreen: View {
         .onChange(of: viewModel.currentHeading) { _, newHeading in
             guard let newHeading, let location = viewModel.currentLocation else { return }
             guard trackingMode == .followHeading else { return }
-            animateCamera(duration: 0.15, linear: true) {
-                viewModel.followUser(at: location, heading: newHeading)
+            // Rotation runs on its own throttle. It shares nothing with the GPS-follow path any
+            // more: the compass fires far more often than fixes arrive, and on one shared clock
+            // it was eating the budget and leaving the map trailing behind a moving rider.
+            animateHeading(duration: 0.25, linear: true) {
+                if navigationViewModel.isActive {
+                    viewModel.followUser(at: location, heading: newHeading)
+                } else {
+                    viewModel.orientToHeading(at: location, heading: newHeading, camera: currentCamera)
+                }
             }
         }
         .sheet(isPresented: .constant(!navigationViewModel.isActive)) {
@@ -431,7 +464,7 @@ struct MapScreen: View {
                     directionsViewModel.stop()
                     // Contextual, not upfront: this is the moment background tracking actually
                     // becomes useful, which is exactly when Apple expects an Always-location ask.
-                    viewModel.beginBackgroundTracking()
+                    viewModel.beginBackgroundTracking(driving: directionsViewModel.mode == .automobile)
                     Task { await navigationNotifications.requestAuthorization() }
                     // Starting navigation always takes the camera back, even if the user had
                     // panned away while choosing a route.
@@ -613,8 +646,8 @@ struct MapScreen: View {
         }
     }
 
-    /// Routes every programmatic camera move through one throttle so the GPS-fix path and the
-    /// compass-heading path never both animate the same camera at once and fight each other.
+    /// Throttles the GPS-fix-driven camera moves so two fixes arriving close together don't
+    /// stack animations on the same camera.
     private func animateCamera(duration: Double, linear: Bool = false, _ body: () -> Void) {
         let now = Date()
         guard now.timeIntervalSince(lastCameraAnimation) > duration * 0.6 else { return }
@@ -624,10 +657,26 @@ struct MapScreen: View {
         }
     }
 
+    /// The same, on a separate clock for compass-driven rotation.
+    ///
+    /// These used to share `lastCameraAnimation`, and because heading updates arrive far more
+    /// often than location fixes, the heading path kept claiming the window and the recenter
+    /// that should have followed a fix got dropped — the map visibly trailing behind someone
+    /// actually moving. Two clocks means neither can starve the other.
+    private func animateHeading(duration: Double, linear: Bool = false, _ body: () -> Void) {
+        let now = Date()
+        guard now.timeIntervalSince(lastHeadingAnimation) > duration * 0.6 else { return }
+        lastHeadingAnimation = now
+        withAnimation(linear ? .linear(duration: duration) : .smooth(duration: duration)) {
+            body()
+        }
+    }
+
     private func handleLocationButtonTap() {
         // Tapping re-center is how the user hands control back to automatic follow.
         isCameraUserControlled = false
         lastCameraAnimation = .distantPast
+        lastHeadingAnimation = .distantPast
         switch trackingMode {
         case .off:
             Haptics.select()
@@ -638,17 +687,23 @@ struct MapScreen: View {
         case .follow:
             Haptics.select()
             trackingMode = .followHeading
+            // Apple's second tap spins the map so the way you're facing points up, and changes
+            // nothing else. Going through `followUser` here used to also force a 400m tilted
+            // navigation camera, so browsing the map and asking to face north-of-you threw you
+            // into a 3D street view you never asked for.
             if let location = viewModel.currentLocation {
                 let heading = viewModel.currentHeading ?? 0
                 animateCamera(duration: 0.5) {
-                    viewModel.followUser(at: location, heading: heading)
+                    viewModel.orientToHeading(at: location, heading: heading, camera: currentCamera)
                 }
             }
         case .followHeading:
             Haptics.select()
             trackingMode = .follow
-            animateCamera(duration: 0.5) {
-                viewModel.recenterOnUser()
+            if let location = viewModel.currentLocation {
+                animateCamera(duration: 0.5) {
+                    viewModel.straightenToNorth(at: location, camera: currentCamera)
+                }
             }
         }
     }
@@ -730,6 +785,17 @@ struct MapScreen: View {
         }
         .animation(.smooth(duration: 0.3), value: searchViewModel.showSearchHereButton)
         .animation(.smooth(duration: 0.3), value: isMapRotated)
+    }
+
+    /// The accuracy halo's radius in screen points, or 0 when there's nothing worth drawing.
+    ///
+    /// Hidden below 25m because a good open-sky fix doesn't need a caveat and a permanent ring
+    /// around the dot would just be noise, and clamped at the top so a really bad fix — the kind
+    /// you get on a platform underground — shades the neighbourhood rather than the whole screen.
+    private var accuracyRadiusInPoints: Double {
+        let accuracy = viewModel.horizontalAccuracy
+        guard accuracy >= 25 else { return 0 }
+        return min(accuracy / metresPerPoint, 260)
     }
 
     private var isMapRotated: Bool {
