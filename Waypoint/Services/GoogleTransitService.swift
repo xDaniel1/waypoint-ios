@@ -57,7 +57,7 @@ struct GoogleTransitService {
             "computeAlternativeRoutes": true,
         ]
         if let departureDate, departureDate > Date() {
-            body["departureTime"] = ISO8601DateFormatter().string(from: departureDate)
+            body["departureTime"] = Formatters.iso8601.string(from: departureDate)
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
@@ -273,10 +273,8 @@ private struct ParsedTransitStep: Codable {
 
     /// "Departs 7:49 PM" — only when Google actually gave a departure time.
     var departureText: String? {
-        guard let departureISO, let date = ISO8601DateFormatter().date(from: departureISO) else { return nil }
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return "Departs \(formatter.string(from: date))"
+        guard let departureISO, let date = Formatters.iso8601.date(from: departureISO) else { return nil }
+        return "Departs \(Formatters.clockTime.string(from: date))"
     }
 }
 

@@ -18,8 +18,45 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>GOOGLE_PLACES_API_KEY</key>
+	<string>$(GOOGLE_PLACES_API_KEY)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>MTA_BUS_TIME_API_KEY</key>
+	<string>$(MTA_BUS_TIME_API_KEY)</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Waypoint uses your location in the background to keep tracking your trip and reroute you if you drift off course while another app is open.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Waypoint uses your location to center the map and show places near you.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Waypoint uses the microphone for voice search.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Waypoint uses speech recognition to turn your voice into a search query.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<true/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>CPTemplateApplicationSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneClassName</key>
+					<string>CPTemplateApplicationScene</string>
+					<key>UISceneConfigurationName</key>
+					<string>WaypointCarPlay</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).CarPlaySceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UIRequiredDeviceCapabilities</key>
@@ -32,23 +69,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Waypoint uses your location to center the map and show places near you.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Waypoint uses your location in the background to keep tracking your trip and reroute you if you drift off course while another app is open.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Waypoint uses the microphone for voice search.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Waypoint uses speech recognition to turn your voice into a search query.</string>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>location</string>
-	</array>
-	<key>GOOGLE_PLACES_API_KEY</key>
-	<string>$(GOOGLE_PLACES_API_KEY)</string>
-	<key>MTA_BUS_TIME_API_KEY</key>
-	<string>$(MTA_BUS_TIME_API_KEY)</string>
-	<key>NSSupportsLiveActivities</key>
-	<true/>
 </dict>
 </plist>

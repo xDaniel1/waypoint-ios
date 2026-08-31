@@ -42,9 +42,7 @@ struct RouteOption: Identifiable {
     }
 
     var formattedDuration: String {
-        let formatter = DateComponentsFormatter()
-        formatter.unitsStyle = .abbreviated
-        formatter.allowedUnits = travelTime >= 3600 ? [.hour, .minute] : [.minute]
+        let formatter = travelTime >= 3600 ? Formatters.hoursAndMinutes : Formatters.minutesOnly
         return formatter.string(from: max(travelTime, 60)) ?? "—"
     }
 
@@ -64,10 +62,7 @@ struct RouteOption: Identifiable {
     }
 
     var formattedETA: String {
-        let arrival = Date().addingTimeInterval(travelTime)
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm"
-        return formatter.string(from: arrival)
+        return Formatters.bareClockTime.string(from: Date().addingTimeInterval(travelTime))
     }
 }
 
@@ -198,7 +193,7 @@ struct TransitStep: Identifiable {
     var formattedArrivalTime: String? { Self.formattedClockTime(arrivalISO) }
 
     private static func formattedClockTime(_ iso: String?) -> String? {
-        guard let iso, let date = ISO8601DateFormatter().date(from: iso) else { return nil }
+        guard let iso, let date = Formatters.iso8601.date(from: iso) else { return nil }
         return date.formatted(date: .omitted, time: .shortened)
     }
 
@@ -275,7 +270,7 @@ extension RouteOption {
     /// Minutes until the first ride departs, from the transit response's own departure time.
     var minutesUntilDeparture: Int? {
         guard let iso = transitSteps.first?.departureISO,
-              let date = ISO8601DateFormatter().date(from: iso) else { return nil }
+              let date = Formatters.iso8601.date(from: iso) else { return nil }
         return max(0, Int(date.timeIntervalSinceNow / 60))
     }
 }

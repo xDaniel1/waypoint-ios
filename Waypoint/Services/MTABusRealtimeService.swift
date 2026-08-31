@@ -65,9 +65,8 @@ final class MTABusRealtimeService {
         let visits = feed.Siri.ServiceDelivery.StopMonitoringDelivery?
             .flatMap { $0.MonitoredStopVisit ?? [] } ?? []
 
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let plain = ISO8601DateFormatter()
+        let formatter = Formatters.iso8601FractionalSeconds
+        let plain = Formatters.iso8601
 
         arrivals = visits.compactMap { visit -> Arrival? in
             let journey = visit.MonitoredVehicleJourney

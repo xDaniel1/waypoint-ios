@@ -28,6 +28,14 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.danielguzman.waypoint
         CODE_SIGN_ENTITLEMENTS: Waypoint/Waypoint.entitlements
+        # CarPlay's entitlement (com.apple.developer.carplay-maps) is one Apple grants by
+        # application, not something a paid account just has. Until that request is approved,
+        # a device build carrying the key fails to sign at all ("Entitlement ... not found and
+        # could not be included in profile"), which would block installing the app on a phone
+        # entirely. The simulator doesn't validate provisioning, so the CarPlay build stays
+        # testable there. When Apple approves it, delete this override and put the key in the
+        # main entitlements file.
+        CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]: Waypoint/WaypointCarPlay.entitlements
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: Q9AGJR7SC5
         GENERATE_INFOPLIST_FILE: NO

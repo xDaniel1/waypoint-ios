@@ -114,15 +114,24 @@ final class NavigationViewModel {
 
     private(set) var currentLocation: CLLocation?
     
-    var formattedDistanceToNextStep: String? {
+    /// Metres to the upcoming maneuver. The phone shows this formatted; CarPlay hands the raw
+    /// measurement to `CPTravelEstimates` and lets the car format it in its own units.
+    var distanceToNextManeuver: Double? {
         guard let route, route.steps.indices.contains(currentStepIndex + 1),
               let nextStart = polylineCoord(forStep: currentStepIndex + 1, in: route),
               let location = currentLocation else { return nil }
-        let distance = location.distance(from: CLLocation(latitude: nextStart.latitude, longitude: nextStart.longitude))
-        guard distance > 5 else { return nil }
+        return location.distance(from: CLLocation(latitude: nextStart.latitude, longitude: nextStart.longitude))
+    }
+
+    var formattedDistanceToNextStep: String? {
+        guard let distance = distanceToNextManeuver, distance > 5 else { return nil }
         return Measurement(value: distance, unit: UnitLength.meters)
             .formatted(.measurement(width: .abbreviated, usage: .road))
     }
+
+    /// The same 30m threshold `update(with:)` uses to announce arrival, exposed so CarPlay can
+    /// finish its trip on the same condition the voice guidance calls it on.
+    var hasArrived: Bool { isActive && remainingDistance < 30 }
 
     var formattedArrival: String {
         Date().addingTimeInterval(remainingTime)
