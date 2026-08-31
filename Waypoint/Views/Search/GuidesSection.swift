@@ -19,7 +19,8 @@ struct GuidesSection: View {
 
     var body: some View {
         if !guides.guides.isEmpty {
-            Section(header: SectionHeader(title: "Guides", showsChevron: false)) {
+            Section {
+                SectionHeader(title: "Guides", showsChevron: false)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(guides.guides) { guide in

@@ -690,7 +690,8 @@ struct SearchSheet: View {
             let pages = stride(from: 0, to: viewModel.recentsStore.recents.count, by: 2).map {
                 Array(viewModel.recentsStore.recents[$0..<min($0 + 2, viewModel.recentsStore.recents.count)])
             }
-            Section(header: SectionHeader(title: "Recents", showsChevron: true)) {
+            Section {
+                SectionHeader(title: "Recents", showsChevron: true)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(Array(pages.enumerated()), id: \.offset) { _, page in
