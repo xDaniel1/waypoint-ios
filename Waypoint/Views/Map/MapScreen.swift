@@ -28,10 +28,10 @@ struct MapScreen: View {
     /// screen anyway, so this multiplies that fraction directly instead of trusting the
     /// measured value.
     @State private var screenHeight: CGFloat = 956
-    @State private var mapStyle: MapStyle = .standard(showsTraffic: true)
-    /// Transit map mode — MapKit has no such style, so the subway lines are drawn from bundled
-    /// MTA geometry. See `MTASubwayLines`.
-    @State private var showsTransitLines = false
+    /// Explore on launch, the way Apple opens. Traffic colouring now belongs to Driving alone —
+    /// see `MapMode`.
+    @State private var mapMode: MapMode = .explore
+    @State private var isShowingMapModes = false
     @State private var mapCenter: CLLocationCoordinate2D?
     /// One-shot: the discover shelves are warmed on the first camera settle, not on every pan.
     @State private var hasPrefetchedDiscover = false
@@ -227,7 +227,7 @@ struct MapScreen: View {
                     }
                 }
             }
-            .mapStyle(navigationViewModel.isActive ? .standard(elevation: .realistic, showsTraffic: true) : mapStyle)
+            .mapStyle(activeMapStyle)
             .mapControls { MapScaleView(scope: mapScope) }
             // Deliberately no bottom `safeAreaPadding` here. MapKit pins its own mandatory
             // attribution ("Maps · Legal") to the bottom of the *map's safe area*, so insetting
@@ -469,6 +469,15 @@ struct MapScreen: View {
             // sheet" pattern that silently never shows on this SwiftUI version. Presenting instead
             // from the already-open sheet's own content chains it onto the same, single active
             // presentation, which iOS handles correctly.
+            // Chained here for the same reason as the steps sheet below: the search sheet is
+            // already presented, so a sibling `.sheet` on MapScreen's root would never show.
+            .sheet(isPresented: $isShowingMapModes) {
+                MapModesCard(mode: $mapMode, onClose: { isShowingMapModes = false })
+                .presentationDetents([.height(190)])
+                .presentationDragIndicator(.hidden)
+                .presentationBackground(.regularMaterial)
+                .presentationCornerRadius(28)
+            }
             .sheet(item: $stepsRoute) { route in
                 // Transit has no `RouteStep` list by nature, so the generic steps sheet could
                 // only ever say "turn-by-turn isn't available". The itinerary is the directions
@@ -534,11 +543,20 @@ struct MapScreen: View {
         return (isTransit ? transitCardHeight : navBarHeight) + 14
     }
 
+    /// Turn-by-turn tilts the map into 3D, and it colours traffic — but only when the trip is
+    /// actually a drive. Riding the subway with the roads painted red was noise about a road
+    /// you're not on.
+    private var activeMapStyle: MapStyle {
+        guard navigationViewModel.isActive else { return mapMode.style }
+        let isDriving = directionsViewModel.mode == .automobile
+        return .standard(elevation: .realistic, pointsOfInterest: .all, showsTraffic: isDriving)
+    }
+
     /// Transit lines are only drawn in transit mode, inside the region they describe, and only
     /// once zoomed in enough for them to mean anything — at state level 29 overlapping polylines
     /// are just noise.
     private var shouldDrawTransitLines: Bool {
-        guard showsTransitLines, let center = mapCenter else { return false }
+        guard mapMode.showsTransitLines, let center = mapCenter else { return false }
         let inRegion = (40.4...41.1).contains(center.latitude)
             && (-74.35...(-73.6)).contains(center.longitude)
         let zoomedIn = (currentCamera?.distance ?? 0) < 45_000
@@ -695,10 +713,12 @@ struct MapScreen: View {
                         .transition(.scale.combined(with: .opacity))
                     }
                     FusedRightControls(
-                        mapStyle: $mapStyle,
-                        showsTransitLines: $showsTransitLines,
                         trackingMode: trackingMode,
-                        onRecenter: handleLocationButtonTap
+                        onRecenter: handleLocationButtonTap,
+                        onOpenMapModes: {
+                            Haptics.tap()
+                            isShowingMapModes = true
+                        }
                     )
                 }
             }
@@ -1043,11 +1063,9 @@ private struct ClearMapButton<Label: View>: View {
 /// The recenter-location and map-style buttons fused into a single Liquid Glass pill,
 /// matching Apple Maps rather than rendering as two separate circular buttons.
 private struct FusedRightControls: View {
-    @Binding var mapStyle: MapStyle
-    /// Transit mode isn't a MapKit style, so it rides alongside the style selection.
-    @Binding var showsTransitLines: Bool
     let trackingMode: UserTrackingMode
     let onRecenter: () -> Void
+    let onOpenMapModes: () -> Void
 
     private var locationSymbol: String {
         switch trackingMode {
@@ -1074,33 +1092,18 @@ private struct FusedRightControls: View {
                     .frame(width: 30)
                     .overlay(Color.primary.opacity(0.15))
 
-                Menu {
-                    Button("Standard") {
-                        showsTransitLines = false
-                        mapStyle = .standard(showsTraffic: true)
-                    }
-                    Button("Transit") {
-                        // Traffic off: Apple's transit map drops the road congestion colouring so
-                        // the subway lines are the thing you read.
-                        showsTransitLines = true
-                        mapStyle = .standard(showsTraffic: false)
-                    }
-                    Button("Satellite") {
-                        showsTransitLines = false
-                        mapStyle = .imagery
-                    }
-                    Button("Hybrid") {
-                        showsTransitLines = false
-                        mapStyle = .hybrid(showsTraffic: true)
-                    }
-                } label: {
-                    Image(systemName: "square.3.layers.3d")
+                // Apple opens a card of live previews here rather than a list of style names,
+                // which is the only way to see what "Hybrid" versus "Satellite" actually meant.
+                Button(action: onOpenMapModes) {
+                    Image(systemName: "map")
                         .scaledFont(size: 18, weight: .medium, relativeTo: .body)
                         .foregroundStyle(.primary)
                         .frame(width: 48, height: 48)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("mapModesButton")
+                .accessibilityLabel("Map modes")
             }
             .glassEffect(.clear.interactive(), in: Capsule())
         }
