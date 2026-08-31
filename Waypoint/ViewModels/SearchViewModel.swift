@@ -124,10 +124,13 @@ final class SearchViewModel {
             }
         }
         lastRegionCenter = newCenter
-        
+
+        // Settle for a beat before asking for nearby points of interest. A pan fires this
+        // continuously, and every intermediate region was starting its own `MKLocalSearch` only to
+        // be thrown away by the next one. Nothing billed is saved here — that lookup is Apple's,
+        // not Google's — but it stops a drag across the city from queueing dozens of searches.
         regionUpdateTask?.cancel()
         regionUpdateTask = Task {
-            // Debounce map pans by 500ms so we don't spam the Places API while the user is actively swiping.
             try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled else { return }
             await nearbyService.refresh(around: region)
