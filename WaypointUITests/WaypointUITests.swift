@@ -162,13 +162,13 @@ final class WaypointUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(hittableGoCount(), 2, "Expanded card should list every alternate at once")
     }
 
-    // Profile button should present the honest accounts-not-built-yet sheet.
+    // Profile button should present the real sign-in sheet now that accounts are wired up.
     func test05_profileSheet() throws {
         let profileButton = app.buttons["profileButton"]
         XCTAssertTrue(profileButton.waitForExistence(timeout: 10))
         profileButton.tap()
 
-        XCTAssertTrue(app.staticTexts["Accounts aren't built yet"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Sign in to sync"].waitForExistence(timeout: 5))
         // Real diagnostics (CrashReportingService), not a placeholder — every fresh launch should
         // at least show the Diagnostics section with a last-session status row.
         XCTAssertTrue(app.staticTexts["Diagnostics"].waitForExistence(timeout: 5))

@@ -19,16 +19,47 @@ final class SupabaseBackend: SyncBackend, Sendable {
 
     private init() {
         guard
-            let urlString = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_URL") as? String,
-            let url = URL(string: urlString),
-            url.scheme == "https",
+            let rawURL = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_URL") as? String,
+            let url = Self.projectURL(from: rawURL),
             let anonKey = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_ANON_KEY") as? String,
-            !anonKey.isEmpty
+            !anonKey.trimmingCharacters(in: .whitespaces).isEmpty
         else {
             client = nil
             return
         }
         client = SupabaseClient(supabaseURL: url, supabaseKey: anonKey)
+    }
+
+    /// Turns whatever the build settings actually produced into a project URL, or nothing.
+    ///
+    /// This crashed the app on launch for anyone who followed our own setup instructions. An
+    /// xcconfig file treats `//` as the start of a comment, so
+    /// `SUPABASE_URL = https://your-ref.supabase.co` builds as the literal string `https:` —
+    /// scheme intact, host gone. The old check only asked for a scheme, so that value sailed
+    /// through and went straight into supabase-swift, which answers a hostless URL with
+    /// `preconditionFailure("supabaseURL must have a valid host.")`. And because this type is
+    /// built eagerly (`SupabaseBackend.shared` is a default argument of `SyncCoordinator.init`,
+    /// which runs while the first view is being constructed), that trap fired before the map
+    /// ever drew: a mistyped config took the whole app down instead of switching sync off.
+    ///
+    /// So the host is taken however it arrives — bare, with a scheme, with slashes the config
+    /// swallowed — and anything without one disables sync rather than being handed to the SDK.
+    static func projectURL(from raw: String) -> URL? {
+        var host = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        for prefix in ["https://", "http://", "https:", "http:"] where host.hasPrefix(prefix) {
+            host.removeFirst(prefix.count)
+            break
+        }
+        host = host.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        // A project host is `<ref>.supabase.co` — anything without a dot, or with whitespace in
+        // it, is a placeholder or a half-substituted build variable, not an address.
+        guard !host.isEmpty, host.contains("."), !host.contains(" "), !host.contains("$") else {
+            return nil
+        }
+        guard let url = URL(string: "https://\(host)"), url.host(percentEncoded: false)?.isEmpty == false else {
+            return nil
+        }
+        return url
     }
 
     // MARK: - Auth
