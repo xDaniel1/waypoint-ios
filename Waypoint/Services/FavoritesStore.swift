@@ -11,6 +11,11 @@ import Observation
 final class FavoritesStore {
     private(set) var favorites: [FavoritePlace] = []
 
+    /// Fires after every local edit, including ones applied by `load()` from an external iCloud
+    /// change — a sync coordinator listens here to push. Not fired by `applySynced`, since that
+    /// data just came *from* the coordinator and re-pushing it would be a no-op round trip.
+    var onChange: (() -> Void)?
+
     private let defaultsKey = "com.danielguzman.waypoint.favorites"
     private let store: KeyValueStore
 
@@ -73,6 +78,13 @@ final class FavoritesStore {
         save()
     }
 
+    /// Applies a snapshot pulled from a sync backend, bypassing `save()` so it doesn't turn
+    /// straight around and push right back to where it came from.
+    func applySynced(_ synced: [FavoritePlace]) {
+        favorites = synced
+        writeToStore()
+    }
+
     private func load() {
         guard let data = store.data(forKey: defaultsKey),
               let decoded = try? JSONDecoder().decode([FavoritePlace].self, from: data) else { return }
@@ -80,6 +92,11 @@ final class FavoritesStore {
     }
 
     private func save() {
+        writeToStore()
+        onChange?()
+    }
+
+    private func writeToStore() {
         guard let data = try? JSONEncoder().encode(favorites) else { return }
         store.set(data, forKey: defaultsKey)
         (store as? NSUbiquitousKeyValueStore)?.synchronize()

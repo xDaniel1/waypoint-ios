@@ -5,6 +5,11 @@ options:
     iOS: "26.0"
   createIntermediateGroups: true
 
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: 2.20.0
+
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -39,6 +44,8 @@ targets:
     dependencies:
       - target: WaypointWidgetsExtension
         embed: true
+      - package: Supabase
+        product: Supabase
 
   WaypointWidgetsExtension:
     type: app-extension
