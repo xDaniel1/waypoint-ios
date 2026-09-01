@@ -1,3 +1,4 @@
+import GoogleSignIn
 import SwiftUI
 
 @main
@@ -12,6 +13,11 @@ struct WaypointApp: App {
     var body: some Scene {
         WindowGroup {
             MapScreen()
+                // Google's sign-in sheet redirects back into the app through this URL scheme
+                // (see GOOGLE_IOS_URL_SCHEME in Secrets.xcconfig) rather than a completion handler.
+                .onOpenURL { url in
+                    GIDSignIn.sharedInstance.handle(url)
+                }
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .background {

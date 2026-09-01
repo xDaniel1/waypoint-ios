@@ -5,6 +5,14 @@ options:
     iOS: "26.0"
   createIntermediateGroups: true
 
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: 2.20.0
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: 7.1.0
+
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -47,6 +55,12 @@ targets:
     dependencies:
       - target: WaypointWidgetsExtension
         embed: true
+      - package: Supabase
+        product: Supabase
+      - package: GoogleSignIn
+        product: GoogleSignIn
+      - package: GoogleSignIn
+        product: GoogleSignInSwift
 
   WaypointWidgetsExtension:
     type: app-extension
