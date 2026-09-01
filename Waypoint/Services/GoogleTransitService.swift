@@ -195,7 +195,8 @@ private struct ParsedRoute: Codable {
             return ParsedStepGeometry(
                 encodedPolyline: step.polyline?.encodedPolyline ?? "",
                 isWalk: step.travelMode == "WALK" || step.transitDetails == nil,
-                transitStepIndex: index
+                transitStepIndex: index,
+                seconds: ParsedRoute.parseDuration(step.staticDuration)
             )
         }
 
@@ -248,6 +249,9 @@ private struct ParsedStepGeometry: Codable {
     var encodedPolyline: String
     var isWalk: Bool
     var transitStepIndex: Int?
+    /// Google's own estimate for this step alone. Optional so cache files written before this
+    /// existed still decode; navigation falls back to distance-proportional timing without it.
+    var seconds: Double?
 }
 
 extension ParsedRoute {
@@ -289,7 +293,9 @@ extension ParsedRoute {
                     isWalk: ride == nil,
                     lineLabel: ride?.displayLine,
                     providerColor: ride?.color,
-                    isSubway: ride?.isSubway ?? false
+                    isSubway: ride?.isSubway ?? false,
+                    rideIndex: ride == nil ? nil : step.transitStepIndex,
+                    seconds: step.seconds
                 )
             )
         }

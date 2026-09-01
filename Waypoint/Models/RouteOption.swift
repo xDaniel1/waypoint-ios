@@ -92,6 +92,17 @@ struct TransitSegment: Identifiable {
     /// cover. Subway lines always use the MTA's own published colour.
     let providerColor: String?
     let isSubway: Bool
+    /// Which of `RouteOption.transitSteps` this leg is, so navigation can name the ride you're
+    /// on right now. nil for a walk.
+    var rideIndex: Int?
+    /// How long the provider says this leg alone takes.
+    ///
+    /// A transit trip's remaining time can't be scaled off distance the way a drive's can: the
+    /// 700m walk to the station is a tenth of the miles and half the minutes. With each leg's
+    /// own duration, "12 min left" comes from the legs still ahead of you plus the leftover of
+    /// the one you're on. nil when the provider didn't say, in which case navigation falls back
+    /// to the distance-proportional estimate.
+    var seconds: Double?
 
     /// Walking legs draw in the same grey Apple uses, so the coloured stretches read as "this
     /// is the part where you're on a train."
@@ -138,6 +149,16 @@ struct RouteStep: Identifiable {
     let id = UUID()
     let instruction: String
     let distanceMeters: Double
+    /// Where along the route this maneuver actually starts, taken from the step's own polyline.
+    ///
+    /// Navigation used to guess this by cutting the route's coordinates into equal-sized chunks,
+    /// one per step, which is wrong the moment steps differ in length — and they always do. A
+    /// half-mile of highway and a 60ft merge got the same slice, so "In 500 feet, turn right"
+    /// fired at the wrong place and the banner switched maneuvers early or late.
+    ///
+    /// nil for providers that don't return per-step geometry; navigation falls back to the old
+    /// proportional estimate for those rather than pretending to a precision it doesn't have.
+    var startCoordinate: CLLocationCoordinate2D?
     /// Google Routes' raw maneuver enum (e.g. "TURN_LEFT", "ROUNDABOUT_RIGHT"), when the step
     /// came from Google. Real per-lane guidance isn't something the public Routes API exposes
     /// at all — that's a Navigation SDK feature — so this only drives which turn arrow to show,

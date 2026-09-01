@@ -108,9 +108,28 @@ final class MapViewModel {
         )
     }
 
-    func recenterOnUser() {
+    /// The location button's first tap: put me back on screen.
+    ///
+    /// Apple recenters at the zoom you were already at — coming back to yourself after panning
+    /// two blocks away shouldn't rescale the street you were reading. It only picks a zoom for
+    /// you when the current one is no use for "where am I": staring at the whole state, or
+    /// pushed in so far there's no context left. This used to slam every tap to a fixed 0.01°
+    /// span regardless.
+    func recenterOnUser(camera: MapCamera? = nil) {
         guard let location = currentLocation else { return }
-        centerCamera(on: location.coordinate)
+        guard let distance = camera?.distance else {
+            centerCamera(on: location.coordinate)
+            return
+        }
+        let usefulRange: ClosedRange<Double> = 150...6_000
+        cameraPosition = .camera(
+            MapCamera(
+                centerCoordinate: location.coordinate,
+                distance: usefulRange.contains(distance) ? distance : 1_200,
+                heading: 0,
+                pitch: camera?.pitch ?? 0
+            )
+        )
     }
 
     /// Apple Maps' compass mode: the second tap of the location button. It spins the map so the

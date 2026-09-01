@@ -102,7 +102,12 @@ struct AppleRoutesService {
                 summary: route.name.isEmpty ? "Route" : "via \(route.name)",
                 transitSteps: [],
                 steps: route.steps.map { step in
-                    RouteStep(instruction: step.instructions, distanceMeters: step.distance, maneuver: nil)
+                    RouteStep(
+                        instruction: step.instructions,
+                        distanceMeters: step.distance,
+                        startCoordinate: step.polyline.firstCoordinate,
+                        maneuver: nil
+                    )
                 },
                 // Only claim traffic when it's actually slowing things down enough to notice;
                 // this drives the orange duration + car-with-exclamation badge on the card.
@@ -132,5 +137,14 @@ struct AppleRoutesService {
         // outside "no faster than ideal, no worse than 3x" is treated as untrustworthy.
         guard factor.isFinite, factor >= 1, factor <= 3 else { return 1 }
         return factor
+    }
+}
+
+extension MKPolyline {
+    /// First point of the line, or nil for an empty one — MapKit hands back a raw pointer here,
+    /// so the bounds check matters.
+    var firstCoordinate: CLLocationCoordinate2D? {
+        guard pointCount > 0 else { return nil }
+        return points()[0].coordinate
     }
 }
