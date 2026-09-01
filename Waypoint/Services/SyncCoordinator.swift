@@ -1,6 +1,7 @@
 import AuthenticationServices
 import Foundation
 import Observation
+import UIKit
 
 /// Wires an account to `FavoritesStore`/`RecentSearchesStore` and a backend, keeping them in sync.
 ///
@@ -53,34 +54,50 @@ final class SyncCoordinator {
     }
 
     func signIn(with authorization: ASAuthorization) async {
-        guard let localAccount = AppleSignIn.account(from: authorization) else {
-            status = .error("Apple didn't return a usable credential.")
-            return
-        }
         guard
-            backend.isConfigured,
+            let localAccount = AppleSignIn.account(from: authorization),
             let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
             let tokenData = credential.identityToken,
             let idToken = String(data: tokenData, encoding: .utf8)
         else {
-            // No server configured yet (placeholder Secrets.xcconfig values) — still honor the
-            // sign-in locally so the UI reflects it. There's just nothing to sync until real
-            // Supabase credentials are in place.
+            status = .error("Apple didn't return a usable credential.")
+            return
+        }
+        await finishSignIn(localAccount: localAccount) {
+            try await self.backend.signInWithApple(idToken: idToken)
+        }
+    }
+
+    func signInWithGoogle(presenting viewController: UIViewController) async {
+        do {
+            let (idToken, localAccount) = try await GoogleAccountSignIn.signIn(presenting: viewController)
+            await finishSignIn(localAccount: localAccount) {
+                try await self.backend.signInWithGoogle(idToken: idToken)
+            }
+        } catch {
+            status = .error(error.localizedDescription)
+        }
+    }
+
+    /// Shared tail end of both sign-in flows: exchange the provider's token for a Supabase
+    /// session if a backend is configured, falling back to a local-only identity either way — no
+    /// server yet, or the server rejected/was unreachable — so sign-in never hard-fails just
+    /// because sync can't happen.
+    private func finishSignIn(localAccount: Account, remote: () async throws -> Account) async {
+        guard backend.isConfigured else {
             accountStore.signIn(localAccount)
             return
         }
-
         status = .syncing
         do {
-            var account = try await backend.signInWithApple(idToken: idToken)
-            // The backend only knows what Apple told *it*: an email, maybe. Name only ever comes
-            // down on the very first authorization, straight from the credential.
+            var account = try await remote()
+            // The backend only knows what the provider told *it*, which for Apple is often
+            // nothing — name only ever comes down on the very first authorization, straight from
+            // the credential, so the locally-mapped account is the more complete one to keep.
             account.displayName = localAccount.displayName
             accountStore.signIn(account)
             await pull()
         } catch {
-            // Backend rejected it or is unreachable — keep the local identity so the app isn't
-            // gated on network access, just unsynced until the next successful push.
             accountStore.signIn(localAccount)
             status = .error(error.localizedDescription)
         }
@@ -90,6 +107,7 @@ final class SyncCoordinator {
         pushTask?.cancel()
         accountStore.signOut()
         status = .idle
+        GoogleAccountSignIn.signOut()
         Task { try? await backend.signOut() }
     }
 

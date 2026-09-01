@@ -43,6 +43,15 @@ final class SupabaseBackend: SyncBackend, Sendable {
         return Account(id: session.user.id.uuidString, provider: .apple, displayName: nil, email: session.user.email)
     }
 
+    /// Same idea as `signInWithApple(idToken:)`, for Google's identity token instead.
+    func signInWithGoogle(idToken: String) async throws -> Account {
+        guard let client else { throw SyncError.notConfigured }
+        let session = try await client.auth.signInWithIdToken(
+            credentials: OpenIDConnectCredentials(provider: .google, idToken: idToken)
+        )
+        return Account(id: session.user.id.uuidString, provider: .google, displayName: nil, email: session.user.email)
+    }
+
     func signOut() async throws {
         guard let client else { return }
         try await client.auth.signOut()

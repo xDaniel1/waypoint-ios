@@ -31,11 +31,14 @@ struct SyncSnapshot: Codable, Equatable {
 
 enum SyncError: LocalizedError {
     case notConfigured
+    case noIdentityToken
 
     var errorDescription: String? {
         switch self {
         case .notConfigured:
             "Waypoint has no server yet, so there's nothing to sync with."
+        case .noIdentityToken:
+            "Sign-in didn't return a usable identity token."
         }
     }
 }

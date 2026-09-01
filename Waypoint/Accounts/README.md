@@ -1,15 +1,18 @@
 # Accounts & sync
 
-Backend: Supabase (hosted Postgres + Auth). Wired end-to-end — Sign in with Apple, whole-snapshot
-push/pull of Favorites and Recents, sign-out. See `supabase/schema.sql` for the table + RLS policy.
+Backend: Supabase (hosted Postgres + Auth). Wired end-to-end — Sign in with Apple, Sign in with
+Google, whole-snapshot push/pull of Favorites and Recents, sign-out. See `supabase/schema.sql` for
+the table + RLS policy.
 
 - `Account` (in `Models/`) — identity only, never a credential.
 - `AccountStore` — the signed-in account, persisted per-install in `UserDefaults`.
-- `AppleSignIn` — maps `ASAuthorization` to an `Account`, plus a staleness check.
+- `AppleSignIn` / `GoogleAccountSignIn` — map each provider's own authorization result to an
+  `Account`. (`GoogleAccountSignIn`, not `GoogleSignIn`, so the type doesn't collide with the SDK
+  module of the same name.)
 - `SyncBackend` — the seam `SupabaseBackend` (in `Services/`) implements. `UnconfiguredBackend`
   is what ships if `Secrets.xcconfig` has no real Supabase credentials — throws rather than
   pretending to sync.
-- `SyncCoordinator` (in `Services/`) — owns the actual sign-in flow, and debounced push / one-shot
+- `SyncCoordinator` (in `Services/`) — owns both sign-in flows, and debounced push / one-shot
   pull. `SearchViewModel.syncCoordinator` is the instance the app uses; `Views/Account/ProfileSheet`
   is the UI.
 
@@ -31,15 +34,15 @@ Nothing left in code — these are one-time setup steps outside the repo:
           doesn't include the Sign In with Apple capability.
    ```
 
-Until all four are done, sign-in still works locally (`AccountStore` persists an `Account` from
-the on-device Apple credential) — it just doesn't sync anywhere, and `ProfileSheet` says so.
+5. **Create a Google OAuth iOS client** at console.cloud.google.com/apis/credentials (bundle ID
+   `com.danielguzman.waypoint`), then put its client ID and reversed-client-ID URL scheme into
+   `Secrets.xcconfig` — see the comment above `GOOGLE_IOS_CLIENT_ID` there for the exact values
+   Google shows you.
+6. **Enable the Google provider**: Supabase dashboard → Authentication → Providers → Google → add
+   that same iOS client ID under "Client IDs".
 
-## Not built
-
-**Sign in with Google** needs the `GoogleSignIn-iOS` package, an OAuth client ID from the Google
-Cloud console, and a URL scheme in `Info.plist`. `Account.Provider.google` exists as a case but
-nothing produces one yet — deferred, since Apple covers today's need and Google is a dependency
-and a decision, not something to guess at.
+Until all of these are done, sign-in still works locally (`AccountStore` persists an `Account`
+from the on-device credential) — it just doesn't sync anywhere, and `ProfileSheet` says so.
 
 ## Why a server at all
 

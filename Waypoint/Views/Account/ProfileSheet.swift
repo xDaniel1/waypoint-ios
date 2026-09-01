@@ -1,4 +1,5 @@
 import AuthenticationServices
+import GoogleSignInSwift
 import SwiftUI
 
 /// The account sheet: sign in with Apple, see who's signed in and whether sync is working, or
@@ -94,12 +95,32 @@ struct ProfileSheet: View {
                     .signInWithAppleButtonStyle(.black)
                     .frame(height: 44)
                     .padding(.top, 4)
+
+                    GoogleSignInButton(scheme: .dark, style: .wide) {
+                        guard let presenter = topViewController() else { return }
+                        Task { await coordinator.signInWithGoogle(presenting: presenter) }
+                    }
+                    .frame(height: 44)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
                 .listRowSeparator(.hidden)
             }
         }
+    }
+
+    /// `GIDSignIn` needs a `UIViewController` to present its sheet from — SwiftUI has no direct
+    /// equivalent, so this reaches into the key window the same way `UIApplication` itself would.
+    private func topViewController() -> UIViewController? {
+        guard
+            let scene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene,
+            let root = scene.windows.first(where: \.isKeyWindow)?.rootViewController
+        else { return nil }
+        var top = root
+        while let presented = top.presentedViewController {
+            top = presented
+        }
+        return top
     }
 
     @ViewBuilder
