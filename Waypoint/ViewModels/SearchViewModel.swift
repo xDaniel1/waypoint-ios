@@ -28,9 +28,16 @@ final class SearchViewModel {
     let discover = DiscoverViewModel()
     let guides = GuidesViewModel()
     let cityGuides = CityGuidesViewModel()
+    let syncCoordinator: SyncCoordinator
 
     private let completerService = SearchCompleterService()
     private var lastRegionCenter: CLLocationCoordinate2D?
+
+    // Explicit so `syncCoordinator` can wire itself into `favoritesStore`/`recentsStore` after
+    // their own (default-valued) initializers have already run.
+    init() {
+        syncCoordinator = SyncCoordinator(favoritesStore: favoritesStore, recentsStore: recentsStore)
+    }
 
     func updateSearchRegion(_ region: MKCoordinateRegion) {
         completerService.updateRegion(region)

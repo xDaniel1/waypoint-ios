@@ -7,6 +7,9 @@ import Observation
 final class RecentSearchesStore {
     private(set) var recents: [RecentSearch] = []
 
+    /// See `FavoritesStore.onChange` — same contract, same reason.
+    var onChange: (() -> Void)?
+
     private let defaultsKey = "com.danielguzman.waypoint.recentSearches"
     private let maxCount = 10
     private let store: KeyValueStore
@@ -60,6 +63,12 @@ final class RecentSearchesStore {
         save()
     }
 
+    /// See `FavoritesStore.applySynced` — same contract, same reason.
+    func applySynced(_ synced: [RecentSearch]) {
+        recents = synced
+        writeToStore()
+    }
+
     private func load() {
         guard let data = store.data(forKey: defaultsKey),
               let decoded = try? JSONDecoder().decode([RecentSearch].self, from: data) else { return }
@@ -67,6 +76,11 @@ final class RecentSearchesStore {
     }
 
     private func save() {
+        writeToStore()
+        onChange?()
+    }
+
+    private func writeToStore() {
         guard let data = try? JSONEncoder().encode(recents) else { return }
         store.set(data, forKey: defaultsKey)
         (store as? NSUbiquitousKeyValueStore)?.synchronize()

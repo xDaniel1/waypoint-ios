@@ -65,6 +65,8 @@ Check the [Roadmap](#roadmap) below for what's done vs. what's next.
 5. Open `Waypoint.xcodeproj` and run it.
 6. If you want the weather widget working, you need a paid Apple Developer account with WeatherKit enabled for your team — otherwise it just stays hidden and everything else still works fine.
 
+See [TESTFLIGHT.md](TESTFLIGHT.md) for shipping a beta build to testers.
+
 ## Project structure
 
 ```

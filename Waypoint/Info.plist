@@ -48,7 +48,24 @@
 	<string>$(GOOGLE_PLACES_API_KEY)</string>
 	<key>MTA_BUS_TIME_API_KEY</key>
 	<string>$(MTA_BUS_TIME_API_KEY)</string>
+	<key>SUPABASE_URL</key>
+	<string>$(SUPABASE_URL)</string>
+	<key>SUPABASE_ANON_KEY</key>
+	<string>$(SUPABASE_ANON_KEY)</string>
+	<key>GIDClientID</key>
+	<string>$(GOOGLE_IOS_CLIENT_ID)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(GOOGLE_IOS_URL_SCHEME)</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
