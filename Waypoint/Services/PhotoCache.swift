@@ -15,7 +15,38 @@ actor PhotoCache {
     static let shared = PhotoCache()
 
     private let ttl: TimeInterval = 14 * 24 * 3600
-    private var memory = NSCache<NSString, UIImage>()
+    private let memory: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        // Unbounded, an NSCache of decoded bitmaps will happily sit on tens of MB of thumbnails
+        // after a long scroll and then get purged all at once under pressure — which shows up as
+        // every card reloading at the same moment. A explicit byte budget keeps eviction gradual.
+        cache.countLimit = 250
+        cache.totalCostLimit = 64 * 1024 * 1024
+        return cache
+    }()
+
+    /// Forces the bitmap decode now, off the main thread.
+    ///
+    /// `UIImage(data:)` doesn't actually decode — it defers that until the image is first drawn,
+    /// which happens on the main thread mid-scroll. That's a per-image hitch on a list of photo
+    /// cards, and it's the single biggest cause of the scrolling not feeling like Apple's.
+    ///
+    /// Deliberately not `byPreparingThumbnail(ofSize:)`. That scales to *fit* the box in both
+    /// directions, so it upsizes as readily as it downsizes — measured, a 200x150 shelf photo
+    /// comes back as 800x600, sixteen times the pixels and sixteen times the RAM. There is
+    /// nothing to downsample anyway: every photo is already capped server-side by the
+    /// `maxWidthPx` each call site asks for (200 for shelf thumbnails, up to 1600 for the
+    /// place-detail hero, which needs all 1600 on a 3x screen).
+    private static func decoded(_ image: UIImage) async -> UIImage {
+        await image.byPreparingForDisplay() ?? image
+    }
+
+    /// Rough byte cost of a decoded bitmap, so `totalCostLimit` is in real memory rather than
+    /// counting every image as 1 regardless of size.
+    private static func cost(of image: UIImage) -> Int {
+        let size = image.cgImage.map { $0.bytesPerRow * $0.height }
+        return size ?? Int(image.size.width * image.size.height * image.scale * image.scale * 4)
+    }
 
     private var directory: URL? {
         guard let base = FileManager.default
@@ -34,8 +65,9 @@ actor PhotoCache {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
-    func image(for url: URL) -> UIImage? {
+    func image(for url: URL) async -> UIImage? {
         let key = filename(for: url)
+        // A memory hit is already decoded, so it can go straight back without another pass.
         if let hit = memory.object(forKey: key as NSString) { return hit }
         guard let directory else { return nil }
         let file = directory.appendingPathComponent(key)
@@ -44,14 +76,20 @@ actor PhotoCache {
               Date().timeIntervalSince(modified) < ttl,
               let data = try? Data(contentsOf: file),
               let image = UIImage(data: data) else { return nil }
-        memory.setObject(image, forKey: key as NSString)
-        return image
+        let ready = await Self.decoded(image)
+        memory.setObject(ready, forKey: key as NSString, cost: Self.cost(of: ready))
+        return ready
     }
 
-    func store(_ data: Data, image: UIImage, for url: URL) {
+    /// Returns the decoded image so the caller renders the same bitmap that got cached, rather
+    /// than handing SwiftUI an undecoded one and paying for the decode on the main thread anyway.
+    @discardableResult
+    func store(_ data: Data, image: UIImage, for url: URL) async -> UIImage {
         let key = filename(for: url)
-        memory.setObject(image, forKey: key as NSString)
-        guard let directory else { return }
+        let ready = await Self.decoded(image)
+        memory.setObject(ready, forKey: key as NSString, cost: Self.cost(of: ready))
+        guard let directory else { return ready }
         try? data.write(to: directory.appendingPathComponent(key), options: .atomic)
+        return ready
     }
 }

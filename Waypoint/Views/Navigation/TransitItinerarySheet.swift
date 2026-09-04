@@ -272,7 +272,7 @@ struct TransitItinerarySheet: View {
     }
 
     private func lineColor(_ step: TransitStep) -> Color {
-        Color(hex: step.color) ?? .blue
+        step.tintColor
     }
 
     private func intermediateStops(for step: TransitStep) -> [(stop: MTASubwayData.Stop, minutesFromBoarding: Int)]? {
@@ -300,17 +300,15 @@ struct TransitItinerarySheet: View {
 
     private func rideMinutes(for step: TransitStep) -> Int? {
         guard let departureISO = step.departureISO, let arrivalISO = step.arrivalISO,
-              let start = ISO8601DateFormatter().date(from: departureISO),
-              let end = ISO8601DateFormatter().date(from: arrivalISO) else { return nil }
+              let start = Formatters.iso8601.date(from: departureISO),
+              let end = Formatters.iso8601.date(from: arrivalISO) else { return nil }
         let minutes = Int(end.timeIntervalSince(start) / 60)
         return minutes > 0 ? minutes : nil
     }
 
     private func formattedTime(_ iso: String?) -> String? {
-        guard let iso, let date = ISO8601DateFormatter().date(from: iso) else { return nil }
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
+        guard let iso, let date = Formatters.iso8601.date(from: iso) else { return nil }
+        return Formatters.clockTime.string(from: date)
     }
 }
 
@@ -327,7 +325,7 @@ struct LineGlyph: View {
     }
 
     private var lineColor: Color {
-        Color(hex: step.color) ?? .blue
+        step.tintColor
     }
 }
 

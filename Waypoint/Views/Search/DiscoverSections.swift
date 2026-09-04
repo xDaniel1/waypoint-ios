@@ -30,7 +30,8 @@ struct DiscoverSections: View {
                 }
             }
 
-            Section(header: SectionHeader(title: "Suggested Places", showsChevron: false)) {
+            Section {
+                SectionHeader(title: "Suggested Places", showsChevron: false)
                 // Apple groups these two-to-a-card and pages sideways through the rest.
                 pagedGroups(discover.suggestedPlaces, perPage: 2) { place in
                     SuggestedRow(
@@ -46,7 +47,8 @@ struct DiscoverSections: View {
         if !discover.trendingRestaurants.isEmpty {
             // "Trending" is defensible here: this shelf is ranked by Google's own POPULARITY
             // preference, not just proximity.
-            Section(header: SectionHeader(title: "Trending Restaurants", showsChevron: true)) {
+            Section {
+                SectionHeader(title: "Trending Restaurants", showsChevron: true)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(Array(discover.trendingRestaurants.enumerated()), id: \.element.id) { index, place in
@@ -113,7 +115,8 @@ struct DiscoverSections: View {
     }
 }
 
-private struct SuggestedRow: View {
+/// Also used by SearchSheet for the category-browse results list, which is the same row.
+struct SuggestedRow: View {
     let place: DetailedPlace
     let imageURL: URL?
     let distance: String?
@@ -294,6 +297,12 @@ struct PlaceThumbnail: View {
 }
 
 /// Apple's shelf headers: bold title, with a chevron only on the shelves that open a fuller list.
+///
+/// Deliberately an ordinary row rather than a `Section(header:)`. A plain-style `List` pins its
+/// section headers, so each title stopped under the category chips and hung there like a banner
+/// while its own shelf scrolled past underneath it. Apple's headers don't do that — they scroll
+/// away with their content and blur out behind the search field. As a row it also lines up at the
+/// same 16pt as the cards below it; the header inset was pushing the title ~20pt further in.
 struct SectionHeader: View {
     let title: String
     let showsChevron: Bool
@@ -310,8 +319,8 @@ struct SectionHeader: View {
             }
             Spacer(minLength: 0)
         }
-        .textCase(nil)
-        .padding(.top, 4)
-        .padding(.horizontal, 16)
+        // Standing in for the spacing the section header used to get from the list itself.
+        .listRowInsets(EdgeInsets(top: 20, leading: 16, bottom: 6, trailing: 16))
+        .listRowSeparator(.hidden)
     }
 }

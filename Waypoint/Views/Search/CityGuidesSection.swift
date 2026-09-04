@@ -12,7 +12,8 @@ struct CityGuidesSection: View {
 
     var body: some View {
         if !cityGuides.cityGuides.isEmpty {
-            Section(header: SectionHeader(title: "City Guides", showsChevron: false)) {
+            Section {
+                SectionHeader(title: "City Guides", showsChevron: false)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(cityGuides.cityGuides) { city in

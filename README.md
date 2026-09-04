@@ -90,6 +90,74 @@ Waypoint/
 └── LICENSE
 ```
 
+## Architecture
+
+High-level view of how a screen turns into an API call (or, ideally, doesn't):
+
+```mermaid
+flowchart TD
+    subgraph UI["SwiftUI Views"]
+        MapScreen
+        SearchSheet
+        PlaceDetailContent
+        DirectionsCard
+        NavigationBanner
+    end
+
+    subgraph VM["ViewModels — MVVM, @Observable"]
+        MapViewModel
+        SearchViewModel
+        DirectionsViewModel
+        NavigationViewModel
+        PlaceDetailViewModel
+    end
+
+    subgraph Services["Services"]
+        LocationManager
+        GooglePlacesService
+        GoogleTransitService
+        AppleRoutesService
+        MTARealtime["MTA Realtime (subway + bus)"]
+        WeatherService
+        VoiceGuidanceService
+        LocalStores["FavoritesStore / RecentSearchesStore"]
+    end
+
+    subgraph Cache["Caching layer"]
+        DiskCache["DiskCache&lt;T&gt; — TTL'd, debounced writes"]
+        PhotoCache["PhotoCache — decoded off the main thread"]
+    end
+
+    subgraph External["External APIs"]
+        GooglePlacesAPI[("Google Places API")]
+        GoogleRoutesAPI[("Google Routes API")]
+        AppleFrameworks[("MapKit / CoreLocation / WeatherKit")]
+        MTAFeeds[("MTA GTFS-Realtime")]
+        OpenMeteo[("Open-Meteo — free weather fallback")]
+    end
+
+    UI --> VM --> Services
+    GooglePlacesService --> DiskCache
+    GooglePlacesService --> PhotoCache
+    GoogleTransitService --> DiskCache
+    DiskCache -. cache miss .-> GooglePlacesAPI
+    DiskCache -. cache miss .-> GoogleRoutesAPI
+    PhotoCache -. cache miss .-> GooglePlacesAPI
+    AppleRoutesService --> AppleFrameworks
+    LocationManager --> AppleFrameworks
+    MTARealtime --> MTAFeeds
+    WeatherService --> AppleFrameworks
+    WeatherService -. fallback .-> OpenMeteo
+```
+
+- **Views only talk to ViewModels** — every screen (`MapScreen`, `SearchSheet`, `PlaceDetailContent`, etc.) is plain SwiftUI reading `@Observable` state, no networking or persistence code in the view layer.
+- **ViewModels own the async work** — they call into `Services` and publish results back to the view; this is the MVVM boundary.
+- **Every billed Google call goes through the cache first** — `GooglePlacesService` and `GoogleTransitService` check `DiskCache` before making a network request, and only hit Google on a real miss. Photos go through a separate `PhotoCache` that also decodes bitmaps off the main thread so scrolling doesn't stutter.
+- **`DiskCache<T>` is generic and TTL'd** — place details cache for 6 hours, nearby search for 2 hours (a week for "long-lived" categories like landmarks), transit routes for 3 minutes since departure times go stale fast. Writes are debounced so a burst of cache stores collapses into one disk write instead of rewriting the whole file each time.
+- **Apple's own frameworks cover what doesn't need Google** — location, the base map, and weather (via WeatherKit, with a free/keyless Open-Meteo fallback if WeatherKit isn't available) never touch a billed API.
+- **Real-time transit is its own path** — MTA subway/bus arrivals come from MTA's GTFS-Realtime protobuf feeds directly, not Google, and are fetched once per sheet open rather than polled continuously.
+- **Favorites and recent searches are local-only** — no account system, no backend of ours; they live in on-device storage (`FavoritesStore`, `RecentSearchesStore`) and never round-trip to a server.
+
 ## Roadmap
 
 **Done**

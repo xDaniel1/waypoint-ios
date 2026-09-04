@@ -20,8 +20,7 @@ enum AppleSignIn {
             // never again — not even after signing out and back in. Storing whatever arrives, and
             // tolerating nil forever after, is the documented behaviour rather than a gap.
             displayName: credential.fullName.flatMap {
-                let formatted = PersonNameComponentsFormatter().string(from: $0)
-                return formatted.isEmpty ? nil : formatted
+                PersonNameComponentsFormatter().string(from: $0).nilIfEmpty
             },
             email: credential.email
         )

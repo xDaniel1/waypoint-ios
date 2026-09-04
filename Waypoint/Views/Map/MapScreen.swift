@@ -6,6 +6,18 @@ import SwiftUI
 /// the user without rotating the map, and centered while rotating to match device heading.
 enum UserTrackingMode {
     case off, follow, followHeading
+
+    /// The three glyphs iOS itself cycles through: a hollow arrow when the map isn't following
+    /// you, filled once it is, and the compass needle when the map is turning to face the way
+    /// you are. Same symbols `MKUserTrackingButton` uses, so the button reads the way a
+    /// tracking button is supposed to read.
+    var locationSymbol: String {
+        switch self {
+        case .off: "location"
+        case .follow: "location.fill"
+        case .followHeading: "location.north.line.fill"
+        }
+    }
 }
 
 struct MapScreen: View {
@@ -28,16 +40,24 @@ struct MapScreen: View {
     /// screen anyway, so this multiplies that fraction directly instead of trusting the
     /// measured value.
     @State private var screenHeight: CGFloat = 956
-    @State private var mapStyle: MapStyle = .standard(showsTraffic: true)
-    /// Transit map mode — MapKit has no such style, so the subway lines are drawn from bundled
-    /// MTA geometry. See `MTASubwayLines`.
-    @State private var showsTransitLines = false
+    /// Explore on launch, the way Apple opens. Traffic colouring now belongs to Driving alone —
+    /// see `MapMode`.
+    @State private var mapMode: MapMode = .explore
+    @State private var isShowingMapModes = false
     @State private var mapCenter: CLLocationCoordinate2D?
+    /// One-shot: the discover shelves are warmed on the first camera settle, not on every pan.
+    @State private var hasPrefetchedDiscover = false
+    @State private var networkMonitor = NetworkMonitor.shared
     @State private var currentCamera: MapCamera?
     @State private var trackingMode: UserTrackingMode = .off
     /// Shared between the GPS-fix and compass-heading update paths so they never both animate
     /// the camera within the same window — that fight was the source of the stutter/snapping.
     @State private var lastCameraAnimation: Date = .distantPast
+    /// Compass rotation gets its own clock — see `animateHeading`.
+    @State private var lastHeadingAnimation: Date = .distantPast
+    /// Ground metres covered by one screen point at the current zoom, refreshed whenever the
+    /// camera settles. Only used to size the blue dot's accuracy halo.
+    @State private var metresPerPoint: Double = 1
     @State private var navBarHeight: CGFloat = 120
     /// Measured from the transit card, which replaces the driving bottom bar during a transit
     /// trip — without this the map controls were spaced off a bar that wasn't on screen and ended
@@ -45,6 +65,13 @@ struct MapScreen: View {
     @State private var transitCardHeight: CGFloat = 150
     @State private var voiceGuidance = VoiceGuidanceService()
     @State private var speedLimitService = SpeedLimitService()
+    @State private var laneGuidance = LaneGuidanceService()
+    @State private var trafficReports = TrafficReportsService()
+    /// A trip that was running when the app last went away, offered back on launch.
+    @State private var resumableTrip: ActiveTripStore.SavedTrip?
+    /// Set when a reroute couldn't be computed, so the retry can fire the moment the connection
+    /// comes back rather than waiting for the driver to drift off the route again.
+    @State private var needsRerouteRetry = false
     @State private var navigationNotifications = NavigationNotificationService()
     @State private var isRerouting = false
     @State private var isSearchingAlongRoute = false
@@ -110,16 +137,22 @@ struct MapScreen: View {
                 // in a white ring with a heading wedge, and a chevron puck while navigating.
                 // MapKit's stock dot picks up the map tint and looks washed out.
                 if let location = viewModel.currentLocation {
-                    Annotation("", coordinate: location.coordinate) {
+                    Annotation("", coordinate: puckCoordinate(for: location)) {
                         if navigationViewModel.isActive {
                             NavigationPuck(
-                                heading: viewModel.currentHeading ?? (location.course >= 0 ? location.course : 0),
+                                // Along the road you're on, when the route says which way that
+                                // is — a phone lying on the passenger seat isn't facing the way
+                                // the car is going.
+                                heading: navigationViewModel.matchedCourse
+                                    ?? viewModel.currentHeading
+                                    ?? (location.course >= 0 ? location.course : 0),
                                 headingAccuracy: viewModel.currentHeadingAccuracy ?? 30
                             )
                         } else {
                             UserLocationDot(
                                 heading: viewModel.currentHeading,
-                                headingAccuracy: viewModel.currentHeadingAccuracy ?? 30
+                                headingAccuracy: viewModel.currentHeadingAccuracy ?? 30,
+                                accuracyRadiusPoints: accuracyRadiusInPoints
                             )
                         }
                     }
@@ -128,8 +161,11 @@ struct MapScreen: View {
                     UserAnnotation()
                 }
                 if shouldDrawTransitLines {
+                    // `MapPolyline(_:)` over a prebuilt MKPolyline, not `MapPolyline(coordinates:)`
+                    // — the map's content closure re-runs on every location fix, and the
+                    // coordinates form re-copied all 29 lines' points each time.
                     ForEach(MTASubwayLines.all) { line in
-                        MapPolyline(coordinates: line.coordinates)
+                        MapPolyline(line.polyline)
                             .stroke(line.color, style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round))
                     }
                 }
@@ -138,17 +174,46 @@ struct MapScreen: View {
                     Marker(result.title, coordinate: result.coordinate)
                         .tint(.indigo)
                 }
-                ForEach(directionsViewModel.stops) { stop in
-                    Marker(stop.title, coordinate: stop.coordinate)
-                        .tint(.orange)
+                // Browsing a category drops a pin for every hit, the way Apple fills the map
+                // when you tap "Restaurants" — the list alone told you what was nearby without
+                // showing you where any of it actually was.
+                if searchViewModel.selectedResult == nil {
+                    ForEach(searchViewModel.categoryResults) { place in
+                        if let coordinate = place.coordinate {
+                            Marker(
+                                place.displayName?.text ?? "Place",
+                                systemImage: searchViewModel.categorySymbol,
+                                coordinate: coordinate
+                            )
+                            .tint(.orange)
+                            .annotationTitles(.hidden)
+                        }
+                    }
                 }
-                ForEach(navigationViewModel.reportedIncidents) { incident in
+                // Numbered rather than three identical pins: the whole point of a stop list is the
+                // order, and a map with matching markers on it doesn't say which one comes first.
+                ForEach(Array(directionsViewModel.stops.enumerated()), id: \.element.id) { index, stop in
+                    Annotation(stop.title, coordinate: stop.coordinate) {
+                        RouteStopMarker(number: index + 1)
+                    }
+                }
+                // Reported incidents — this driver's and, when signed in, everyone else's from
+                // the last couple of hours.
+                ForEach(trafficReports.reports) { incident in
                     Annotation(incident.kind.rawValue, coordinate: incident.coordinate) {
                         Image(systemName: incident.kind.symbol)
                             .scaledFont(size: 14, weight: .bold, relativeTo: .footnote)
                             .foregroundStyle(incident.kind.iconColor)
                             .padding(6)
                             .background(incident.kind.tint, in: Circle())
+                            // Someone else's report gets a ring, so "I flagged that" and
+                            // "somebody flagged that" aren't the same pin.
+                            .overlay {
+                                if !incident.isMine {
+                                    Circle().stroke(.white, lineWidth: 2)
+                                }
+                            }
+                            .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
                     }
                     .annotationTitles(.hidden)
                 }
@@ -156,22 +221,39 @@ struct MapScreen: View {
                 // muted blue rather than gray so every option reads as a route you can take.
                 ForEach(directionsViewModel.routeOptions) { option in
                     if option.id != directionsViewModel.selectedRoute?.id {
-                        MapPolyline(option.polyline)
-                            .stroke(Color.blue.opacity(0.45),
-                                    style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round))
+                        routeStroke(
+                            coordinates: option.coordinates,
+                            color: Color.blue.opacity(0.55),
+                            width: 5
+                        )
                     }
                 }
                 if let selected = directionsViewModel.selectedRoute {
-                    // Transit rides draw in the operator's own line colour (the J's gold, the
-                    // G's green) rather than generic blue, matching how Apple colours the route.
-                    MapPolyline(selected.polyline)
-                        .stroke(selected.routeTint, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                    if selected.transitSegments.isEmpty {
+                        // Transit rides draw in the operator's own line colour (the J's gold, the
+                        // G's green) rather than generic blue, matching how Apple colours the route.
+                        routeStroke(coordinates: selected.coordinates, color: selected.routeTint, width: 7)
+                    } else {
+                        // A trip with a transfer isn't one colour. Each leg draws in the colour of
+                        // the service you're on for it — the J brown up to the transfer, the A blue
+                        // after — with the walks between them dotted grey, the way Apple does it.
+                        ForEach(selected.transitSegments) { segment in
+                            routeStroke(
+                                coordinates: segment.coordinates,
+                                color: segment.color,
+                                width: segment.strokeStyle.lineWidth,
+                                dash: segment.strokeStyle.dash
+                            )
+                        }
+                    }
                     // Colored on top of the base line wherever Google's live traffic data says
                     // this stretch is actually slower than free-flow — not just the whole-route
-                    // "has traffic" badge.
+                    // "has traffic" badge. Narrower than the route it sits on, so the route's own
+                    // edges still show through underneath and it reads as a stretch of this trip
+                    // rather than a second line laid alongside it.
                     ForEach(selected.congestionSegments) { segment in
                         MapPolyline(coordinates: segment.coordinates)
-                            .stroke(segment.severity.color, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                            .stroke(segment.severity.color, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
                     }
                 }
                 ForEach(Array(directionsViewModel.routeOptions.enumerated()), id: \.element.id) { index, option in
@@ -190,30 +272,65 @@ struct MapScreen: View {
                 }
                 // Active navigation route: dim the traveled portion, keep the road ahead bright.
                 if navigationViewModel.isActive {
-                    let traveled = navigationViewModel.traveledCoordinates
-                    if traveled.count > 1 {
-                        MapPolyline(coordinates: traveled)
-                            .stroke(Color.blue.opacity(0.35), style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
-                    }
-                    let remaining = navigationViewModel.remainingCoordinates
-                    if remaining.count > 1 {
-                        MapPolyline(coordinates: remaining)
-                            .stroke(Color.blue, style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
+                    // A transit trip in progress keeps its per-line colours — the leg you're on
+                    // and the ones still ahead at full strength, the ones already ridden dimmed,
+                    // so a glance tells you both where you are and which train you're on next.
+                    ForEach(navigationViewModel.drawableSegments) { piece in
+                        if piece.isTraveled {
+                            // The road behind you is a faint trace, not a second bright line
+                            // competing with the one you're meant to be following.
+                            MapPolyline(coordinates: piece.coordinates)
+                                .stroke(
+                                    piece.color.opacity(0.3),
+                                    style: StrokeStyle(
+                                        lineWidth: max(3, piece.strokeStyle.lineWidth - 3),
+                                        lineCap: .round,
+                                        lineJoin: .round,
+                                        dash: piece.strokeStyle.dash
+                                    )
+                                )
+                        } else {
+                            routeStroke(
+                                coordinates: piece.coordinates,
+                                color: piece.color,
+                                width: piece.strokeStyle.lineWidth + 2,
+                                dash: piece.strokeStyle.dash
+                            )
+                        }
                     }
                     if let route = navigationViewModel.route {
                         ForEach(route.congestionSegments) { segment in
                             MapPolyline(coordinates: segment.coordinates)
-                                .stroke(segment.severity.color, style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
+                                .stroke(segment.severity.color, style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
                         }
                     }
                 }
             }
-            .mapStyle(navigationViewModel.isActive ? .standard(elevation: .realistic, showsTraffic: true) : mapStyle)
+            .mapStyle(activeMapStyle)
+            .mapControls { MapScaleView(scope: mapScope) }
+            // Deliberately no bottom `safeAreaPadding` here. MapKit pins its own mandatory
+            // attribution ("Maps · Legal") to the bottom of the *map's safe area*, so insetting
+            // the bottom by the sheet's height lifted that text off the bottom edge and parked it
+            // in the middle of the map. Leaving the safe area alone keeps it tucked in the
+            // bottom-left corner behind the sheet, where it was before and where it isn't in the way.
             .onMapCameraChange(frequency: .onEnd) { context in
                 searchViewModel.updateSearchRegion(context.region)
                 mapCenter = context.region.center
+                // 111_320m is a degree of latitude; longitude varies with latitude but the halo
+                // is a circle either way, so the vertical scale is the one that matters.
+                let visibleMetres = context.region.span.latitudeDelta * 111_320
+                metresPerPoint = max(visibleMetres / max(screenHeight, 1), 0.0001)
                 withAnimation(.smooth(duration: 0.35)) {
                     currentCamera = context.camera
+                }
+                // Warm the search page's shelves once the map knows where we are, instead of
+                // waiting for the user to tap the field and then watch it load. Bounded on
+                // purpose: `loadIfNeeded` no-ops within 500m of the last load and every call
+                // underneath is disk-cached for 2h+, so this is a couple of requests per session,
+                // and they're the same ones opening search would have spent anyway.
+                if !hasPrefetchedDiscover {
+                    hasPrefetchedDiscover = true
+                    searchViewModel.loadDiscover()
                 }
             }
             // Any touch on the map hands control back to the user: auto-follow stops re-centering
@@ -245,6 +362,18 @@ struct MapScreen: View {
                 LocationPermissionDeniedView()
             }
 
+            // While navigating, the nav overlay carries its own offline line under the maneuver
+            // banner — a second strip over the top of it would cover the turn.
+            if !networkMonitor.isConnected, !navigationViewModel.isActive {
+                VStack {
+                    OfflineBanner()
+                        .padding(.top, 8)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             if !navigationViewModel.isActive {
                 mapControlsOverlay
                     .transition(.opacity)
@@ -257,10 +386,23 @@ struct MapScreen: View {
             }
         }
         .animation(.smooth(duration: 0.4), value: navigationViewModel.isActive)
+        .animation(.smooth(duration: 0.3), value: networkMonitor.isConnected)
         .mapScope(mapScope)
         // `.task` covers a cold launch from Siri; the `onChange` covers an intent firing while
         // the app is already open, which `.task` alone would miss.
-        .task { await handlePendingIntent() }
+        .task {
+            await handlePendingIntent()
+            // Only offered when nothing is running — an intent that started a trip on launch is
+            // the newer intention.
+            if !navigationViewModel.isActive {
+                resumableTrip = ActiveTripStore.shared.resumableTrip()
+            }
+        }
+        .onChange(of: networkMonitor.isConnected) { _, isConnected in
+            guard isConnected, needsRerouteRetry, navigationViewModel.isActive else { return }
+            needsRerouteRetry = false
+            recomputeActiveRoute()
+        }
         .onChange(of: PendingIntent.shared.request) { _, newValue in
             guard newValue != nil else { return }
             Task { await handlePendingIntent() }
@@ -270,6 +412,40 @@ struct MapScreen: View {
                 if navigationViewModel.isActive {
                     navigationViewModel.update(with: location)
                     Task { await speedLimitService.refreshIfNeeded(at: location) }
+                    if let route = navigationViewModel.route {
+                        ActiveTripStore.shared.save(
+                            route: route,
+                            destinationName: navigationViewModel.destinationName,
+                            destinationCoordinate: navigationViewModel.destinationCoordinate,
+                            stops: navigationViewModel.intermediateStops
+                        )
+                    }
+                    // Top the prefetched limits up as the driver eats through the stretch already
+                    // pulled; it no-ops until there's actually more road to cover.
+                    if let coordinates = navigationViewModel.route?.coordinates {
+                        speedLimitService.prefetch(
+                            along: navigationViewModel.remainingCoordinates.isEmpty
+                                ? coordinates
+                                : navigationViewModel.remainingCoordinates,
+                            metresRemaining: navigationViewModel.remainingDistance
+                        )
+                    }
+                    // Lane arrows only mean anything behind a wheel, so a transit trip skips the
+                    // lookup entirely rather than querying Overpass from a subway car.
+                    if navigationViewModel.route?.transitSegments.isEmpty ?? false {
+                        let course = navigationViewModel.matchedCourse
+                            ?? (location.course >= 0 ? location.course : nil)
+                        Task {
+                            await laneGuidance.refreshIfNeeded(
+                                tripID: navigationViewModel.route?.id,
+                                stepIndex: navigationViewModel.currentStepIndex + 1,
+                                maneuver: navigationViewModel.nextStep?.maneuver,
+                                maneuverCoordinate: navigationViewModel.nextStep?.startCoordinate,
+                                approachBearing: course,
+                                distanceToManeuver: navigationViewModel.distanceToNextManeuver
+                            )
+                        }
+                    }
                     if Date().timeIntervalSince(lastLiveActivityUpdate) > 20 {
                         lastLiveActivityUpdate = Date()
                         let arrival = Date().addingTimeInterval(navigationViewModel.remainingTime)
@@ -290,16 +466,32 @@ struct MapScreen: View {
                     // North-up by default, even while navigating — the map only rotates once
                     // the user explicitly opts in via the location button's heading mode.
                     let heading = trackingMode == .followHeading
-                        ? (viewModel.currentHeading ?? (location.course >= 0 ? location.course : 0))
+                        ? (navigationViewModel.matchedCourse
+                            ?? viewModel.currentHeading
+                            ?? (location.course >= 0 ? location.course : 0))
                         : 0
-                    animateCamera(duration: 0.9) {
-                        viewModel.followUser(at: location, heading: heading)
+                    // Linear, not `.smooth`: fixes now arrive faster than the animation lasts,
+                    // so an eased curve restarted every fix read as a pulse — accelerate, coast,
+                    // decelerate, repeat. Linear segments chain into one continuous glide.
+                    let followFrom = CLLocation(
+                        latitude: puckCoordinate(for: location).latitude,
+                        longitude: puckCoordinate(for: location).longitude
+                    )
+                    animateCamera(duration: 0.9, linear: true) {
+                        viewModel.followUser(at: followFrom, heading: heading)
                     }
                 } else if trackingMode == .follow, !isCameraUserControlled {
                     // Recenter without rotating — the map stays north-up, only the dot moves.
-                    animateCamera(duration: 0.6) {
+                    animateCamera(duration: 0.6, linear: true) {
                         viewModel.recenterKeepingZoom(on: location, camera: currentCamera)
                     }
+                }
+                // Other drivers' reports, kept current whether or not a trip is running — the pins
+                // are worth seeing while you're still deciding where to go. The spoken heads-up
+                // only fires for the ones actually on the road ahead.
+                Task {
+                    await trafficReports.refreshIfNeeded(near: location.coordinate)
+                    navigationViewModel.warnAbout(trafficReports.reports)
                 }
                 // Marking this fetched *before* awaiting meant a single failure — no network yet
                 // on launch, WeatherKit not warmed up — permanently suppressed the widget for the
@@ -326,9 +518,9 @@ struct MapScreen: View {
             // The view model can tell us we've drifted off the path, or that a stop was added
             // mid-trip via search-along-route — either way it doesn't fetch routes itself,
             // that's recomputeActiveRoute()'s job.
+            directionsViewModel.reportedIncidentCoordinates = { trafficReports.blockedCoordinates }
             navigationViewModel.onOffRoute = { recomputeActiveRoute() }
             navigationViewModel.onStopAdded = { recomputeActiveRoute() }
-            navigationViewModel.onIncidentReported = { recomputeActiveRoute() }
             await viewModel.start()
         }
         // Compass-driven camera rotation ONLY applies once the user explicitly opts in via the
@@ -338,8 +530,15 @@ struct MapScreen: View {
         .onChange(of: viewModel.currentHeading) { _, newHeading in
             guard let newHeading, let location = viewModel.currentLocation else { return }
             guard trackingMode == .followHeading else { return }
-            animateCamera(duration: 0.15, linear: true) {
-                viewModel.followUser(at: location, heading: newHeading)
+            // Rotation runs on its own throttle. It shares nothing with the GPS-follow path any
+            // more: the compass fires far more often than fixes arrive, and on one shared clock
+            // it was eating the budget and leaving the map trailing behind a moving rider.
+            animateHeading(duration: 0.25, linear: true) {
+                if navigationViewModel.isActive {
+                    viewModel.followUser(at: location, heading: newHeading)
+                } else {
+                    viewModel.orientToHeading(at: location, heading: newHeading, camera: currentCamera)
+                }
             }
         }
         .sheet(isPresented: .constant(!navigationViewModel.isActive)) {
@@ -366,6 +565,20 @@ struct MapScreen: View {
                         destinationCoordinate: destinationCoordinate,
                         intermediateStops: directionsViewModel.stops.map(\.coordinate)
                     )
+                    ActiveTripStore.shared.save(
+                        route: route,
+                        destinationName: name,
+                        destinationCoordinate: destinationCoordinate,
+                        stops: directionsViewModel.stops.map(\.coordinate),
+                        force: true
+                    )
+                    // Pull the posted limits for the road ahead now, while the phone still has
+                    // signal and the driver hasn't moved — that's what keeps the sign up through
+                    // a tunnel later.
+                    speedLimitService.prefetch(
+                        along: route.coordinates,
+                        metresRemaining: route.distanceMeters
+                    )
                     // Kick off the first lookup here rather than waiting on a location update —
                     // starting from a standstill can otherwise leave the sign blank until the
                     // first 80m of movement.
@@ -386,7 +599,7 @@ struct MapScreen: View {
                     directionsViewModel.stop()
                     // Contextual, not upfront: this is the moment background tracking actually
                     // becomes useful, which is exactly when Apple expects an Always-location ask.
-                    viewModel.beginBackgroundTracking()
+                    viewModel.beginBackgroundTracking(driving: directionsViewModel.mode == .automobile)
                     Task { await navigationNotifications.requestAuthorization() }
                     // Starting navigation always takes the camera back, even if the user had
                     // panned away while choosing a route.
@@ -424,6 +637,15 @@ struct MapScreen: View {
             // sheet" pattern that silently never shows on this SwiftUI version. Presenting instead
             // from the already-open sheet's own content chains it onto the same, single active
             // presentation, which iOS handles correctly.
+            // Chained here for the same reason as the steps sheet below: the search sheet is
+            // already presented, so a sibling `.sheet` on MapScreen's root would never show.
+            .sheet(isPresented: $isShowingMapModes) {
+                MapModesCard(mode: $mapMode, onClose: { isShowingMapModes = false })
+                .presentationDetents([.height(190)])
+                .presentationDragIndicator(.hidden)
+                .presentationBackground(.regularMaterial)
+                .presentationCornerRadius(28)
+            }
             .sheet(item: $stepsRoute) { route in
                 // Transit has no `RouteStep` list by nature, so the generic steps sheet could
                 // only ever say "turn-by-turn isn't available". The itinerary is the directions
@@ -489,11 +711,20 @@ struct MapScreen: View {
         return (isTransit ? transitCardHeight : navBarHeight) + 14
     }
 
+    /// Turn-by-turn tilts the map into 3D, and it colours traffic — but only when the trip is
+    /// actually a drive. Riding the subway with the roads painted red was noise about a road
+    /// you're not on.
+    private var activeMapStyle: MapStyle {
+        guard navigationViewModel.isActive else { return mapMode.style }
+        let isDriving = directionsViewModel.mode == .automobile
+        return .standard(elevation: .realistic, pointsOfInterest: .all, showsTraffic: isDriving)
+    }
+
     /// Transit lines are only drawn in transit mode, inside the region they describe, and only
     /// once zoomed in enough for them to mean anything — at state level 29 overlapping polylines
     /// are just noise.
     private var shouldDrawTransitLines: Bool {
-        guard showsTransitLines, let center = mapCenter else { return false }
+        guard mapMode.showsTransitLines, let center = mapCenter else { return false }
         let inRegion = (40.4...41.1).contains(center.latitude)
             && (-74.35...(-73.6)).contains(center.longitude)
         let zoomedIn = (currentCamera?.distance ?? 0) < 45_000
@@ -530,9 +761,26 @@ struct MapScreen: View {
                 stops: stopItems,
                 transportType: .automobile,
                 avoidTolls: directionsViewModel.avoidTolls,
-                avoidHighways: directionsViewModel.avoidHighways
-            ), let newRoute = options.first else { return }
+                avoidHighways: directionsViewModel.avoidHighways,
+                avoiding: trafficReports.blockedCoordinates
+            ), let newRoute = options.first else {
+                handleRerouteFailure()
+                return
+            }
+            needsRerouteRetry = false
             navigationViewModel.reroute(to: newRoute)
+            // A new path means the prefetched limits are for roads that are no longer being
+            // driven, so they're rebuilt for the new one — without clearing the sign, which is
+            // still right for the road under the car.
+            speedLimitService.invalidatePrefetch()
+            speedLimitService.prefetch(along: newRoute.coordinates, metresRemaining: newRoute.distanceMeters)
+            ActiveTripStore.shared.save(
+                route: newRoute,
+                destinationName: navigationViewModel.destinationName,
+                destinationCoordinate: navigationViewModel.destinationCoordinate,
+                stops: navigationViewModel.intermediateStops,
+                force: true
+            )
             // A reroute changes the ETA/instruction enough that it's worth refreshing right
             // away rather than waiting out the normal GPS-driven throttle window.
             let arrival = Date().addingTimeInterval(newRoute.travelTime)
@@ -550,8 +798,42 @@ struct MapScreen: View {
         }
     }
 
-    /// Routes every programmatic camera move through one throttle so the GPS-fix path and the
-    /// compass-heading path never both animate the same camera at once and fight each other.
+    /// What to do when a new route can't be worked out.
+    ///
+    /// The old behaviour was to return quietly, which looks identical to working: the banner keeps
+    /// showing a turn the driver isn't going to take and nothing says why. The route already in
+    /// hand is still good — the road hasn't moved — so it stays up, the driver is told once, and
+    /// the retry is armed for the moment the connection comes back.
+    private func handleRerouteFailure() {
+        guard navigationViewModel.isActive else { return }
+        guard !needsRerouteRetry else { return }
+        needsRerouteRetry = true
+        voiceGuidance.speak(
+            networkMonitor.isConnected
+                ? "Couldn't find a new route. Continuing on the current one."
+                : "You're offline. Continuing on the saved route — head back to it when you can."
+        )
+    }
+
+    /// Picks a trip back up after the app went away mid-drive.
+    private func resume(_ trip: ActiveTripStore.SavedTrip) {
+        let route = trip.route
+        navigationViewModel.start(
+            route: route,
+            destinationName: trip.destinationName,
+            destinationCoordinate: trip.destination.coordinate,
+            intermediateStops: trip.stops.map(\.coordinate)
+        )
+        speedLimitService.prefetch(along: route.coordinates, metresRemaining: route.distanceMeters)
+        viewModel.beginBackgroundTracking(driving: true)
+        if let location = viewModel.currentLocation {
+            navigationViewModel.update(with: location)
+        }
+        Haptics.commit()
+    }
+
+    /// Throttles the GPS-fix-driven camera moves so two fixes arriving close together don't
+    /// stack animations on the same camera.
     private func animateCamera(duration: Double, linear: Bool = false, _ body: () -> Void) {
         let now = Date()
         guard now.timeIntervalSince(lastCameraAnimation) > duration * 0.6 else { return }
@@ -561,42 +843,77 @@ struct MapScreen: View {
         }
     }
 
+    /// The same, on a separate clock for compass-driven rotation.
+    ///
+    /// These used to share `lastCameraAnimation`, and because heading updates arrive far more
+    /// often than location fixes, the heading path kept claiming the window and the recenter
+    /// that should have followed a fix got dropped — the map visibly trailing behind someone
+    /// actually moving. Two clocks means neither can starve the other.
+    private func animateHeading(duration: Double, linear: Bool = false, _ body: () -> Void) {
+        let now = Date()
+        guard now.timeIntervalSince(lastHeadingAnimation) > duration * 0.6 else { return }
+        lastHeadingAnimation = now
+        withAnimation(linear ? .linear(duration: duration) : .smooth(duration: duration)) {
+            body()
+        }
+    }
+
     private func handleLocationButtonTap() {
         // Tapping re-center is how the user hands control back to automatic follow.
         isCameraUserControlled = false
         lastCameraAnimation = .distantPast
+        lastHeadingAnimation = .distantPast
         switch trackingMode {
         case .off:
             Haptics.select()
             trackingMode = .follow
             animateCamera(duration: 0.5) {
-                viewModel.recenterOnUser()
+                viewModel.recenterOnUser(camera: currentCamera)
             }
         case .follow:
             Haptics.select()
             trackingMode = .followHeading
+            // Apple's second tap spins the map so the way you're facing points up, and changes
+            // nothing else. Going through `followUser` here used to also force a 400m tilted
+            // navigation camera, so browsing the map and asking to face north-of-you threw you
+            // into a 3D street view you never asked for.
             if let location = viewModel.currentLocation {
                 let heading = viewModel.currentHeading ?? 0
                 animateCamera(duration: 0.5) {
-                    viewModel.followUser(at: location, heading: heading)
+                    viewModel.orientToHeading(at: location, heading: heading, camera: currentCamera)
                 }
             }
         case .followHeading:
             Haptics.select()
             trackingMode = .follow
-            animateCamera(duration: 0.5) {
-                viewModel.recenterOnUser()
+            if let location = viewModel.currentLocation {
+                animateCamera(duration: 0.5) {
+                    viewModel.straightenToNorth(at: location, camera: currentCamera)
+                }
             }
         }
     }
 
     /// How far up from the bottom the floating map buttons (recenter/layers, compass) sit —
-    /// tied directly to the fixed fraction the sheet is actually resting at (see `.home` /
-    /// `.directionsRest`) rather than a measured content height, which ran the buttons a
-    /// card's-height too high above the directions card.
+    /// tied directly to the fixed height/fraction the sheet is actually resting at, rather than
+    /// a measured content height, which ran the buttons a card's-height too high above the
+    /// directions card.
+    ///
+    /// This has to check every detent in `sheetDetents`, not just the resting one — collapsing
+    /// the sheet to its short peek height used to leave the buttons stranded up at the home
+    /// detent's fraction because this only ever accounted for `.home`/`.directionsRest`.
     private var mapControlsBottomPadding: CGFloat {
-        let fraction: CGFloat = directionsViewModel.isActive ? 0.46 : 0.47
-        return screenHeight * fraction + 12
+        if searchDetent == .large {
+            // The sheet covers nearly the whole screen at `.large`; hug the controls just under
+            // the search bar's row instead of a bottom offset that'd sit under the sheet.
+            return screenHeight - 140
+        }
+        if directionsViewModel.isActive {
+            if searchDetent == .height(190) { return 190 + 12 }
+            return screenHeight * 0.46 + 12
+        }
+        if searchDetent == .height(collapsedHeight) { return collapsedHeight + 12 }
+        return screenHeight * 0.47 + 12
     }
 
     private var mapControlsOverlay: some View {
@@ -630,6 +947,10 @@ struct MapScreen: View {
                 VStack(spacing: 8) {
                     if isMapRotated {
                         CompassRoseButton(heading: currentCamera?.heading ?? 0) {
+                            // Straightening the map is also how you leave compass mode. Without
+                            // this the map snapped straight back to your heading on the next
+                            // magnetometer reading, so the compass button looked broken.
+                            if trackingMode == .followHeading { trackingMode = .follow }
                             withAnimation(.smooth(duration: 0.4)) {
                                 viewModel.resetHeading(from: currentCamera)
                             }
@@ -637,20 +958,65 @@ struct MapScreen: View {
                         .transition(.scale.combined(with: .opacity))
                     }
                     FusedRightControls(
-                        mapStyle: $mapStyle,
-                        showsTransitLines: $showsTransitLines,
                         trackingMode: trackingMode,
-                        onRecenter: handleLocationButtonTap
+                        onRecenter: handleLocationButtonTap,
+                        onOpenMapModes: {
+                            Haptics.tap()
+                            isShowingMapModes = true
+                        }
                     )
                 }
             }
             .padding(.horizontal, 12)
             .padding(.bottom, mapControlsBottomPadding)
             .animation(.smooth(duration: 0.3), value: directionsViewModel.isActive)
+            .animation(.smooth(duration: 0.3), value: searchDetent)
             .animation(.snappy(duration: 0.35), value: isCloseEnoughForStreetControls)
         }
         .animation(.smooth(duration: 0.3), value: searchViewModel.showSearchHereButton)
         .animation(.smooth(duration: 0.3), value: isMapRotated)
+    }
+
+    /// The accuracy halo's radius in screen points, or 0 when there's nothing worth drawing.
+    ///
+    /// Hidden below 25m because a good open-sky fix doesn't need a caveat and a permanent ring
+    /// around the dot would just be noise, and clamped at the top so a really bad fix — the kind
+    /// you get on a platform underground — shades the neighbourhood rather than the whole screen.
+    /// A route line the way iOS draws one: a dark casing with the colour laid on top of it.
+    ///
+    /// One flat stroke is what a route looks like in a hobby app. Apple's has an outline, and it
+    /// isn't decoration — a plain blue line loses its edges against a blue-grey arterial or a
+    /// body of water, and a J-brown one disappears over a park. The casing gives the line a
+    /// constant edge so it reads as something laid *on* the map at any zoom, in light or dark.
+    @MapContentBuilder
+    private func routeStroke(
+        coordinates: [CLLocationCoordinate2D],
+        color: Color,
+        width: CGFloat,
+        dash: [CGFloat] = []
+    ) -> some MapContent {
+        MapPolyline(coordinates: coordinates)
+            .stroke(
+                color.mix(with: .black, by: 0.45).opacity(0.85),
+                style: StrokeStyle(lineWidth: width + 3, lineCap: .round, lineJoin: .round, dash: dash)
+            )
+        MapPolyline(coordinates: coordinates)
+            .stroke(color, style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round, dash: dash))
+    }
+
+    /// Where to draw the user: pulled onto the route while a trip is running, the raw fix
+    /// otherwise. See `NavigationViewModel.matchedCoordinate` for when the match is trusted —
+    /// a fix that disagrees with the route by more than its own error bar is drawn where the
+    /// phone actually says it is.
+    private func puckCoordinate(for location: CLLocation) -> CLLocationCoordinate2D {
+        guard navigationViewModel.isActive else { return location.coordinate }
+        return navigationViewModel.matchedCoordinate ?? location.coordinate
+    }
+
+    private var accuracyRadiusInPoints: Double {
+        let accuracy = viewModel.horizontalAccuracy
+        guard accuracy >= 25 else { return 0 }
+        return min(accuracy / metresPerPoint, 260)
     }
 
     private var isMapRotated: Bool {
@@ -697,9 +1063,15 @@ struct MapScreen: View {
                     Spacer(minLength: 0)
                     HStack(alignment: .bottom) {
                         Button(action: handleLocationButtonTap) {
-                            Image(systemName: trackingMode == .followHeading ? "location.north.line.fill" : "location.north.fill")
+                            // Same three glyphs as the browsing map's button, for the same three
+                            // states — a hollow arrow when the map isn't following you, filled
+                            // once it is, and the compass needle in heading mode. It used to
+                            // show a filled arrow whether or not it was tracking, so during a
+                            // trip there was no way to tell by looking whether panning away had
+                            // dropped follow.
+                            Image(systemName: trackingMode.locationSymbol)
                                 .scaledFont(size: 18, weight: .medium, relativeTo: .body)
-                                .foregroundStyle(trackingMode == .followHeading ? Color.accentColor : Color.primary)
+                                .foregroundStyle(trackingMode == .off ? Color.primary : Color.accentColor)
                                 .frame(width: 48, height: 48)
                                 .contentShape(Circle())
                                 .contentTransition(.symbolEffect(.replace))
@@ -721,10 +1093,13 @@ struct MapScreen: View {
                         Spacer()
                         TransitNavigationCardView(
                             route: route,
+                            navigation: navigationViewModel,
                             destinationName: navigationViewModel.destinationName,
                             onClose: {
                                 navigationViewModel.end()
                                 speedLimitService.reset()
+                                laneGuidance.reset()
+                                ActiveTripStore.shared.clear()
                             },
                             onMore: { showingTransitDetails = true }
                         )
@@ -755,6 +1130,22 @@ struct MapScreen: View {
                             nextManeuverIcon: navigationViewModel.stepAfterNext?.maneuverIcon ?? "arrow.up"
                         )
 
+                        // Which lane to be in, on the run-in to the junction — directly under the
+                        // banner it belongs to, the way Apple stacks them.
+                        if !laneGuidance.lanes.isEmpty,
+                           laneGuidance.isVisible(distanceToManeuver: navigationViewModel.distanceToNextManeuver) {
+                            LaneGuidanceBar(lanes: laneGuidance.lanes)
+                                .padding(.top, 6)
+                        }
+
+                        // The route already in hand keeps working with no signal — the line, the
+                        // turns, the distances, the voice. What can't happen is finding a new one,
+                        // and that's worth saying out loud rather than looking broken.
+                        if !networkMonitor.isConnected {
+                            OfflineBanner(message: "Offline · Navigating on the saved route")
+                                .padding(.top, 6)
+                        }
+
                         if let limit = speedLimitService.display {
                             HStack {
                                 SpeedLimitSign(speedLimit: limit.value, unitLabel: limit.unit)
@@ -768,6 +1159,7 @@ struct MapScreen: View {
                         Spacer()
                     }
                     .animation(.smooth(duration: 0.3), value: speedLimitService.display?.value)
+                    .animation(.smooth(duration: 0.25), value: laneGuidance.lanes.count)
 
                     VStack {
                         Spacer()
@@ -780,6 +1172,8 @@ struct MapScreen: View {
                             onEndRoute: {
                                 navigationViewModel.end()
                                 speedLimitService.reset()
+                                laneGuidance.reset()
+                                ActiveTripStore.shared.clear()
                                 liveActivity.end()
                                 NavigationWidgetDataStore.clear()
                                 viewModel.endBackgroundTracking()
@@ -814,15 +1208,41 @@ struct MapScreen: View {
                     isAddingNavStop = false
                 }
             }
+            // Apple offers a trip back the same way after its app is killed mid-drive — the
+            // route is still good, and re-finding it needs signal the car may not have.
+            .alert(
+                "Resume Trip?",
+                isPresented: Binding(
+                    get: { resumableTrip != nil && !navigationViewModel.isActive },
+                    set: { if !$0 { resumableTrip = nil } }
+                ),
+                presenting: resumableTrip
+            ) { trip in
+                Button("Resume") {
+                    resume(trip)
+                    resumableTrip = nil
+                }
+                Button("Not Now", role: .cancel) {
+                    ActiveTripStore.shared.clear()
+                    resumableTrip = nil
+                }
+            } message: { trip in
+                Text("Waypoint was navigating to \(trip.destinationName) when it closed.")
+            }
             .confirmationDialog("Report an Incident", isPresented: $isReportingIncident, titleVisibility: .visible) {
                 ForEach(ReportedIncident.Kind.allCases, id: \.self) { kind in
                     Button(kind.rawValue) {
                         guard let coordinate = viewModel.currentLocation?.coordinate else { return }
-                        navigationViewModel.reportIncident(kind, at: coordinate)
+                        Task {
+                            await trafficReports.report(kind, at: coordinate)
+                            recomputeActiveRoute()
+                        }
                     }
                 }
             } message: {
-                Text("This marks the spot for this trip and checks for a better route. It isn't shared with other drivers or with Apple/Google traffic data.")
+                Text(trafficReports.isSharing
+                     ? "Shared with other Waypoint drivers nearby, and used to steer your route around it. It doesn't reach Apple or Google's traffic data."
+                     : "Marks the spot and steers your route around it. Sign in to share reports with other Waypoint drivers — it never reaches Apple or Google's traffic data.")
             }
         }
         // Apple Maps forces a dark nav theme at night regardless of the device's own light/dark
@@ -984,25 +1404,15 @@ private struct ClearMapButton<Label: View>: View {
 /// The recenter-location and map-style buttons fused into a single Liquid Glass pill,
 /// matching Apple Maps rather than rendering as two separate circular buttons.
 private struct FusedRightControls: View {
-    @Binding var mapStyle: MapStyle
-    /// Transit mode isn't a MapKit style, so it rides alongside the style selection.
-    @Binding var showsTransitLines: Bool
     let trackingMode: UserTrackingMode
     let onRecenter: () -> Void
-
-    private var locationSymbol: String {
-        switch trackingMode {
-        case .off: "location"
-        case .follow: "location.fill"
-        case .followHeading: "location.north.line.fill"
-        }
-    }
+    let onOpenMapModes: () -> Void
 
     var body: some View {
         GlassEffectContainer(spacing: 0) {
             VStack(spacing: 0) {
                 Button(action: onRecenter) {
-                    Image(systemName: locationSymbol)
+                    Image(systemName: trackingMode.locationSymbol)
                         .scaledFont(size: 17, weight: .medium, relativeTo: .body)
                         .foregroundStyle(trackingMode == .off ? Color.primary : Color.accentColor)
                         .frame(width: 48, height: 48)
@@ -1015,33 +1425,18 @@ private struct FusedRightControls: View {
                     .frame(width: 30)
                     .overlay(Color.primary.opacity(0.15))
 
-                Menu {
-                    Button("Standard") {
-                        showsTransitLines = false
-                        mapStyle = .standard(showsTraffic: true)
-                    }
-                    Button("Transit") {
-                        // Traffic off: Apple's transit map drops the road congestion colouring so
-                        // the subway lines are the thing you read.
-                        showsTransitLines = true
-                        mapStyle = .standard(showsTraffic: false)
-                    }
-                    Button("Satellite") {
-                        showsTransitLines = false
-                        mapStyle = .imagery
-                    }
-                    Button("Hybrid") {
-                        showsTransitLines = false
-                        mapStyle = .hybrid(showsTraffic: true)
-                    }
-                } label: {
-                    Image(systemName: "square.3.layers.3d")
+                // Apple opens a card of live previews here rather than a list of style names,
+                // which is the only way to see what "Hybrid" versus "Satellite" actually meant.
+                Button(action: onOpenMapModes) {
+                    Image(systemName: "map")
                         .scaledFont(size: 18, weight: .medium, relativeTo: .body)
                         .foregroundStyle(.primary)
                         .frame(width: 48, height: 48)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("mapModesButton")
+                .accessibilityLabel("Map modes")
             }
             .glassEffect(.clear.interactive(), in: Capsule())
         }
@@ -1181,30 +1576,55 @@ private struct LocationPermissionDeniedView: View {
     }
 }
 
+/// The card that rides with you on a transit trip.
+///
+/// It used to say "Walk to <first stop>" for the whole journey — the same sentence on the
+/// platform, on the train, and walking off the far end — because it only ever read the first
+/// ride out of the route. It now follows where you actually are: the walk to the platform, the
+/// ride with its next stop and how many are left, then the last walk to the door.
 private struct TransitNavigationCardView: View {
     let route: RouteOption
+    let navigation: NavigationViewModel
     let destinationName: String
     let onClose: () -> Void
     let onMore: () -> Void
 
+    private var ride: TransitStep? { navigation.currentRide }
+    private var upcoming: TransitStep? { navigation.upcomingRide }
+
+    private var symbol: String {
+        ride?.vehicleSymbol ?? "figure.walk"
+    }
+
+    private var title: String {
+        if let ride { return "Get off at \(ride.arrivalStop)" }
+        if let upcoming { return "Walk to \(upcoming.departureStop)" }
+        return "Walk to \(destinationName)"
+    }
+
+    /// The honest second line for each phase — nil rather than filler when the data for it
+    /// isn't there (a bus the MTA bundle doesn't cover has no next-stop list).
+    private var subtitle: String? {
+        if ride != nil {
+            if let next = navigation.nextStopName { return "Next stop: \(next)" }
+            return nil
+        }
+        guard let minutes = route.firstWalkMinutes, upcoming != nil else { return nil }
+        return "About \(minutes) min walk"
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
-            Image(systemName: "figure.walk")
+            Image(systemName: symbol)
                 .scaledFont(size: 32, weight: .semibold, relativeTo: .title)
-                .foregroundStyle(.primary)
+                .foregroundStyle(ride?.tintColor ?? .primary)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    if let firstStep = route.transitSteps.first {
-                        Text("Walk to \(firstStep.departureStop) stop")
-                            .scaledFont(size: 20, weight: .bold, relativeTo: .title3)
-                            .foregroundStyle(.primary)
-                            .lineLimit(2)
-                    } else {
-                        Text("Walk to \(destinationName)")
-                            .scaledFont(size: 20, weight: .bold, relativeTo: .title3)
-                            .foregroundStyle(.primary)
-                    }
+                    Text(title)
+                        .scaledFont(size: 20, weight: .bold, relativeTo: .title3)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
 
                     Spacer(minLength: 0)
 
@@ -1218,30 +1638,37 @@ private struct TransitNavigationCardView: View {
                     .buttonStyle(.plain)
                 }
 
-                // Was a hardcoded "0.3 miles, about 7 min" — this is the real first walk leg
-                // from the transit response, and it's omitted when there isn't one.
-                if let walkMinutes = route.firstWalkMinutes {
-                    Text("About \(walkMinutes) min walk")
+                if let subtitle {
+                    Text(subtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
 
                 HStack(spacing: 8) {
-                    if let firstStep = route.transitSteps.first {
-                        LineBadge(step: firstStep)
+                    if let step = ride ?? upcoming {
+                        LineBadge(step: step)
 
-                        if let departure = route.departureText {
-                            Text(departure)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        // Previously a hardcoded "Now 11:40 PM" next to a live-data wifi glyph,
-                        // which implied realtime tracking we don't have.
-                        if let minutes = route.minutesUntilDeparture {
-                            Text(minutes <= 0 ? "Departing now" : "in \(minutes) min")
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(.orange)
+                        if ride != nil {
+                            // Counted off the MTA's own stop sequence for this line, so it only
+                            // shows where that sequence resolved.
+                            if let stops = navigation.stopsUntilExit {
+                                Text(stops == 1 ? "1 stop" : "\(stops) stops")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        } else {
+                            if let departure = route.departureText {
+                                Text(departure)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                            // Previously a hardcoded "Now 11:40 PM" next to a live-data wifi
+                            // glyph, which implied realtime tracking we don't have.
+                            if let minutes = route.minutesUntilDeparture {
+                                Text(minutes <= 0 ? "Departing now" : "in \(minutes) min")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(.orange)
+                            }
                         }
                     }
 
@@ -1272,6 +1699,7 @@ private struct TransitNavigationCardView: View {
                     if value.translation.height < -18 { onMore() }
                 }
         )
+        .animation(.smooth(duration: 0.3), value: title)
     }
 }
 

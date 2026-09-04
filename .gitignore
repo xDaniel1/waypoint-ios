@@ -39,3 +39,7 @@ playground.xcworkspace
 
 ## Secrets — never commit the real API key
 Secrets.xcconfig
+
+# scratch API-probe files, never part of the app
+test_clustering.swift
+test_scale.swift

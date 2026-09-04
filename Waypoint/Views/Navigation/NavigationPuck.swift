@@ -74,9 +74,26 @@ struct UserLocationDot: View {
     /// Device heading in degrees; when nil the cone is hidden (no reliable compass fix yet).
     var heading: Double?
     var headingAccuracy: Double = 30
+    /// How far the fix could be off, already converted to screen points at the current zoom.
+    /// Zero or less hides the halo.
+    ///
+    /// iOS draws this same soft circle whenever it isn't confident where you are — inside a
+    /// station, under elevated track, in a street with towers either side. Showing it is the
+    /// honest alternative to a crisp dot placed somewhere the phone doesn't actually know you
+    /// are: the dot stays where the fix says, and the circle says how much to trust it.
+    var accuracyRadiusPoints: Double = 0
 
     var body: some View {
         ZStack {
+            if accuracyRadiusPoints > 0 {
+                Circle()
+                    .fill(Color.blue.opacity(0.14))
+                    .overlay(Circle().stroke(Color.blue.opacity(0.22), lineWidth: 1))
+                    .frame(width: accuracyRadiusPoints * 2, height: accuracyRadiusPoints * 2)
+                    .allowsHitTesting(false)
+                    .animation(.smooth(duration: 0.5), value: accuracyRadiusPoints)
+            }
+
             if let heading {
                 HeadingCone(spread: min(max(headingAccuracy, 18), 70))
                     .fill(

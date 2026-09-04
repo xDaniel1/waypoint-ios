@@ -20,10 +20,13 @@ actor DiskCache<Value: Codable> {
     private let ttl: TimeInterval
     private var memory: [String: Entry] = [:]
     private var loaded = false
+    /// Coalesces writes — see `schedulePersist()`.
+    private var pendingWrite: Task<Void, Never>?
 
     init(name: String, ttl: TimeInterval) {
         self.name = name
         self.ttl = ttl
+        DiskCacheRegistry.register { [weak self] in await self?.flush() }
     }
 
     func value(forKey key: String) -> Value? {
@@ -35,6 +38,28 @@ actor DiskCache<Value: Codable> {
     func store(_ value: Value, forKey key: String) {
         loadIfNeeded()
         memory[key] = Entry(value: value, cachedAt: Date())
+        schedulePersist()
+    }
+
+    /// Writing on every `store` meant re-encoding *the whole cache* and rewriting the whole file
+    /// once per entry. Loading the search page stores ~13 nearby results back to back, so that
+    /// was 13 full re-encodes of a growing file in a burst. Debouncing collapses a burst into one
+    /// write without changing what ends up on disk — reads are served from `memory` regardless,
+    /// so a slightly later write costs nothing.
+    private func schedulePersist() {
+        pendingWrite?.cancel()
+        pendingWrite = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            await self?.persist()
+        }
+    }
+
+    /// Flushes any debounced write immediately — for app backgrounding, where the 500ms window
+    /// might otherwise be cut short by suspension.
+    func flush() {
+        pendingWrite?.cancel()
+        pendingWrite = nil
         persist()
     }
 
@@ -72,5 +97,25 @@ actor DiskCache<Value: Codable> {
         } catch {
             Logger.places.error("Cache write failed for \(self.name): \(error.localizedDescription)")
         }
+    }
+}
+
+/// Lets the app flush every cache's debounced write when it goes to the background.
+///
+/// `DiskCache` coalesces writes on a 500ms timer, which is invisible in normal use but could
+/// otherwise lose the last write if the process is suspended inside that window.
+enum DiskCacheRegistry {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var flushers: [@Sendable () async -> Void] = []
+
+    static func register(_ flush: @escaping @Sendable () async -> Void) {
+        lock.withLock { flushers.append(flush) }
+    }
+
+    static func flushAll() async {
+        // The snapshot is taken synchronously and the awaits happen outside the lock — holding a
+        // lock across a suspension point is what the compiler rejects, and rightly so.
+        let all = lock.withLock { flushers }
+        for flush in all { await flush() }
     }
 }

@@ -32,6 +32,87 @@ final class SearchViewModel {
 
     private let completerService = SearchCompleterService()
     private var lastRegionCenter: CLLocationCoordinate2D?
+    private var regionUpdateTask: Task<Void, Never>?
+
+    // MARK: Category browse
+
+    /// Which category pill is showing results, if any. Tapping "Restaurants" in Apple Maps
+    /// *browses* a category — it runs a real nearby search and lists what's around you. Ours
+    /// used to just type the word into the search field, which handed it to the autocomplete
+    /// completer instead, so you got literal name matches ("Restaurant Depot", a "Restaurants
+    /// Zone" in Israel) with the keyboard still up rather than the restaurants near you.
+    private(set) var activeCategory: String?
+    /// SF Symbol for the map pins of the active category — a fork on a gas station would be
+    /// worse than no icon.
+    private(set) var categorySymbol = "mappin"
+    private(set) var categoryResults: [DetailedPlace] = []
+    private(set) var isLoadingCategory = false
+    private(set) var categoryErrorMessage: String?
+
+    private let placesService = GooglePlacesService()
+    private var categoryTask: Task<Void, Never>?
+
+    func photoURL(forCategoryResult place: DetailedPlace, maxWidthPx: Int = 200) -> URL? {
+        guard let photo = place.photos?.first else { return nil }
+        return placesService.photoURL(photoName: photo.name, maxWidthPx: maxWidthPx)
+    }
+
+    /// Tapping the open category again closes it, matching how the rest of the card's toggles
+    /// behave rather than stacking state.
+    func browseCategory(
+        title: String,
+        symbol: String,
+        includedTypes: [String],
+        near coordinate: CLLocationCoordinate2D?
+    ) {
+        categoryTask?.cancel()
+        guard activeCategory != title else {
+            clearCategory()
+            return
+        }
+        guard let coordinate = coordinate ?? lastRegionCenter else {
+            categoryErrorMessage = "Waiting for your location."
+            return
+        }
+        activeCategory = title
+        categorySymbol = symbol
+        categoryResults = []
+        categoryErrorMessage = nil
+        lastSearchCenter = coordinate
+        showSearchHereButton = false
+        // Apple puts the category name in the field while browsing. Setting it here also feeds
+        // the completer, but the category results take precedence over suggestions in the list,
+        // and typing anything else drops the category (see SearchSheet's queryText onChange).
+        queryText = title
+        categoryTask = Task {
+            isLoadingCategory = true
+            defer { isLoadingCategory = false }
+            do {
+                let places = try await placesService.searchNearby(
+                    includedTypes: includedTypes, coordinate: coordinate, radius: 5000, maxResults: 20
+                )
+                if Task.isCancelled { return }
+                categoryResults = places
+                if places.isEmpty {
+                    categoryErrorMessage = "No \(title.lowercased()) found nearby."
+                }
+            } catch {
+                if Task.isCancelled { return }
+                categoryErrorMessage = "Couldn't load nearby \(title.lowercased())."
+            }
+        }
+    }
+
+    func clearCategory(clearingQuery: Bool = false) {
+        categoryTask?.cancel()
+        if clearingQuery, queryText == activeCategory {
+            queryText = ""
+        }
+        activeCategory = nil
+        categoryResults = []
+        categoryErrorMessage = nil
+        isLoadingCategory = false
+    }
 
     // Explicit so `syncCoordinator` can wire itself into `favoritesStore`/`recentsStore` after
     // their own (default-valued) initializers have already run.
@@ -50,7 +131,17 @@ final class SearchViewModel {
             }
         }
         lastRegionCenter = newCenter
-        Task { await nearbyService.refresh(around: region) }
+
+        // Settle for a beat before asking for nearby points of interest. A pan fires this
+        // continuously, and every intermediate region was starting its own `MKLocalSearch` only to
+        // be thrown away by the next one. Nothing billed is saved here — that lookup is Apple's,
+        // not Google's — but it stops a drag across the city from queueing dozens of searches.
+        regionUpdateTask?.cancel()
+        regionUpdateTask = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            await nearbyService.refresh(around: region)
+        }
     }
     
     func searchInCurrentRegion(center: CLLocationCoordinate2D) {
@@ -141,6 +232,7 @@ final class SearchViewModel {
         // once you dismissed the search that raised it.
         showSearchHereButton = false
         selectedResult = nil
+        clearCategory()
     }
 
     private func syntheticResult(title: String, coordinate: CLLocationCoordinate2D) -> SearchResult {
