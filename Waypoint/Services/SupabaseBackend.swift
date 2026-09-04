@@ -88,6 +88,62 @@ final class SupabaseBackend: SyncBackend, Sendable {
         try await client.auth.signOut()
     }
 
+    // MARK: - Traffic reports
+
+    /// Files a report against the signed-in account. Reports are per-user rows rather than an
+    /// anonymous firehose so the table can be moderated later and a single device can't flood it.
+    func postTrafficReport(kind: String, latitude: Double, longitude: Double) async throws {
+        guard let client else { throw SyncError.notConfigured }
+        let userID = try await client.auth.session.user.id
+        try await client
+            .from("traffic_reports")
+            .insert(TrafficReportRow(
+                userID: userID.uuidString,
+                kind: kind,
+                latitude: latitude,
+                longitude: longitude,
+                createdAt: Date()
+            ))
+            .execute()
+    }
+
+    /// Everyone's recent reports inside a bounding box.
+    ///
+    /// A box rather than a radius because Postgres can answer it off a plain index without PostGIS
+    /// — the caller trims the corners. `since` keeps stale reports on the server rather than on
+    /// the map: a lane that was blocked an hour ago usually isn't.
+    func trafficReports(
+        minLatitude: Double,
+        maxLatitude: Double,
+        minLongitude: Double,
+        maxLongitude: Double,
+        since: Date
+    ) async throws -> [(id: UUID, kind: String, latitude: Double, longitude: Double, createdAt: Date, userID: String)] {
+        guard let client else { throw SyncError.notConfigured }
+        let rows: [TrafficReportRow] = try await client
+            .from("traffic_reports")
+            .select()
+            .gte("latitude", value: minLatitude)
+            .lte("latitude", value: maxLatitude)
+            .gte("longitude", value: minLongitude)
+            .lte("longitude", value: maxLongitude)
+            .gte("created_at", value: Formatters.iso8601.string(from: since))
+            .limit(200)
+            .execute()
+            .value
+        return rows.compactMap { row in
+            guard let id = row.id else { return nil }
+            return (id, row.kind, row.latitude, row.longitude, row.createdAt, row.userID)
+        }
+    }
+
+    /// The signed-in user's id, or nil when nobody is signed in — used to tell your own reports
+    /// apart from everyone else's.
+    func currentUserID() async -> String? {
+        guard let client else { return nil }
+        return try? await client.auth.session.user.id.uuidString
+    }
+
     // MARK: - SyncBackend
 
     func pull(for account: Account) async throws -> SyncSnapshot {
@@ -115,6 +171,25 @@ final class SupabaseBackend: SyncBackend, Sendable {
             .from("sync_snapshots")
             .upsert(row, onConflict: "user_id")
             .execute()
+    }
+}
+
+private struct TrafficReportRow: Codable {
+    /// Assigned by Postgres, so it's absent on the way up and present on the way down.
+    var id: UUID?
+    let userID: String
+    let kind: String
+    let latitude: Double
+    let longitude: Double
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userID = "user_id"
+        case kind
+        case latitude
+        case longitude
+        case createdAt = "created_at"
     }
 }
 

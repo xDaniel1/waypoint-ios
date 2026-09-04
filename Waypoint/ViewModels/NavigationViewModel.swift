@@ -3,50 +3,6 @@ import MapKit
 import Observation
 import SwiftUI
 
-/// Something the driver flagged at their current location during a trip — a local note, not a
-/// report to Apple/Google's crowdsourced traffic data (that's private infrastructure we don't
-/// have access to). It doesn't route around its own coordinate either; Google's Routes API has
-/// no avoid-this-exact-spot primitive. It's a marker for this trip, plus a nudge to recheck the
-/// route in case Google's live-traffic model already knows about something better.
-struct ReportedIncident: Identifiable {
-    enum Kind: String, CaseIterable {
-        case accident = "Accident"
-        case hazard = "Hazard"
-        case roadClosed = "Road Closed"
-        case slowTraffic = "Slow Traffic"
-
-        var symbol: String {
-            switch self {
-            case .accident: "car.side.rear.and.exclamationmark"
-            case .hazard: "exclamationmark.triangle.fill"
-            case .roadClosed: "road.lanes"
-            case .slowTraffic: "clock.badge.exclamationmark.fill"
-            }
-        }
-
-        /// Pin background color, matching the Apple/Waze convention of yellow for congestion
-        /// vs. red for things that actually block the road.
-        var tint: Color {
-            switch self {
-            case .accident: .red
-            case .hazard: .orange
-            case .roadClosed: .black
-            case .slowTraffic: .yellow
-            }
-        }
-
-        /// White reads fine on every tint except the yellow congestion pin, which needs a dark
-        /// icon for contrast.
-        var iconColor: Color {
-            self == .slowTraffic ? .black : .white
-        }
-    }
-
-    let id = UUID()
-    let kind: Kind
-    let coordinate: CLLocationCoordinate2D
-}
-
 /// Drives in-app turn-by-turn navigation: follow-camera, live ETA countdown,
 /// current maneuver banner, step advancement, spoken announcements, and automatic
 /// rerouting when the driver drifts off the calculated path.
@@ -59,7 +15,6 @@ final class NavigationViewModel {
     /// Carried over so a reroute (drifting off path) recalculates through the same stops the
     /// trip started with — including ones already passed, since this doesn't track visit state.
     private(set) var intermediateStops: [CLLocationCoordinate2D] = []
-    private(set) var reportedIncidents: [ReportedIncident] = []
     private(set) var currentStepIndex: Int = 0
     private(set) var remainingTime: TimeInterval = 0
     private(set) var remainingDistance: Double = 0
@@ -70,11 +25,10 @@ final class NavigationViewModel {
     var onAnnouncement: ((String) -> Void)?
     /// Fired when the driver has drifted far enough from the route that it should be
     /// recalculated, or a stop was added mid-trip via search-along-route. Either way this view
-    /// model doesn't know how to compute a new route itself — that's Google Routes' job — so it
-    /// just signals the need; the caller supplies the new route via `reroute(to:)`.
+    /// model doesn't know how to compute a new route itself — that's the routing service's job —
+    /// so it just signals the need; the caller supplies the new route via `reroute(to:)`.
     var onOffRoute: (() -> Void)?
     var onStopAdded: (() -> Void)?
-    var onIncidentReported: (() -> Void)?
 
     /// Projected copy of `route.coordinates`, built once when a route is set.
     ///
@@ -96,6 +50,10 @@ final class NavigationViewModel {
     /// Every station the trip's rides call at, pinned to its point on the route, so "next stop"
     /// and "how many left" are comparisons against progress rather than searches.
     private var rideStops: [RideStop] = []
+
+    /// Incidents already spoken for this trip, so a jam doesn't get announced on every fix for
+    /// the two minutes it takes to reach it.
+    private var warnedIncidents: Set<UUID> = []
 
     private var announcedUpcomingForStep: Int?
     private var announcedImmediateForStep = -1
@@ -245,7 +203,6 @@ final class NavigationViewModel {
         self.destinationName = destinationName
         self.destinationCoordinate = destinationCoordinate
         self.intermediateStops = intermediateStops
-        reportedIncidents = []
         currentStepIndex = 0
         progressIndex = 0
         remainingTime = route.travelTime
@@ -255,6 +212,7 @@ final class NavigationViewModel {
         hasAnnouncedArrival = false
         offRouteStreak = 0
         lastRerouteRequest = .distantPast
+        warnedIncidents = []
         distanceToNextManeuver = nil
         matchedCoordinate = nil
         matchedCourse = nil
@@ -268,7 +226,6 @@ final class NavigationViewModel {
         route = nil
         destinationName = ""
         intermediateStops = []
-        reportedIncidents = []
         currentStepIndex = 0
         progressIndex = 0
         remainingTime = 0
@@ -313,14 +270,29 @@ final class NavigationViewModel {
         onStopAdded?()
     }
 
-    /// Records a local marker for this trip and asks the caller to recheck the route — this
-    /// doesn't feed Apple/Google's traffic data (private infrastructure) and doesn't route
-    /// around the exact coordinate (Google's Routes API has no avoid-this-spot primitive), so
-    /// it's honest to think of it as "note this, and see if there's a better path" rather than
-    /// "avoid this road."
-    func reportIncident(_ kind: ReportedIncident.Kind, at coordinate: CLLocationCoordinate2D) {
-        reportedIncidents.append(ReportedIncident(kind: kind, coordinate: coordinate))
-        onIncidentReported?()
+    /// Speaks a warning for a reported incident sitting on the road ahead.
+    ///
+    /// Only for things actually *on* the route — a crash on the parallel avenue is on the map but
+    /// isn't the driver's problem — and only once each, at about the distance a driver could still
+    /// do something about it. Reports live in `TrafficReportsService`; this just decides which of
+    /// them are worth saying out loud and when.
+    func warnAbout(_ incidents: [ReportedIncident]) {
+        guard isActive, !mapPoints.isEmpty else { return }
+        for incident in incidents where !warnedIncidents.contains(incident.id) {
+            guard let along = distanceAlongRouteRemaining(at: incident.coordinate) else { continue }
+            let metresAhead = remainingDistance - along
+            // Behind the car, or too far off to have been passed yet.
+            guard metresAhead > 0, metresAhead < 800 else { continue }
+            warnedIncidents.insert(incident.id)
+            onAnnouncement?(incident.kind.spokenWarning)
+        }
+    }
+
+    /// Metres of route left from the point on the line nearest a coordinate, or nil when that
+    /// coordinate isn't near the route at all.
+    private func distanceAlongRouteRemaining(at coordinate: CLLocationCoordinate2D) -> Double? {
+        guard let match = matchToRoute(coordinate), match.offRouteDistance < 60 else { return nil }
+        return match.metresRemaining
     }
 
     private func announceFirstStep(of route: RouteOption) {

@@ -84,6 +84,12 @@ final class DirectionsViewModel {
     private(set) var isCalculating = false
     private(set) var errorMessage: String?
     private(set) var stops: [RouteStop] = []
+    /// True while the stop order is being worked out, so the button can spin rather than look dead
+    /// — the matrix of pairwise ETAs behind it is a real round trip per pair.
+    private(set) var isOptimizingStops = false
+    /// Set when a reorder was asked for and the order already in the card was the best one, so the
+    /// card can say so instead of appearing to have ignored the tap.
+    private(set) var stopOrderNotice: String?
 
     var isActive: Bool { destination != nil }
     var destinationTitle: String { destination?.name ?? "Destination" }
@@ -94,6 +100,10 @@ final class DirectionsViewModel {
     }
 
     var onRoutesChanged: (([RouteOption], RouteOption?) -> Void)?
+    /// Where the routing gets the list of spots to steer around. Supplied by the screen that owns
+    /// the incident layer rather than held here, so this view model doesn't have to know reports
+    /// exist to calculate a route.
+    var reportedIncidentCoordinates: (() -> [CLLocationCoordinate2D])?
 
     private var destination: MKMapItem?
     private var origin: CLLocation?
@@ -122,6 +132,7 @@ final class DirectionsViewModel {
         destination = nil
         origin = nil
         stops = []
+        stopOrderNotice = nil
         routeOptions = []
         selectedRouteID = nil
         errorMessage = nil
@@ -130,16 +141,48 @@ final class DirectionsViewModel {
 
     func addStop(_ item: MKMapItem) {
         stops.append(RouteStop(mapItem: item))
+        stopOrderNotice = nil
         scheduleCalculation()
     }
 
     func removeStop(_ stop: RouteStop) {
         stops.removeAll { $0.id == stop.id }
+        stopOrderNotice = nil
         scheduleCalculation()
     }
 
     func moveStops(fromOffsets: IndexSet, toOffset: Int) {
         stops.move(fromOffsets: fromOffsets, toOffset: toOffset)
+        scheduleCalculation()
+    }
+
+    /// Reorders the stops into the quickest way round them all, keeping the origin where you are
+    /// and the destination last.
+    ///
+    /// Explicitly asked for rather than applied automatically: the order someone typed often
+    /// carries a reason the map can't see (the pharmacy shuts first), and Apple doesn't reshuffle
+    /// a trip on its own either.
+    func optimizeStopOrder() async {
+        guard let destination, let origin, stops.count > 1, !isOptimizingStops else { return }
+        isOptimizingStops = true
+        stopOrderNotice = nil
+        defer { isOptimizingStops = false }
+
+        let order = try? await routesService.optimizedStopOrder(
+            from: origin.coordinate,
+            through: stops.map(\.mapItem),
+            to: destination,
+            transportType: mode.mkTransportType,
+            avoidTolls: avoidTolls,
+            avoidHighways: avoidHighways
+        )
+
+        guard let order, order.count == stops.count else {
+            stopOrderNotice = "This is already the quickest order."
+            return
+        }
+        stops = order.map { stops[$0] }
+        Haptics.success()
         scheduleCalculation()
     }
 
@@ -188,7 +231,8 @@ final class DirectionsViewModel {
                     avoidTolls: avoidTolls,
                     avoidHighways: avoidHighways,
                     departureDate: departureDate,
-                    arrivalDate: arrivalDate
+                    arrivalDate: arrivalDate,
+                    avoiding: reportedIncidentCoordinates?() ?? []
                 )
             }
             applyOptions(options, emptyMessage: "No \(mode.label.lowercased()) route found.")

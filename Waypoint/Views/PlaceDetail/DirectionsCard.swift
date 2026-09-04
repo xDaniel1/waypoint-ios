@@ -57,6 +57,7 @@ struct DirectionsCard: View {
         VStack(spacing: 12) {
             modePicker
             endpointsCard
+            optimizeStopsRow
 
             if viewModel.isCalculating {
                 ProgressView()
@@ -263,6 +264,48 @@ struct DirectionsCard: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 
+    /// Offered only once there's more than one stop to reorder, and only for driving — the same
+    /// condition Add Stop appears under. Sits under the endpoint list rather than inside it so it
+    /// reads as an action on the list, not another place to go.
+    @ViewBuilder
+    private var optimizeStopsRow: some View {
+        if viewModel.mode == .automobile, viewModel.stops.count > 1 {
+            VStack(spacing: 6) {
+                Button {
+                    Haptics.tap()
+                    Task { await viewModel.optimizeStopOrder() }
+                } label: {
+                    HStack(spacing: 6) {
+                        if viewModel.isOptimizingStops {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Image(systemName: "arrow.trianglehead.swap")
+                        }
+                        Text(viewModel.isOptimizingStops ? "Working out the best order…" : "Optimize Stop Order")
+                    }
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.blue)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(.blue.opacity(0.15), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.isOptimizingStops)
+                .accessibilityIdentifier("optimizeStopsButton")
+
+                if let notice = viewModel.stopOrderNotice {
+                    Text(notice)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .transition(.opacity)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .animation(.smooth(duration: 0.25), value: viewModel.isOptimizingStops)
+            .animation(.smooth(duration: 0.25), value: viewModel.stopOrderNotice)
+        }
+    }
+
     private func endpointRow(
         symbol: String,
         symbolColor: Color,
@@ -441,6 +484,17 @@ struct DirectionsCard: View {
                             .foregroundStyle(.primary)
                     }
                     .padding(.top, 1)
+                } else if option.passesReportedIncident {
+                    // Only ever set when every alternate goes through the reported problem, so
+                    // this is "there's no way round it", not "we picked the bad one".
+                    HStack(spacing: 5) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption2)
+                        Text("Passes a reported incident")
+                            .font(.subheadline.weight(.regular))
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(.orange)
                 } else if isFastest(option) {
                     Text("Fastest")
                         .font(.subheadline.weight(.regular))

@@ -26,6 +26,16 @@ struct RouteOption: Identifiable {
     var departureText: String?
     /// Named stops along the selected transit ride, for drawing on the map.
     var transitStops: [NamedStop] = []
+    /// Where each rider-added stop falls in `coordinates`, so the map can pin it on the line and
+    /// navigation knows which arrival is a stop rather than the end of the trip. Empty for a trip
+    /// with no stops.
+    var stopIndices: [Int] = []
+    /// Set when this route still runs through somewhere a problem has been reported, which only
+    /// happens when every alternate does — see `AppleRoutesService.preferring(_:avoiding:)`.
+    var passesReportedIncident: Bool = false
+    /// The road this route is mostly made of, as MapKit named it — kept separately from `summary`
+    /// so a multi-leg trip can build its own "via A and B" out of its legs' names.
+    var roadName: String?
     /// The route broken into the individual legs you actually travel — each walk and each ride
     /// separately — so the map can draw a J ride in the J's brown and the A you transfer to in
     /// the A's blue, instead of painting the whole trip one colour. Empty for non-transit
@@ -188,6 +198,8 @@ struct RouteStep: Identifiable {
             "arrow.triangle.merge"
         case "FERRY", "FERRY_TRAIN":
             "ferry.fill"
+        case "ARRIVE_STOP":
+            "mappin.circle.fill"
         default:
             "arrow.up"
         }

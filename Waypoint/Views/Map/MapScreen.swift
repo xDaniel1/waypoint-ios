@@ -65,6 +65,13 @@ struct MapScreen: View {
     @State private var transitCardHeight: CGFloat = 150
     @State private var voiceGuidance = VoiceGuidanceService()
     @State private var speedLimitService = SpeedLimitService()
+    @State private var laneGuidance = LaneGuidanceService()
+    @State private var trafficReports = TrafficReportsService()
+    /// A trip that was running when the app last went away, offered back on launch.
+    @State private var resumableTrip: ActiveTripStore.SavedTrip?
+    /// Set when a reroute couldn't be computed, so the retry can fire the moment the connection
+    /// comes back rather than waiting for the driver to drift off the route again.
+    @State private var needsRerouteRetry = false
     @State private var navigationNotifications = NavigationNotificationService()
     @State private var isRerouting = false
     @State private var isSearchingAlongRoute = false
@@ -183,17 +190,30 @@ struct MapScreen: View {
                         }
                     }
                 }
-                ForEach(directionsViewModel.stops) { stop in
-                    Marker(stop.title, coordinate: stop.coordinate)
-                        .tint(.orange)
+                // Numbered rather than three identical pins: the whole point of a stop list is the
+                // order, and a map with matching markers on it doesn't say which one comes first.
+                ForEach(Array(directionsViewModel.stops.enumerated()), id: \.element.id) { index, stop in
+                    Annotation(stop.title, coordinate: stop.coordinate) {
+                        RouteStopMarker(number: index + 1)
+                    }
                 }
-                ForEach(navigationViewModel.reportedIncidents) { incident in
+                // Reported incidents — this driver's and, when signed in, everyone else's from
+                // the last couple of hours.
+                ForEach(trafficReports.reports) { incident in
                     Annotation(incident.kind.rawValue, coordinate: incident.coordinate) {
                         Image(systemName: incident.kind.symbol)
                             .scaledFont(size: 14, weight: .bold, relativeTo: .footnote)
                             .foregroundStyle(incident.kind.iconColor)
                             .padding(6)
                             .background(incident.kind.tint, in: Circle())
+                            // Someone else's report gets a ring, so "I flagged that" and
+                            // "somebody flagged that" aren't the same pin.
+                            .overlay {
+                                if !incident.isMine {
+                                    Circle().stroke(.white, lineWidth: 2)
+                                }
+                            }
+                            .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
                     }
                     .annotationTitles(.hidden)
                 }
@@ -342,7 +362,9 @@ struct MapScreen: View {
                 LocationPermissionDeniedView()
             }
 
-            if !networkMonitor.isConnected {
+            // While navigating, the nav overlay carries its own offline line under the maneuver
+            // banner — a second strip over the top of it would cover the turn.
+            if !networkMonitor.isConnected, !navigationViewModel.isActive {
                 VStack {
                     OfflineBanner()
                         .padding(.top, 8)
@@ -368,7 +390,19 @@ struct MapScreen: View {
         .mapScope(mapScope)
         // `.task` covers a cold launch from Siri; the `onChange` covers an intent firing while
         // the app is already open, which `.task` alone would miss.
-        .task { await handlePendingIntent() }
+        .task {
+            await handlePendingIntent()
+            // Only offered when nothing is running — an intent that started a trip on launch is
+            // the newer intention.
+            if !navigationViewModel.isActive {
+                resumableTrip = ActiveTripStore.shared.resumableTrip()
+            }
+        }
+        .onChange(of: networkMonitor.isConnected) { _, isConnected in
+            guard isConnected, needsRerouteRetry, navigationViewModel.isActive else { return }
+            needsRerouteRetry = false
+            recomputeActiveRoute()
+        }
         .onChange(of: PendingIntent.shared.request) { _, newValue in
             guard newValue != nil else { return }
             Task { await handlePendingIntent() }
@@ -378,6 +412,40 @@ struct MapScreen: View {
                 if navigationViewModel.isActive {
                     navigationViewModel.update(with: location)
                     Task { await speedLimitService.refreshIfNeeded(at: location) }
+                    if let route = navigationViewModel.route {
+                        ActiveTripStore.shared.save(
+                            route: route,
+                            destinationName: navigationViewModel.destinationName,
+                            destinationCoordinate: navigationViewModel.destinationCoordinate,
+                            stops: navigationViewModel.intermediateStops
+                        )
+                    }
+                    // Top the prefetched limits up as the driver eats through the stretch already
+                    // pulled; it no-ops until there's actually more road to cover.
+                    if let coordinates = navigationViewModel.route?.coordinates {
+                        speedLimitService.prefetch(
+                            along: navigationViewModel.remainingCoordinates.isEmpty
+                                ? coordinates
+                                : navigationViewModel.remainingCoordinates,
+                            metresRemaining: navigationViewModel.remainingDistance
+                        )
+                    }
+                    // Lane arrows only mean anything behind a wheel, so a transit trip skips the
+                    // lookup entirely rather than querying Overpass from a subway car.
+                    if navigationViewModel.route?.transitSegments.isEmpty ?? false {
+                        let course = navigationViewModel.matchedCourse
+                            ?? (location.course >= 0 ? location.course : nil)
+                        Task {
+                            await laneGuidance.refreshIfNeeded(
+                                tripID: navigationViewModel.route?.id,
+                                stepIndex: navigationViewModel.currentStepIndex + 1,
+                                maneuver: navigationViewModel.nextStep?.maneuver,
+                                maneuverCoordinate: navigationViewModel.nextStep?.startCoordinate,
+                                approachBearing: course,
+                                distanceToManeuver: navigationViewModel.distanceToNextManeuver
+                            )
+                        }
+                    }
                     if Date().timeIntervalSince(lastLiveActivityUpdate) > 20 {
                         lastLiveActivityUpdate = Date()
                         let arrival = Date().addingTimeInterval(navigationViewModel.remainingTime)
@@ -418,6 +486,13 @@ struct MapScreen: View {
                         viewModel.recenterKeepingZoom(on: location, camera: currentCamera)
                     }
                 }
+                // Other drivers' reports, kept current whether or not a trip is running — the pins
+                // are worth seeing while you're still deciding where to go. The spoken heads-up
+                // only fires for the ones actually on the road ahead.
+                Task {
+                    await trafficReports.refreshIfNeeded(near: location.coordinate)
+                    navigationViewModel.warnAbout(trafficReports.reports)
+                }
                 // Marking this fetched *before* awaiting meant a single failure — no network yet
                 // on launch, WeatherKit not warmed up — permanently suppressed the widget for the
                 // rest of the session. Retry until it actually succeeds.
@@ -443,9 +518,9 @@ struct MapScreen: View {
             // The view model can tell us we've drifted off the path, or that a stop was added
             // mid-trip via search-along-route — either way it doesn't fetch routes itself,
             // that's recomputeActiveRoute()'s job.
+            directionsViewModel.reportedIncidentCoordinates = { trafficReports.blockedCoordinates }
             navigationViewModel.onOffRoute = { recomputeActiveRoute() }
             navigationViewModel.onStopAdded = { recomputeActiveRoute() }
-            navigationViewModel.onIncidentReported = { recomputeActiveRoute() }
             await viewModel.start()
         }
         // Compass-driven camera rotation ONLY applies once the user explicitly opts in via the
@@ -489,6 +564,20 @@ struct MapScreen: View {
                         destinationName: name,
                         destinationCoordinate: destinationCoordinate,
                         intermediateStops: directionsViewModel.stops.map(\.coordinate)
+                    )
+                    ActiveTripStore.shared.save(
+                        route: route,
+                        destinationName: name,
+                        destinationCoordinate: destinationCoordinate,
+                        stops: directionsViewModel.stops.map(\.coordinate),
+                        force: true
+                    )
+                    // Pull the posted limits for the road ahead now, while the phone still has
+                    // signal and the driver hasn't moved — that's what keeps the sign up through
+                    // a tunnel later.
+                    speedLimitService.prefetch(
+                        along: route.coordinates,
+                        metresRemaining: route.distanceMeters
                     )
                     // Kick off the first lookup here rather than waiting on a location update —
                     // starting from a standstill can otherwise leave the sign blank until the
@@ -672,9 +761,26 @@ struct MapScreen: View {
                 stops: stopItems,
                 transportType: .automobile,
                 avoidTolls: directionsViewModel.avoidTolls,
-                avoidHighways: directionsViewModel.avoidHighways
-            ), let newRoute = options.first else { return }
+                avoidHighways: directionsViewModel.avoidHighways,
+                avoiding: trafficReports.blockedCoordinates
+            ), let newRoute = options.first else {
+                handleRerouteFailure()
+                return
+            }
+            needsRerouteRetry = false
             navigationViewModel.reroute(to: newRoute)
+            // A new path means the prefetched limits are for roads that are no longer being
+            // driven, so they're rebuilt for the new one — without clearing the sign, which is
+            // still right for the road under the car.
+            speedLimitService.invalidatePrefetch()
+            speedLimitService.prefetch(along: newRoute.coordinates, metresRemaining: newRoute.distanceMeters)
+            ActiveTripStore.shared.save(
+                route: newRoute,
+                destinationName: navigationViewModel.destinationName,
+                destinationCoordinate: navigationViewModel.destinationCoordinate,
+                stops: navigationViewModel.intermediateStops,
+                force: true
+            )
             // A reroute changes the ETA/instruction enough that it's worth refreshing right
             // away rather than waiting out the normal GPS-driven throttle window.
             let arrival = Date().addingTimeInterval(newRoute.travelTime)
@@ -690,6 +796,40 @@ struct MapScreen: View {
             )
             lastLiveActivityUpdate = Date()
         }
+    }
+
+    /// What to do when a new route can't be worked out.
+    ///
+    /// The old behaviour was to return quietly, which looks identical to working: the banner keeps
+    /// showing a turn the driver isn't going to take and nothing says why. The route already in
+    /// hand is still good — the road hasn't moved — so it stays up, the driver is told once, and
+    /// the retry is armed for the moment the connection comes back.
+    private func handleRerouteFailure() {
+        guard navigationViewModel.isActive else { return }
+        guard !needsRerouteRetry else { return }
+        needsRerouteRetry = true
+        voiceGuidance.speak(
+            networkMonitor.isConnected
+                ? "Couldn't find a new route. Continuing on the current one."
+                : "You're offline. Continuing on the saved route — head back to it when you can."
+        )
+    }
+
+    /// Picks a trip back up after the app went away mid-drive.
+    private func resume(_ trip: ActiveTripStore.SavedTrip) {
+        let route = trip.route
+        navigationViewModel.start(
+            route: route,
+            destinationName: trip.destinationName,
+            destinationCoordinate: trip.destination.coordinate,
+            intermediateStops: trip.stops.map(\.coordinate)
+        )
+        speedLimitService.prefetch(along: route.coordinates, metresRemaining: route.distanceMeters)
+        viewModel.beginBackgroundTracking(driving: true)
+        if let location = viewModel.currentLocation {
+            navigationViewModel.update(with: location)
+        }
+        Haptics.commit()
     }
 
     /// Throttles the GPS-fix-driven camera moves so two fixes arriving close together don't
@@ -958,6 +1098,8 @@ struct MapScreen: View {
                             onClose: {
                                 navigationViewModel.end()
                                 speedLimitService.reset()
+                                laneGuidance.reset()
+                                ActiveTripStore.shared.clear()
                             },
                             onMore: { showingTransitDetails = true }
                         )
@@ -988,6 +1130,22 @@ struct MapScreen: View {
                             nextManeuverIcon: navigationViewModel.stepAfterNext?.maneuverIcon ?? "arrow.up"
                         )
 
+                        // Which lane to be in, on the run-in to the junction — directly under the
+                        // banner it belongs to, the way Apple stacks them.
+                        if !laneGuidance.lanes.isEmpty,
+                           laneGuidance.isVisible(distanceToManeuver: navigationViewModel.distanceToNextManeuver) {
+                            LaneGuidanceBar(lanes: laneGuidance.lanes)
+                                .padding(.top, 6)
+                        }
+
+                        // The route already in hand keeps working with no signal — the line, the
+                        // turns, the distances, the voice. What can't happen is finding a new one,
+                        // and that's worth saying out loud rather than looking broken.
+                        if !networkMonitor.isConnected {
+                            OfflineBanner(message: "Offline · Navigating on the saved route")
+                                .padding(.top, 6)
+                        }
+
                         if let limit = speedLimitService.display {
                             HStack {
                                 SpeedLimitSign(speedLimit: limit.value, unitLabel: limit.unit)
@@ -1001,6 +1159,7 @@ struct MapScreen: View {
                         Spacer()
                     }
                     .animation(.smooth(duration: 0.3), value: speedLimitService.display?.value)
+                    .animation(.smooth(duration: 0.25), value: laneGuidance.lanes.count)
 
                     VStack {
                         Spacer()
@@ -1013,6 +1172,8 @@ struct MapScreen: View {
                             onEndRoute: {
                                 navigationViewModel.end()
                                 speedLimitService.reset()
+                                laneGuidance.reset()
+                                ActiveTripStore.shared.clear()
                                 liveActivity.end()
                                 NavigationWidgetDataStore.clear()
                                 viewModel.endBackgroundTracking()
@@ -1047,15 +1208,41 @@ struct MapScreen: View {
                     isAddingNavStop = false
                 }
             }
+            // Apple offers a trip back the same way after its app is killed mid-drive — the
+            // route is still good, and re-finding it needs signal the car may not have.
+            .alert(
+                "Resume Trip?",
+                isPresented: Binding(
+                    get: { resumableTrip != nil && !navigationViewModel.isActive },
+                    set: { if !$0 { resumableTrip = nil } }
+                ),
+                presenting: resumableTrip
+            ) { trip in
+                Button("Resume") {
+                    resume(trip)
+                    resumableTrip = nil
+                }
+                Button("Not Now", role: .cancel) {
+                    ActiveTripStore.shared.clear()
+                    resumableTrip = nil
+                }
+            } message: { trip in
+                Text("Waypoint was navigating to \(trip.destinationName) when it closed.")
+            }
             .confirmationDialog("Report an Incident", isPresented: $isReportingIncident, titleVisibility: .visible) {
                 ForEach(ReportedIncident.Kind.allCases, id: \.self) { kind in
                     Button(kind.rawValue) {
                         guard let coordinate = viewModel.currentLocation?.coordinate else { return }
-                        navigationViewModel.reportIncident(kind, at: coordinate)
+                        Task {
+                            await trafficReports.report(kind, at: coordinate)
+                            recomputeActiveRoute()
+                        }
                     }
                 }
             } message: {
-                Text("This marks the spot for this trip and checks for a better route. It isn't shared with other drivers or with Apple/Google traffic data.")
+                Text(trafficReports.isSharing
+                     ? "Shared with other Waypoint drivers nearby, and used to steer your route around it. It doesn't reach Apple or Google's traffic data."
+                     : "Marks the spot and steers your route around it. Sign in to share reports with other Waypoint drivers — it never reaches Apple or Google's traffic data.")
             }
         }
         // Apple Maps forces a dark nav theme at night regardless of the device's own light/dark
