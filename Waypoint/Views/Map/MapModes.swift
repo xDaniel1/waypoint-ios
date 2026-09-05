@@ -27,18 +27,25 @@ enum MapMode: String, CaseIterable, Identifiable {
 
     var style: MapStyle {
         switch self {
+        // `.realistic` is what gives you Apple's 3D buildings and terrain once the map is
+        // tilted. On `.flat` the 3D button produced a tilted *flat* map — the perspective
+        // changed and nothing stood up — which is why the city never looked like Apple's.
+        // MapKit only draws the geometry when the zoom and pitch warrant it, and navigation has
+        // been running `.realistic` all along, so this isn't new load.
         case .explore:
             // Traffic off. Congestion colouring is a driving concern, and leaving it on here was
             // painting red over half of Brooklyn while you were only browsing shops.
-            .standard(elevation: .flat, pointsOfInterest: .all, showsTraffic: false)
+            .standard(elevation: .realistic, pointsOfInterest: .all, showsTraffic: false)
         case .driving:
-            .standard(elevation: .flat, pointsOfInterest: .all, showsTraffic: true)
+            .standard(elevation: .realistic, pointsOfInterest: .all, showsTraffic: true)
         case .transit:
+            // The one exception: subway lines are drawn as flat overlays on top of this, and
+            // raised buildings push them behind geometry they're meant to sit over.
             .standard(elevation: .flat, pointsOfInterest: .all, showsTraffic: false)
         case .satellite:
             // Apple's "Satellite" keeps road and place labels over the imagery, which is
             // `.hybrid`. Plain `.imagery` drops every label and reads as a different mode.
-            .hybrid(elevation: .flat, showsTraffic: false)
+            .hybrid(elevation: .realistic, showsTraffic: false)
         }
     }
 }

@@ -335,6 +335,8 @@ struct MapScreen: View {
                 // is a circle either way, so the vertical scale is the one that matters.
                 let visibleMetres = context.region.span.latitudeDelta * 111_320
                 metresPerPoint = max(visibleMetres / max(screenHeight, 1), 0.0001)
+                viewModel.metresPerPoint = metresPerPoint
+                viewModel.viewportHeightPoints = screenHeight
                 withAnimation(.smooth(duration: 0.35)) {
                     currentCamera = context.camera
                 }
@@ -399,6 +401,11 @@ struct MapScreen: View {
                 navigationOverlay
                     .transition(.opacity)
             }
+        }
+        // The sheet's coverage decides where "centred" is, so the camera has to learn about a
+        // detent change before the next recentre, not after it.
+        .onChange(of: sheetCoveredFraction, initial: true) { _, fraction in
+            viewModel.bottomInsetFraction = fraction
         }
         .animation(.smooth(duration: 0.4), value: navigationViewModel.isActive)
         .animation(.smooth(duration: 0.3), value: networkMonitor.isConnected)
@@ -989,6 +996,26 @@ struct MapScreen: View {
     /// This has to check every detent in `sheetDetents`, not just the resting one — collapsing
     /// the sheet to its short peek height used to leave the buttons stranded up at the home
     /// detent's fraction because this only ever accounted for `.home`/`.directionsRest`.
+    /// How much of the viewport the sheet is covering right now, as a share of it.
+    ///
+    /// Feeds `MapViewModel.bottomInsetFraction` so recentring lands the blue dot in the middle of
+    /// the map you can see rather than the middle of the window. Mirrors the detents in
+    /// `sheetDetents`, same as `mapControlsBottomPadding` below.
+    private var sheetCoveredFraction: Double {
+        guard !navigationViewModel.isActive else { return 0 }
+        let height: CGFloat
+        if searchDetent == .large {
+            height = screenHeight * 0.92
+        } else if directionsViewModel.isActive {
+            height = searchDetent == .height(190) ? 190 : screenHeight * 0.46
+        } else if searchDetent == .height(collapsedHeight) {
+            height = collapsedHeight
+        } else {
+            height = screenHeight * 0.47
+        }
+        return min(max(height / max(screenHeight, 1), 0), 0.9)
+    }
+
     private var mapControlsBottomPadding: CGFloat {
         if searchDetent == .large {
             // The sheet covers nearly the whole screen at `.large`; hug the controls just under

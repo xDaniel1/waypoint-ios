@@ -73,3 +73,58 @@ final class LocationButtonCameraTests: XCTestCase {
         XCTAssertLessThan(distance, 10_000, "Should drop to something you can navigate by")
     }
 }
+
+// MARK: Centring in the exposed map
+
+extension LocationButtonCameraTests {
+
+    private func insetViewModel() -> MapViewModel {
+        let viewModel = MapViewModel()
+        // A sheet over the bottom 47% of a 956pt screen at 2 ground-metres per point.
+        viewModel.bottomInsetFraction = 0.47
+        viewModel.viewportHeightPoints = 956
+        viewModel.metresPerPoint = 2
+        return viewModel
+    }
+
+    /// Half the covered height, because moving the camera centre down by h moves the user up by h:
+    /// 0.47 * 956 / 2 * 2 ≈ 449m.
+    private var expectedOffsetMetres: Double { 0.47 * 956 / 2 * 2 }
+
+    func testRecentringPutsTheUserAboveTheCameraCentreSoTheSheetDoesNotCoverThem() {
+        let viewModel = insetViewModel()
+        viewModel.recenterOnUser(camera: tiltedCamera(), location: here)
+
+        let centre = try! XCTUnwrap(viewModel.cameraPosition.camera).centerCoordinate
+        let metresSouth = CLLocation(latitude: centre.latitude, longitude: centre.longitude)
+            .distance(from: here)
+        XCTAssertEqual(metresSouth, expectedOffsetMetres, accuracy: 25,
+                       "Camera centre should sit below the user by half the covered height")
+        XCTAssertLessThan(centre.latitude, here.coordinate.latitude,
+                          "Below on a north-up map means south")
+    }
+
+    /// With no sheet in the way — during navigation — there's nothing to compensate for, and the
+    /// camera should centre on the user exactly as before.
+    func testNoSheetMeansNoOffset() {
+        let viewModel = MapViewModel()
+        viewModel.recenterOnUser(camera: tiltedCamera(), location: here)
+
+        let centre = try! XCTUnwrap(viewModel.cameraPosition.camera).centerCoordinate
+        XCTAssertEqual(centre.latitude, here.coordinate.latitude, accuracy: 0.00001)
+        XCTAssertEqual(centre.longitude, here.coordinate.longitude, accuracy: 0.00001)
+    }
+
+    /// On a map turned to face east, "down the screen" is west, not south.
+    func testTheOffsetFollowsTheMapsRotation() {
+        let viewModel = insetViewModel()
+        let facingEast = MapCamera(centerCoordinate: here.coordinate, distance: 800, heading: 90, pitch: 0)
+        viewModel.orientToHeading(at: here, heading: 90, camera: facingEast)
+
+        let centre = try! XCTUnwrap(viewModel.cameraPosition.camera).centerCoordinate
+        XCTAssertLessThan(centre.longitude, here.coordinate.longitude,
+                          "Facing east, the centre shifts west — behind the user")
+        XCTAssertEqual(centre.latitude, here.coordinate.latitude, accuracy: 0.001,
+                       "and barely moves in latitude at all")
+    }
+}

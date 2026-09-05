@@ -83,6 +83,38 @@ final class MapViewModel {
         cameraPosition = .rect(mapRect)
     }
 
+    // MARK: Fitting the user into the part of the map you can actually see
+
+    /// The share of the viewport the search sheet is covering, 0...1.
+    ///
+    /// The map fills the whole window and the sheet floats over the bottom of it, so centring on
+    /// the window centre parks the blue dot down at the sheet's edge — which is what ours did,
+    /// and is not where Apple puts you. Apple centres you in the *exposed* map. Set by
+    /// `MapScreen` as the sheet moves between detents.
+    var bottomInsetFraction: Double = 0
+    /// Ground metres per screen point at the current zoom, and the viewport's height — together
+    /// they turn "half the covered height, in points" into a distance to shift the camera by.
+    var metresPerPoint: Double = 1
+    var viewportHeightPoints: Double = 0
+
+    /// How far to drop the camera centre below the user so they come to rest in the middle of the
+    /// visible map. Half the covered height, because moving the centre down by *h* moves the user
+    /// up by *h*.
+    private var centringOffsetMetres: Double {
+        guard bottomInsetFraction > 0.01, viewportHeightPoints > 0, metresPerPoint > 0 else { return 0 }
+        return bottomInsetFraction * viewportHeightPoints / 2 * metresPerPoint
+    }
+
+    /// The coordinate to hand the camera so that `coordinate` itself lands in the middle of the
+    /// exposed map rather than the middle of the window. `heading` is where the camera is
+    /// pointing, since "down the screen" is only due south on a north-up map.
+    private func centred(on coordinate: CLLocationCoordinate2D,
+                         heading: CLLocationDirection) -> CLLocationCoordinate2D {
+        let offset = centringOffsetMetres
+        guard offset > 1 else { return coordinate }
+        return Self.coordinate(from: coordinate, bearing: heading + 180, metres: offset)
+    }
+
     // MARK: Heading continuity
 
     /// The last heading we asked the camera for, in the un-normalised form we asked for it in.
@@ -160,11 +192,12 @@ final class MapViewModel {
             return
         }
         let usefulRange: ClosedRange<Double> = 150...6_000
+        let heading = commanding(0, liveHeading: camera?.heading)
         cameraPosition = .camera(
             MapCamera(
-                centerCoordinate: location.coordinate,
+                centerCoordinate: centred(on: location.coordinate, heading: heading),
                 distance: usefulRange.contains(distance) ? distance : 1_200,
-                heading: commanding(0, liveHeading: camera?.heading),
+                heading: heading,
                 pitch: camera?.pitch ?? 0
             )
         )
@@ -178,11 +211,12 @@ final class MapViewModel {
     /// camera, so asking for "point the map where I'm facing" while browsing slammed you into
     /// a 3D street-level view you never asked for.
     func orientToHeading(at location: CLLocation, heading: CLLocationDirection, camera: MapCamera?) {
+        let resolved = commanding(heading >= 0 ? heading : 0, liveHeading: camera?.heading)
         cameraPosition = .camera(
             MapCamera(
-                centerCoordinate: location.coordinate,
+                centerCoordinate: centred(on: location.coordinate, heading: resolved),
                 distance: camera?.distance ?? 1000,
-                heading: commanding(heading >= 0 ? heading : 0, liveHeading: camera?.heading),
+                heading: resolved,
                 pitch: camera?.pitch ?? 0
             )
         )
@@ -191,11 +225,12 @@ final class MapViewModel {
     /// Leaving compass mode: swing back to north-up over the user without throwing away their
     /// zoom, which `recenterOnUser`'s fixed 0.01° span was doing.
     func straightenToNorth(at location: CLLocation, camera: MapCamera?) {
+        let heading = commanding(0, liveHeading: camera?.heading)
         cameraPosition = .camera(
             MapCamera(
-                centerCoordinate: location.coordinate,
+                centerCoordinate: centred(on: location.coordinate, heading: heading),
                 distance: camera?.distance ?? 1000,
-                heading: commanding(0, liveHeading: camera?.heading),
+                heading: heading,
                 pitch: camera?.pitch ?? 0
             )
         )
@@ -209,11 +244,12 @@ final class MapViewModel {
     /// tapping the location button in 3D looked right for about a second — `recenterOnUser`
     /// keeps your pitch — and then the next GPS fix arrived and slammed the map back to flat.
     func recenterKeepingZoom(on location: CLLocation, camera: MapCamera?) {
+        let heading = commanding(0, liveHeading: camera?.heading)
         cameraPosition = .camera(
             MapCamera(
-                centerCoordinate: location.coordinate,
+                centerCoordinate: centred(on: location.coordinate, heading: heading),
                 distance: camera?.distance ?? 1000,
-                heading: commanding(0, liveHeading: camera?.heading),
+                heading: heading,
                 pitch: camera?.pitch ?? 0
             )
         )
@@ -322,10 +358,16 @@ final class MapViewModel {
         lastCommandedHeading = 0
         // A 0.05° span is about 5km across — the neighbourhood two neighbourhoods over. Apple
         // opens at street level, close enough to read the road you're standing on.
+        let span = 0.012
+        // Same centring as everywhere else, but taken straight off the span: this runs on the
+        // first fix, before any camera has settled and told us metres-per-point.
         cameraPosition = .region(
             MKCoordinateRegion(
-                center: location.coordinate,
-                span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012)
+                center: CLLocationCoordinate2D(
+                    latitude: location.coordinate.latitude - bottomInsetFraction * span / 2,
+                    longitude: location.coordinate.longitude
+                ),
+                span: MKCoordinateSpan(latitudeDelta: span, longitudeDelta: span)
             )
         )
         onFirstFix?()
