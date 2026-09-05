@@ -185,11 +185,6 @@ struct SearchSheet: View {
                         } else if viewModel.queryText.isEmpty {
                             tipSection
                             recentsSection
-                            // Above the discovery shelves on purpose: this is the only section
-                            // here that goes stale in minutes. A train four stops away stops
-                            // being useful faster than a coffee shop does, and below Suggested
-                            // Places it sat off the bottom of the screen behind the keyboard.
-                            NearbyDeparturesSection(service: viewModel.nearbyDepartures)
                             DiscoverSections(
                                 discover: viewModel.discover,
                                 currentLocation: currentLocation

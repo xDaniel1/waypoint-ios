@@ -90,6 +90,10 @@ struct MapModesCard: View {
                     MapModeTile(mode: candidate, isSelected: candidate == mode) {
                         Haptics.tap()
                         mode = candidate
+                        // Apple's card closes the moment you pick, which is the point — you
+                        // chose a map so you could look at it. Ours left the card sitting over
+                        // the map it had just changed until you found the X.
+                        onClose()
                     }
                 }
             }

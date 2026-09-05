@@ -30,10 +30,30 @@ final class MTARealtimeService {
     private var lastFetch: Date = .distantPast
     private var lastKey: String?
 
+    /// One feed per line group, the way the MTA splits them.
+    private static func feedURL(routeID: String) -> URL? {
+        let base = "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2F"
+        let suffix: String
+        switch routeID {
+        case "A", "C", "E", "H", "FS": suffix = "gtfs-ace"
+        case "B", "D", "F", "M": suffix = "gtfs-bdfm"
+        case "G": suffix = "gtfs-g"
+        case "J", "Z": suffix = "gtfs-jz"
+        case "N", "Q", "R", "W": suffix = "gtfs-nqrw"
+        case "L": suffix = "gtfs-l"
+        case "SI", "SIR": suffix = "gtfs-si"
+        case "1", "2", "3", "4", "5", "6", "7", "GS": suffix = "gtfs"
+        // Buses have their own realtime system (SIRI, not GTFS-RT) with a different shape, so
+        // bus rides keep the scheduled times rather than getting wrong live ones.
+        default: return nil
+        }
+        return URL(string: base + suffix)
+    }
+
     func load(line: String, boardingStop: String, exitStop: String) async {
         guard let routeID = MTASubwayData.routeID(for: line),
               let stations = MTASubwayData.stationIDs(line: line, from: boardingStop, to: exitStop),
-              let url = MTAFeed.url(forRoute: routeID) else {
+              let url = Self.feedURL(routeID: routeID) else {
             departures = []
             alerts = []
             return
@@ -60,7 +80,11 @@ final class MTARealtimeService {
     // MARK: Trip updates
 
     private func fetchDepartures(url: URL, routeID: String, boarding: String, exit: String) async -> [Date] {
-        guard let data = try? await URLSession.shared.data(from: url).0 else {
+        // 10s rather than URLSession's 60s default: a departure board that arrives a minute late
+        // is a departure board nobody reads, and the scheduled times are a fine fallback.
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+        guard let data = try? await URLSession.shared.data(for: request).0 else {
             Logger.navigation.error("MTA realtime feed unreachable for \(routeID)")
             return []
         }
