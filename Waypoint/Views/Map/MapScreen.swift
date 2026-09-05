@@ -1104,8 +1104,16 @@ struct MapScreen: View {
     /// A trip follows course-up, so the compass needle is the honest icon for "following" here —
     /// the plain filled arrow is reserved for the north-up the compass button puts you in.
     private var navigationLocationSymbol: String {
-        guard trackingMode != .off else { return "location" }
-        return isNavigationNorthUp ? "location.fill" : "location.north.line.fill"
+        // Same two glyphs, same meanings, as the browsing map: hollow when the map isn't
+        // following you, filled once it is.
+        //
+        // This used to show the compass needle while following course-up and the filled arrow
+        // once the compass button put you north-up — which is the browsing map's meanings
+        // swapped over. The needle there means "heading mode", so mid-trip the button claimed
+        // to be in a mode this button can't even enter (it's a plain recenter during a trip),
+        // and the filled arrow — "following" everywhere else — appeared only once you'd stopped
+        // the map turning. Whether the map is north-up is what the compass rose is for.
+        trackingMode == .off ? "location" : "location.fill"
     }
 
     private func puckCoordinate(for location: CLLocation) -> CLLocationCoordinate2D {
@@ -1520,6 +1528,16 @@ private struct FusedRightControls: View {
                         .contentTransition(.symbolEffect(.replace))
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("locationButton")
+                // VoiceOver gets the state as words, since the only other cue is which of three
+                // near-identical arrow glyphs is showing.
+                .accessibilityLabel({
+                    switch trackingMode {
+                    case .off: "Recenter on my location"
+                    case .follow: "Following my location"
+                    case .followHeading: "Following my location and heading"
+                    }
+                }())
 
                 Divider()
                     .frame(width: 30)

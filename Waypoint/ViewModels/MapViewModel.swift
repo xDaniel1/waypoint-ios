@@ -151,8 +151,10 @@ final class MapViewModel {
     /// you when the current one is no use for "where am I": staring at the whole state, or
     /// pushed in so far there's no context left. This used to slam every tap to a fixed 0.01°
     /// span regardless.
-    func recenterOnUser(camera: MapCamera? = nil) {
-        guard let location = currentLocation else { return }
+    /// `location` defaults to the live fix; callers only pass one to recentre on a position the
+    /// location manager isn't the source of, which in practice means tests.
+    func recenterOnUser(camera: MapCamera? = nil, location: CLLocation? = nil) {
+        guard let location = location ?? currentLocation else { return }
         guard let distance = camera?.distance else {
             centerCamera(on: location.coordinate)
             return
@@ -200,14 +202,19 @@ final class MapViewModel {
     }
 
     /// Keeps the map centered on a moving user without rotating it or resetting the zoom
-    /// the person already chose — used for plain "follow" tracking outside of navigation.
+    /// or the tilt the person already chose — used for plain "follow" tracking outside of
+    /// navigation.
+    ///
+    /// The tilt used to be hard-coded flat here, and this runs on every fix while following. So
+    /// tapping the location button in 3D looked right for about a second — `recenterOnUser`
+    /// keeps your pitch — and then the next GPS fix arrived and slammed the map back to flat.
     func recenterKeepingZoom(on location: CLLocation, camera: MapCamera?) {
         cameraPosition = .camera(
             MapCamera(
                 centerCoordinate: location.coordinate,
                 distance: camera?.distance ?? 1000,
                 heading: commanding(0, liveHeading: camera?.heading),
-                pitch: 0
+                pitch: camera?.pitch ?? 0
             )
         )
     }

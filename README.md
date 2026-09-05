@@ -93,6 +93,14 @@ them deliberately when you want to check the real data path:
 TEST_RUNNER_WAYPOINT_LIVE_TESTS=1 xcodebuild test ... -only-testing:WaypointTests
 ```
 
+The UI suite needs location authorised on the simulator first, or the app never gets a fix and
+every map assertion fails for a reason that has nothing to do with the code:
+
+```sh
+xcrun simctl privacy booted grant location-always com.danielguzman.waypoint
+xcrun simctl location booted set 40.6782,-73.9442
+```
+
 The `TEST_RUNNER_` prefix is required — `xcodebuild` only forwards variables named that way into
 the test process, and strips the prefix on the way in. Without it the tests just skip.
 
