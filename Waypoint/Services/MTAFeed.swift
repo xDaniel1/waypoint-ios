@@ -45,8 +45,15 @@ enum MTAFeed {
     }
 
     /// Every future call at any of `stationIDs` in this feed.
+    ///
+    /// The 10s timeout matters more than it looks: a station's departures are assembled from
+    /// every feed serving it, so on `URLSession`'s 60s default one slow feed holds up the whole
+    /// section — and a train board that arrives a minute late is a train board nobody read.
+    /// Better to show the lines that answered.
     static func departures(from url: URL, atStations stationIDs: Set<String>) async -> [StopDeparture] {
-        guard let data = try? await URLSession.shared.data(from: url).0 else {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+        guard let data = try? await URLSession.shared.data(for: request).0 else {
             Logger.navigation.error("MTA realtime feed unreachable: \(url.lastPathComponent)")
             return []
         }
@@ -124,9 +131,14 @@ enum MTAFeed {
 
     /// Current service alerts, keyed by the line they affect. One JSON call covers every route.
     static func alerts() async -> [String: String] {
-        guard let url = URL(string: "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/camsys%2Fsubway-alerts.json"),
-              let data = try? await URLSession.shared.data(from: url).0,
+        guard let url = URL(string: "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/camsys%2Fsubway-alerts.json") else {
+            return [:]
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+        guard let data = try? await URLSession.shared.data(for: request).0,
               let feed = try? JSONDecoder().decode(AlertFeed.self, from: data) else {
+            // Alerts are a bonus line under the times; never worth holding the board for.
             return [:]
         }
 

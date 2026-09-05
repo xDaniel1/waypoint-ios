@@ -407,6 +407,9 @@ struct MapScreen: View {
         .onChange(of: sheetCoveredFraction, initial: true) { _, fraction in
             viewModel.bottomInsetFraction = fraction
         }
+        .onChange(of: mapMode, initial: true) { _, mode in
+            searchViewModel.isTransitMode = mode == .transit
+        }
         .animation(.smooth(duration: 0.4), value: navigationViewModel.isActive)
         .animation(.smooth(duration: 0.3), value: networkMonitor.isConnected)
         .mapScope(mapScope)
@@ -610,6 +613,7 @@ struct MapScreen: View {
                 viewModel: searchViewModel,
                 directionsViewModel: directionsViewModel,
                 currentLocation: viewModel.currentLocation,
+                isTransitMode: mapMode == .transit,
                 detent: $searchDetent,
                 collapsedHeight: $collapsedHeight,
                 directionsHeight: $directionsCardHeight,

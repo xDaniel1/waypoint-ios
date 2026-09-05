@@ -50,6 +50,8 @@ struct SearchSheet: View {
     @Bindable var viewModel: SearchViewModel
     @Bindable var directionsViewModel: DirectionsViewModel
     let currentLocation: CLLocation?
+    /// Nearby departures only belong here when the map is in Transit — see where it's used.
+    let isTransitMode: Bool
     @Binding var detent: PresentationDetent
     @Binding var collapsedHeight: CGFloat
     @Binding var directionsHeight: CGFloat
@@ -185,11 +187,14 @@ struct SearchSheet: View {
                         } else if viewModel.queryText.isEmpty {
                             tipSection
                             recentsSection
-                            // Above the discovery shelves on purpose: this is the only section
-                            // here that goes stale in minutes. A train four stops away stops
-                            // being useful faster than a coffee shop does, and below Suggested
-                            // Places it sat off the bottom of the screen behind the keyboard.
-                            NearbyDeparturesSection(service: viewModel.nearbyDepartures)
+                            // Transit mode only. On the general search page this pushed train
+                            // times at everyone opening the app to look for lunch; someone who
+                            // has switched the map to Transit is the person actually asking
+                            // "what's leaving near me". Above the shelves within that mode,
+                            // because it's the only section here that goes stale in minutes.
+                            if isTransitMode {
+                                NearbyDeparturesSection(service: viewModel.nearbyDepartures)
+                            }
                             DiscoverSections(
                                 discover: viewModel.discover,
                                 currentLocation: currentLocation

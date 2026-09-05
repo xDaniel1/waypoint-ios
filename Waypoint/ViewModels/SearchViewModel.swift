@@ -29,6 +29,13 @@ final class SearchViewModel {
     let guides = GuidesViewModel()
     let cityGuides = CityGuidesViewModel()
     let nearbyDepartures = NearbyDeparturesService()
+    /// Set by `MapScreen`. Departures are only fetched, and only shown, in Transit.
+    var isTransitMode = false {
+        didSet {
+            guard isTransitMode, isTransitMode != oldValue else { return }
+            loadNearbyDepartures()
+        }
+    }
     let syncCoordinator: SyncCoordinator
 
     private let completerService = SearchCompleterService()
@@ -159,9 +166,16 @@ final class SearchViewModel {
         Task { await discover.loadIfNeeded(around: center) }
         Task { await guides.loadIfNeeded(around: center) }
         Task { await cityGuides.loadIfNeeded(around: center) }
-        // Free and keyless, unlike the three above — the stations come from bundled GTFS and the
-        // times from the MTA's open feeds — so this rides along with them rather than needing
-        // its own trigger.
+        // Covers switching to Transit before the map has ever settled — `loadNearbyDepartures`
+        // needs a region and there wasn't one yet, so that call did nothing and never retried.
+        if isTransitMode { loadNearbyDepartures() }
+    }
+
+    /// Not folded into `loadDiscover` unconditionally: the GTFS-RT feeds are 20KB–1MB each and
+    /// only one mode ever displays them, so they're pulled when Transit is on screen rather than
+    /// on every launch for everyone.
+    func loadNearbyDepartures() {
+        guard let center = lastRegionCenter else { return }
         Task { await nearbyDepartures.refreshIfNeeded(near: center) }
     }
 
