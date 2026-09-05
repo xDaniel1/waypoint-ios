@@ -30,30 +30,10 @@ final class MTARealtimeService {
     private var lastFetch: Date = .distantPast
     private var lastKey: String?
 
-    /// One feed per line group, the way the MTA splits them.
-    private static func feedURL(routeID: String) -> URL? {
-        let base = "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2F"
-        let suffix: String
-        switch routeID {
-        case "A", "C", "E", "H", "FS": suffix = "gtfs-ace"
-        case "B", "D", "F", "M": suffix = "gtfs-bdfm"
-        case "G": suffix = "gtfs-g"
-        case "J", "Z": suffix = "gtfs-jz"
-        case "N", "Q", "R", "W": suffix = "gtfs-nqrw"
-        case "L": suffix = "gtfs-l"
-        case "SI", "SIR": suffix = "gtfs-si"
-        case "1", "2", "3", "4", "5", "6", "7", "GS": suffix = "gtfs"
-        // Buses have their own realtime system (SIRI, not GTFS-RT) with a different shape, so
-        // bus rides keep the scheduled times rather than getting wrong live ones.
-        default: return nil
-        }
-        return URL(string: base + suffix)
-    }
-
     func load(line: String, boardingStop: String, exitStop: String) async {
         guard let routeID = MTASubwayData.routeID(for: line),
               let stations = MTASubwayData.stationIDs(line: line, from: boardingStop, to: exitStop),
-              let url = Self.feedURL(routeID: routeID) else {
+              let url = MTAFeed.url(forRoute: routeID) else {
             departures = []
             alerts = []
             return

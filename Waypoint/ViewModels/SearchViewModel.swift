@@ -28,6 +28,7 @@ final class SearchViewModel {
     let discover = DiscoverViewModel()
     let guides = GuidesViewModel()
     let cityGuides = CityGuidesViewModel()
+    let nearbyDepartures = NearbyDeparturesService()
     let syncCoordinator: SyncCoordinator
 
     private let completerService = SearchCompleterService()
@@ -158,6 +159,10 @@ final class SearchViewModel {
         Task { await discover.loadIfNeeded(around: center) }
         Task { await guides.loadIfNeeded(around: center) }
         Task { await cityGuides.loadIfNeeded(around: center) }
+        // Free and keyless, unlike the three above — the stations come from bundled GTFS and the
+        // times from the MTA's open feeds — so this rides along with them rather than needing
+        // its own trigger.
+        Task { await nearbyDepartures.refreshIfNeeded(near: center) }
     }
 
     func toggleVoiceSearch() async {

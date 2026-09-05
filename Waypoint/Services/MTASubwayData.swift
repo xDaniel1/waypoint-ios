@@ -92,6 +92,70 @@ enum MTASubwayData {
         return nil
     }
 
+    /// A station near you, and which subway lines call there.
+    struct NearbyStation: Identifiable, Equatable {
+        let id: String
+        let name: String
+        let coordinate: CLLocationCoordinate2D
+        /// GTFS route ids, sorted the way a station sign lists them.
+        let lines: [String]
+        let metresAway: Double
+
+        static func == (lhs: NearbyStation, rhs: NearbyStation) -> Bool { lhs.id == rhs.id }
+    }
+
+    /// Subway stations within `metres`, nearest first — the backing for "what's leaving near me".
+    ///
+    /// Reads the same bundled GTFS as everything else here, so it costs no network and works
+    /// underground, which is where someone asks this question. Buses are excluded: their route
+    /// ids sit in the same table but they run on SIRI rather than GTFS-RT, so a bus stop listed
+    /// here would be one we can't put live times against.
+    static func stations(near coordinate: CLLocationCoordinate2D,
+                         within metres: Double = 800,
+                         limit: Int = 4) -> [NearbyStation] {
+        let origin = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+
+        // One entry per station, accumulating every line that stops there — a rider thinks in
+        // stations ("the Atlantic Av stop"), not in per-route stop rows.
+        var byStation: [String: (stop: Stop, lines: Set<String>, metres: Double)] = [:]
+        for (routeID, directions) in patterns where isSubway(routeID) {
+            for pattern in directions.values {
+                for stop in pattern.stops {
+                    let distance = origin.distance(
+                        from: CLLocation(latitude: stop.lat, longitude: stop.lon)
+                    )
+                    guard distance <= metres else { continue }
+                    if var existing = byStation[stop.id] {
+                        existing.lines.insert(routeID)
+                        byStation[stop.id] = existing
+                    } else {
+                        byStation[stop.id] = (stop, [routeID], distance)
+                    }
+                }
+            }
+        }
+
+        return byStation.values
+            .sorted { $0.metres < $1.metres }
+            .prefix(limit)
+            .map {
+                NearbyStation(
+                    id: $0.stop.id,
+                    name: $0.stop.name,
+                    coordinate: $0.stop.coordinate,
+                    lines: $0.lines.sorted(),
+                    metresAway: $0.metres
+                )
+            }
+    }
+
+    /// Subway route ids are a single letter or digit (plus the "SI"/"GS"/"FS" shuttles); bus
+    /// routes are a letter and a number, like "B43".
+    static func isSubway(_ routeID: String) -> Bool {
+        if routeID.count == 1 { return true }
+        return ["SI", "SIR", "GS", "FS"].contains(routeID)
+    }
+
     /// The GTFS route id, normalised from whatever Google called the line.
     static func routeID(for line: String) -> String? {
         let id = normalizedLine(line)
