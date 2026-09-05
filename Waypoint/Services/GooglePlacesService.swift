@@ -71,8 +71,45 @@ struct GooglePlacesService {
         }
 
         let place = try await details(placeID: placeID)
+        guard Self.resolved(place, matches: name, near: coordinate) else {
+            throw GooglePlacesError.noMatch
+        }
         await DetailsCache.store(place, forKey: key)
         return place
+    }
+
+    /// Text Search matches on a name string, so "Starbucks" or "Duane Reade" can resolve to the
+    /// branch down the block, and a MapKit result with no Google counterpart can resolve to some
+    /// unrelated business that merely sits nearby. The check happens here, against the Details
+    /// response, rather than by asking Text Search for the name and location up front: those
+    /// fields would move that call off the free id-only tier, while Details already carries both.
+    ///
+    /// Nearby wins on either signal. Google and MapKit disagree about names constantly
+    /// ("Dunkin'" vs "Dunkin' Donuts", "McDonald's" vs "McDonalds"), and they disagree about
+    /// where a large venue's centre is, so demanding both would reject good matches.
+    static func resolved(_ place: DetailedPlace,
+                         matches name: String,
+                         near coordinate: CLLocationCoordinate2D) -> Bool {
+        guard let found = place.coordinate else { return true }
+        let metres = CLLocation(latitude: found.latitude, longitude: found.longitude)
+            .distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude))
+        // Past the search's own 200m bias there's nothing left tying the result to what was tapped.
+        if metres > 250 { return false }
+        if metres <= 75 { return true }
+        return namesAgree(place.displayName?.text ?? "", name)
+    }
+
+    private static func namesAgree(_ a: String, _ b: String) -> Bool {
+        let left = normalized(a), right = normalized(b)
+        guard !left.isEmpty, !right.isEmpty else { return true }
+        return left.contains(right) || right.contains(left)
+    }
+
+    private static func normalized(_ value: String) -> String {
+        value.lowercased()
+            .folding(options: [.diacriticInsensitive], locale: nil)
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .joined()
     }
 
     func details(placeID: String) async throws -> DetailedPlace {
@@ -157,15 +194,14 @@ struct GooglePlacesService {
         return places
     }
 
-    /// Photo media URLs need the bundle-ID header like every other call, which `AsyncImage` can't
-    /// set — `GooglePhotoImage` fetches these manually for that reason.
+    /// Deliberately unauthenticated: this returns the photo's address, not a request for it.
+    /// The key and bundle-ID headers go on at fetch time in `GooglePhotoImage`, because a URL
+    /// built here gets passed through view models, cached by absolute string, and generally
+    /// handled like a plain identifier — none of which a credential should be along for.
     func photoURL(photoName: String, maxWidthPx: Int = 800) -> URL? {
         guard isConfigured else { return nil }
         var components = URLComponents(string: "https://places.googleapis.com/v1/\(photoName)/media")
-        components?.queryItems = [
-            URLQueryItem(name: "maxWidthPx", value: String(maxWidthPx)),
-            URLQueryItem(name: "key", value: apiKey),
-        ]
+        components?.queryItems = [URLQueryItem(name: "maxWidthPx", value: String(maxWidthPx))]
         return components?.url
     }
 

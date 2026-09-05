@@ -472,20 +472,38 @@ struct AppleRoutesService {
     /// quietly stop working in every other language the app is used in.
     ///
     /// The turn is in the line itself: the bearing the road runs in coming into the maneuver
-    /// against the bearing it runs in leaving it. That's the same answer in every locale, and it's
-    /// also what the lane guidance matches against to decide which lanes are the right ones.
+    /// against the bearing it runs in leaving it. That's the same answer in every locale.
+    ///
+    /// Which junction to measure at is the part that isn't obvious, and getting it wrong put a
+    /// right-turn arrow next to the words "Turn left onto Dean St" on a real drive. A step's
+    /// polyline is the stretch of road leading *up to* its instruction, not away from it — the
+    /// maneuver `steps[i].instructions` describes happens where `steps[i].polyline` ends, and the
+    /// next step's line is what you're on after making it. Checked against live MapKit routes:
+    /// matching each instruction to the angle at the end of its own step agrees with the wording
+    /// every time, and matching it to the angle at the start disagrees wherever two turns run
+    /// back to back.
     private static func steps(of route: MKRoute) -> [RouteStep] {
         let geometries = route.steps.map { $0.polyline.coordinateList }
-        return route.steps.enumerated().map { index, step in
+        let steps = route.steps.enumerated().map { index, step in
             RouteStep(
                 instruction: step.instructions,
                 distanceMeters: step.distance,
                 startCoordinate: step.polyline.firstCoordinate,
-                maneuver: index > 0
-                    ? maneuver(approaching: geometries[index - 1], leaving: geometries[index])
+                // The final step is the arrival; there's no road after it to turn onto.
+                maneuver: index + 1 < geometries.count
+                    ? maneuver(approaching: geometries[index], leaving: geometries[index + 1])
                     : nil
             )
         }
+        // MapKit opens every route with a placeholder for where you're standing: no distance, no
+        // instruction. Carrying it meant the first real step sat at index 1, and the navigation UI
+        // worked around that by reading one step *ahead* of the one it was counting down to —
+        // which is why the banner could name the turn after the turn. Dropping it here lets every
+        // reader use "the step you're on" and mean it.
+        guard let first = steps.first,
+              first.instruction.trimmingCharacters(in: .whitespaces).isEmpty,
+              first.distanceMeters < 1 else { return steps }
+        return Array(steps.dropFirst())
     }
 
     /// Classifies a maneuver from the angle between the road in and the road out.

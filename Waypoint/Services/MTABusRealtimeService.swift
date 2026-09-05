@@ -57,10 +57,20 @@ final class MTABusRealtimeService {
             return
         }
 
-        guard let feed = try? JSONDecoder().decode(SiriFeed.self, from: data) else {
+        guard let parsed = Self.arrivals(from: data) else {
             Logger.navigation.error("Bus Time response didn't decode for \(line)")
             return
         }
+        arrivals = parsed
+    }
+
+    /// Split out from `load` so the part that can actually be wrong — SIRI's nesting, its two
+    /// timestamp formats, the drop of buses that have already gone — is testable against a
+    /// recorded response instead of only against whatever the MTA happens to be returning today.
+    /// Returns nil for a body that isn't SIRI at all, which is different from a stop with no
+    /// buses due: the first is a bug, the second is 11pm on a Sunday.
+    static func arrivals(from data: Data, now: Date = Date()) -> [Arrival]? {
+        guard let feed = try? JSONDecoder().decode(SiriFeed.self, from: data) else { return nil }
 
         let visits = feed.Siri.ServiceDelivery.StopMonitoringDelivery?
             .flatMap { $0.MonitoredStopVisit ?? [] } ?? []
@@ -68,12 +78,12 @@ final class MTABusRealtimeService {
         let formatter = Formatters.iso8601FractionalSeconds
         let plain = Formatters.iso8601
 
-        arrivals = visits.compactMap { visit -> Arrival? in
+        return visits.compactMap { visit -> Arrival? in
             let journey = visit.MonitoredVehicleJourney
             let call = journey?.MonitoredCall
             guard let raw = call?.ExpectedArrivalTime ?? call?.AimedArrivalTime,
                   let date = formatter.date(from: raw) ?? plain.date(from: raw),
-                  date > Date().addingTimeInterval(-60) else { return nil }
+                  date > now.addingTimeInterval(-60) else { return nil }
             return Arrival(time: date, stopsAway: call?.Extensions?.Distances?.StopsFromCall)
         }
         .sorted { $0.time < $1.time }
@@ -81,7 +91,7 @@ final class MTABusRealtimeService {
 
     // MARK: Wire format
 
-    private struct SiriFeed: Decodable {
+    fileprivate struct SiriFeed: Decodable {
         let Siri: SiriBody
 
         struct SiriBody: Decodable { let ServiceDelivery: Delivery }

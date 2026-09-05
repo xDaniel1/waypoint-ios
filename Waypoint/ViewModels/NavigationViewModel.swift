@@ -86,18 +86,17 @@ final class NavigationViewModel {
     }
 
     var isActive: Bool { route != nil }
+    /// The step being driven right now — and, because a step's instruction describes the maneuver
+    /// at its *end*, also the maneuver being approached. This is what the banner should name and
+    /// what `distanceToNextManeuver` is counting down to.
     var currentStep: RouteStep? {
         guard let route, route.steps.indices.contains(currentStepIndex) else { return nil }
         return route.steps[currentStepIndex]
     }
+    /// The maneuver after the one being approached — Apple's "Then …" line.
     var nextStep: RouteStep? {
         guard let route, route.steps.indices.contains(currentStepIndex + 1) else { return nil }
         return route.steps[currentStepIndex + 1]
-    }
-    /// The maneuver after the upcoming one — what Apple's "Then …" line refers to.
-    var stepAfterNext: RouteStep? {
-        guard let route, route.steps.indices.contains(currentStepIndex + 2) else { return nil }
-        return route.steps[currentStepIndex + 2]
     }
 
     private(set) var currentLocation: CLLocation?
@@ -367,21 +366,28 @@ final class NavigationViewModel {
         distanceToNextManeuver = toNext
 
         // "In 500 feet, turn right onto…" while still on the current step.
-        if toNext < 150, announcedUpcomingForStep != nextIndex {
-            announcedUpcomingForStep = nextIndex
+        //
+        // The instruction spoken here is the *current* step's, not the next one's. A step's
+        // instruction describes the maneuver at the end of that step — the junction this distance
+        // is counting down to — so pairing the countdown with the next step's wording named the
+        // turn after the one being approached, out loud and on the banner.
+        if toNext < 150, announcedUpcomingForStep != currentStepIndex {
+            announcedUpcomingForStep = currentStepIndex
             let distanceText = Measurement(value: toNext, unit: UnitLength.meters)
                 .formatted(.measurement(width: .wide, usage: .road))
-            onAnnouncement?("In \(distanceText), \(route.steps[nextIndex].instruction)")
+            onAnnouncement?("In \(distanceText), \(route.steps[currentStepIndex].instruction)")
         }
 
         // Reaching the maneuver point clamps the along-route distance to zero, so passing it
         // between fixes still advances rather than skipping the step.
         if toNext < 15 {
-            currentStepIndex = nextIndex
+            // Said before advancing: this is the turn being made right now, which is the step
+            // being left, not the one being joined.
             if announcedImmediateForStep != currentStepIndex {
                 announcedImmediateForStep = currentStepIndex
                 onAnnouncement?(route.steps[currentStepIndex].instruction)
             }
+            currentStepIndex = nextIndex
             distanceToNextManeuver = distanceAlongRoute(from: metresLeft, toStepAt: currentStepIndex + 1)
         }
     }

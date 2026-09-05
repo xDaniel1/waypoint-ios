@@ -90,11 +90,14 @@ final class NavigationAccuracyTests: XCTestCase {
         XCTAssertEqual(navigation.currentStepIndex, 0, "Still on the first step until you reach the turn")
     }
 
+    /// A step's polyline is the road *up to* its instruction — the turn happens where the step
+    /// ends, which is the next step's start coordinate. So the step carrying "Turn right" is the
+    /// one running into the junction at index 8, not the one leaving it.
     func testReachingTheTurnAdvancesTheBanner() {
         let coordinates = ladder(11)
         let steps = [
-            RouteStep(instruction: "Head north", distanceMeters: 890, startCoordinate: coordinates[0]),
-            RouteStep(instruction: "Turn right", distanceMeters: 223, startCoordinate: coordinates[8]),
+            RouteStep(instruction: "Turn right", distanceMeters: 890, startCoordinate: coordinates[0]),
+            RouteStep(instruction: "Arrive at the destination", distanceMeters: 223, startCoordinate: coordinates[8]),
         ]
         let navigation = NavigationViewModel()
         var spoken: [String] = []

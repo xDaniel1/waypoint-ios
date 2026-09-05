@@ -46,7 +46,8 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 - [~] **Transit detail sheet outruns its data.** Built against Google's rich transit legs;
       MapKit's transit data is far thinner, so parts of the sheet have nothing to fill them.
 
-- [ ] **Test suite is NOT green.** Full run on 2026-08-12: 15 passed, 6 failed. Failures:
+- [ ] **UI test suite is NOT green.** The unit suite (`WaypointTests`) passes. This is the UI
+      suite, last full run 2026-08-12: 15 passed, 6 failed. Failures:
       `test03` (search field not found), `test07_inAppDirections`, `test10_navigationVoiceAndControls`
       (reported as an app crash, but passes in isolation — likely suite state pollution),
       `test11` (Add Stop), `test13` (bottom bar toggle), `test15` (swipe-to-edit a favorite).
@@ -57,7 +58,9 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] **Leave at / arrive by.** `MKDirections.Request` supports `departureDate` / `arrivalDate`
       and we never set them. Apple Maps offers this; it's a real shippable feature.
 - [x] **Route step list** ("Details") during active navigation.
-- [ ] **CarPlay support.** Biggest remaining "feels like a real maps app" gap.
+- [x] **CarPlay support.** `CarPlayController` / `CarPlayMapViewController` / `CarPlaySceneDelegate`
+      are in and drive off the same `AppleRoutesService` as the phone. Still wants a real-car
+      shakedown — the simulator doesn't exercise everything.
 - [ ] **Apple Watch companion.**
 - [x] **Guides shelves.** Five themed collections (Great Coffee, Dinner Tonight, Parks & Outdoors,
       Nightlife, Arts & Culture) as Apple-style photo cards, each opening a list of real places.
@@ -70,11 +73,14 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 
 Recorded so we stop re-investigating. All of these need private APIs or licensed data.
 
-- **Lane guidance** — `MKRoute` returns no lane data.
+- ~~**Lane guidance**~~ — `MKRoute` returns no lane data, but OpenStreetMap's `turn:lanes` does,
+  and `LaneGuidanceService` reads it off Overpass. Same route as the speed limits above.
 - **Junction View** (3D road-level view at complex interchanges) — private to Apple Maps.
 - **Speed limits / speed cameras** — no public API ([Apple dev forums](https://developer.apple.com/forums/thread/656038)).
 - **Offline maps** — MapKit doesn't expose tile downloads to third-party apps.
-- **Crowdsourced hazard reports** — Apple's is fleet/crowd sourced; ours is local-only by design.
+- ~~**Crowdsourced hazard reports**~~ — Apple's is fleet-sourced at a scale we can't touch, but
+  reports now persist to Supabase and come back to other signed-in devices, which is the useful
+  part of the feature at this size.
 - **EV routing** with charge/elevation-aware stops — Maps app feature, not in MapKit.
 - **Place photos / ratings / reviews / hours from Apple** — not exposed to third parties at any
   price, which is why the app runs a Google hybrid for place content.

@@ -2,6 +2,8 @@
 
 Waypoint is an iOS maps app I'm building to practice SwiftUI and working with real APIs. The goal is basically a smaller version of Apple Maps — same look and feel, MapKit under the hood — but with richer place info (photos, ratings, reviews) pulled from Google Places, since Apple's built-in POI data is pretty bare.
 
+Driving and walking routes, search and the map itself all run on Apple's frameworks. Google covers the two things Apple won't give a third-party app: place content, and transit directions.
+
 *(screenshots coming soon)*
 
 ## What it does
@@ -15,7 +17,13 @@ Waypoint is an iOS maps app I'm building to practice SwiftUI and working with re
 - [x] In-app directions — Drive/Walk/Transit, route drawn right on the map, distance/ETA, no bouncing out to Apple Maps
 - [x] Multi-stop routing — add extra stops and it routes through all of them, not just A to B
 - [x] Turn-by-turn voice guidance and auto-reroute if you go off path
-- [x] Recent searches saved locally
+- [x] Course-up navigation camera that turns with you, tilts, and zooms out as you speed up
+- [x] Speed limits and lane guidance on the navigation screen
+- [x] Traffic incident reports, shared through Supabase
+- [x] Trip persistence — a trip you leave survives the app being killed
+- [x] Sign in with Apple or Google, with favorites and recents syncing across your devices
+- [x] CarPlay
+- [x] Home screen widgets and Live Activities
 
 Check the [Roadmap](#roadmap) below for what's done vs. what's next.
 
@@ -26,7 +34,9 @@ Check the [Roadmap](#roadmap) below for what's done vs. what's next.
 - MapKit for the map itself
 - WeatherKit for the weather widget
 - Speech framework + AVFoundation for voice search and voice guidance
-- Google Places API + Google Routes API
+- Google Places API for place content (photos, ratings, reviews, hours)
+- Google Routes API for transit directions only — driving and walking run on MapKit
+- Supabase (Postgres + Auth) for accounts, favorites/recents sync, and traffic reports
 - Plain URLSession/async-await for networking — didn't want to pull in a networking library for a project this size
 - MVVM
 - XcodeGen to generate the Xcode project from `project.yml` (the `.xcodeproj` isn't committed)
@@ -66,6 +76,33 @@ Check the [Roadmap](#roadmap) below for what's done vs. what's next.
 6. If you want the weather widget working, you need a paid Apple Developer account with WeatherKit enabled for your team — otherwise it just stays hidden and everything else still works fine.
 
 See [TESTFLIGHT.md](TESTFLIGHT.md) for shipping a beta build to testers.
+
+### Running the tests
+
+```sh
+xcodebuild test -project Waypoint.xcodeproj -scheme Waypoint \
+  -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:WaypointTests
+```
+
+A handful of tests talk to live third-party endpoints — MTA Bus Time, Overpass, NYC Open Data.
+They're skipped by default, because those are free shared services that interfere with each other
+when the suite runs them back to back, and a busy endpoint shouldn't look like a broken app. Run
+them deliberately when you want to check the real data path:
+
+```sh
+TEST_RUNNER_WAYPOINT_LIVE_TESTS=1 xcodebuild test ... -only-testing:WaypointTests
+```
+
+The UI suite needs location authorised on the simulator first, or the app never gets a fix and
+every map assertion fails for a reason that has nothing to do with the code:
+
+```sh
+xcrun simctl privacy booted grant location-always com.danielguzman.waypoint
+xcrun simctl location booted set 40.6782,-73.9442
+```
+
+The `TEST_RUNNER_` prefix is required — `xcodebuild` only forwards variables named that way into
+the test process, and strips the prefix on the way in. Without it the tests just skip.
 
 ## Project structure
 
@@ -130,7 +167,8 @@ flowchart TD
 
     subgraph External["External APIs"]
         GooglePlacesAPI[("Google Places API")]
-        GoogleRoutesAPI[("Google Routes API")]
+        GoogleRoutesAPI[("Google Routes API — transit only")]
+        SupabaseAPI[("Supabase — Postgres + Auth")]
         AppleFrameworks[("MapKit / CoreLocation / WeatherKit")]
         MTAFeeds[("MTA GTFS-Realtime")]
         OpenMeteo[("Open-Meteo — free weather fallback")]
@@ -148,6 +186,7 @@ flowchart TD
     MTARealtime --> MTAFeeds
     WeatherService --> AppleFrameworks
     WeatherService -. fallback .-> OpenMeteo
+    LocalStores --> SyncCoordinator --> SupabaseAPI
 ```
 
 - **Views only talk to ViewModels** — every screen (`MapScreen`, `SearchSheet`, `PlaceDetailContent`, etc.) is plain SwiftUI reading `@Observable` state, no networking or persistence code in the view layer.
@@ -156,21 +195,24 @@ flowchart TD
 - **`DiskCache<T>` is generic and TTL'd** — place details cache for 6 hours, nearby search for 2 hours (a week for "long-lived" categories like landmarks), transit routes for 3 minutes since departure times go stale fast. Writes are debounced so a burst of cache stores collapses into one disk write instead of rewriting the whole file each time.
 - **Apple's own frameworks cover what doesn't need Google** — location, the base map, and weather (via WeatherKit, with a free/keyless Open-Meteo fallback if WeatherKit isn't available) never touch a billed API.
 - **Real-time transit is its own path** — MTA subway/bus arrivals come from MTA's GTFS-Realtime protobuf feeds directly, not Google, and are fetched once per sheet open rather than polled continuously.
-- **Favorites and recent searches are local-only** — no account system, no backend of ours; they live in on-device storage (`FavoritesStore`, `RecentSearchesStore`) and never round-trip to a server.
+- **Favorites and recent searches work signed out, and sync when you sign in** — they live in on-device storage (`FavoritesStore`, `RecentSearchesStore`) and stay there if you never make an account. Signing in hands them to `SyncCoordinator`, which pushes to Supabase on local edits and pulls once at sign-in. Sync is whole-snapshot last-writer-wins, not a per-item merge; `SyncSnapshot` explains why.
+- **Driving and walking routing is Apple's, not Google's** — `AppleRoutesService` wraps `MKDirections` for route alternates, multi-stop ordering, ETAs and reroutes. `GoogleTransitService` is the only routing call that leaves for Google, because MapKit won't return transit legs to a third-party app.
 
 ## Roadmap
 
 **Done**
 - [x] Map + location permission handling
 - [x] Search
-- [x] Recents/favorites (local only)
+- [x] Recents/favorites, local and synced
 - [x] Place detail sheet
 - [x] In-app directions
 - [x] Multi-stop routing
 - [x] Voice guidance + auto-reroute
+- [x] Accounts / sign in (Apple + Google, synced through Supabase)
+- [x] CarPlay
+- [x] Speed limits, lane guidance, traffic reports
 
 **Maybe later**
-- Accounts / sign in
 - Saved lists
 - Offline maps
 - Android (probably not, but who knows)
