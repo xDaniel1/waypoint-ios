@@ -91,6 +91,21 @@ struct MapScreen: View {
     /// Set when the user pans/zooms/rotates. While true, nothing programmatically moves the
     /// camera — they stay wherever they dragged to until they tap re-center.
     @State private var isCameraUserControlled = false
+    /// Set when the driver taps the compass mid-trip to stop the map spinning. Apple navigates
+    /// course-up by default and keeps north-up only until you ask to be recentred, so this resets
+    /// on the next tap of the location button rather than persisting across the trip.
+    @State private var isNavigationNorthUp = false
+    /// So the first fix of a session can put the button into its following state, the way Apple
+    /// Maps opens already tracking you.
+    @State private var hasAppliedInitialTracking = false
+    /// Set for exactly one fix, so follow-tracking doesn't immediately undo the opening camera.
+    ///
+    /// Both run off the same location callback, centring first and following second, and the
+    /// follow step reads the *live* camera to preserve the zoom you're at — which on that first
+    /// pass is still the whole-continent view MapKit starts on, because the region set a line
+    /// earlier hasn't been applied yet. The result was launching zoomed out to North America with
+    /// the tracking arrow lit.
+    @State private var pendingInitialCentering = false
     /// A built-in map POI (restaurant, shop, landmark) the user tapped directly on the map.
     @State private var selectedMapFeature: MapFeature?
     @Namespace private var mapScope
@@ -408,6 +423,16 @@ struct MapScreen: View {
             Task { await handlePendingIntent() }
         }
         .task {
+            // Apple Maps opens centred on you with the arrow already filled — it's following
+            // before you touch anything. Ours centred on you but reported "not tracking", so the
+            // button looked wrong from launch and the first tap appeared to do nothing.
+            viewModel.onFirstFix = {
+                guard !hasAppliedInitialTracking else { return }
+                hasAppliedInitialTracking = true
+                guard trackingMode == .off, !isCameraUserControlled else { return }
+                trackingMode = .follow
+                pendingInitialCentering = true
+            }
             viewModel.onLocationUpdate = { location in
                 if navigationViewModel.isActive {
                     navigationViewModel.update(with: location)
@@ -439,7 +464,11 @@ struct MapScreen: View {
                             await laneGuidance.refreshIfNeeded(
                                 tripID: navigationViewModel.route?.id,
                                 stepIndex: navigationViewModel.currentStepIndex + 1,
-                                maneuver: navigationViewModel.nextStep?.maneuver,
+                                // Both halves have to describe the *same* junction. The next
+                                // maneuver point is where the step you're on ends, which is the
+                                // next step's first coordinate — and the turn made there is the
+                                // one the current step's instruction describes.
+                                maneuver: navigationViewModel.currentStep?.maneuver,
                                 maneuverCoordinate: navigationViewModel.nextStep?.startCoordinate,
                                 approachBearing: course,
                                 distanceToManeuver: navigationViewModel.distanceToNextManeuver
@@ -463,13 +492,19 @@ struct MapScreen: View {
                     // Once the user has panned the map themselves, stop dragging the camera
                     // back to them — they regain control until they tap re-center.
                     guard !isCameraUserControlled else { return }
-                    // North-up by default, even while navigating — the map only rotates once
-                    // the user explicitly opts in via the location button's heading mode.
-                    let heading = trackingMode == .followHeading
-                        ? (navigationViewModel.matchedCourse
-                            ?? viewModel.currentHeading
-                            ?? (location.course >= 0 ? location.course : 0))
-                        : 0
+                    // Course-up, the way Apple drives. The map turns as the road turns, so what's
+                    // in front of the car is what's at the top of the screen — the whole reason a
+                    // navigation view is worth looking at. It used to sit north-up unless you'd
+                    // gone hunting for heading mode, which meant a left turn swung the road
+                    // sideways underneath a dot that never changed direction.
+                    //
+                    // The course comes from the route first: a fix's own course jitters at low
+                    // speed and goes to nonsense at a standstill, whereas the direction the road
+                    // runs where you're standing on it is stable and is the way you're pointing.
+                    let heading = navigationViewModel.matchedCourse
+                        ?? (location.course >= 0 ? location.course : nil)
+                        ?? viewModel.currentHeading
+                        ?? 0
                     // Linear, not `.smooth`: fixes now arrive faster than the animation lasts,
                     // so an eased curve restarted every fix read as a pulse — accelerate, coast,
                     // decelerate, repeat. Linear segments chain into one continuous glide.
@@ -478,12 +513,22 @@ struct MapScreen: View {
                         longitude: puckCoordinate(for: location).longitude
                     )
                     animateCamera(duration: 0.9, linear: true) {
-                        viewModel.followUser(at: followFrom, heading: heading)
+                        viewModel.followUser(
+                            at: followFrom,
+                            heading: heading,
+                            speed: location.speed,
+                            northUp: isNavigationNorthUp
+                        )
                     }
                 } else if trackingMode == .follow, !isCameraUserControlled {
-                    // Recenter without rotating — the map stays north-up, only the dot moves.
-                    animateCamera(duration: 0.6, linear: true) {
-                        viewModel.recenterKeepingZoom(on: location, camera: currentCamera)
+                    if pendingInitialCentering {
+                        // The opening camera was just set from this same fix; leave it alone.
+                        pendingInitialCentering = false
+                    } else {
+                        // Recenter without rotating — the map stays north-up, only the dot moves.
+                        animateCamera(duration: 0.6, linear: true) {
+                            viewModel.recenterKeepingZoom(on: location, camera: currentCamera)
+                        }
                     }
                 }
                 // Other drivers' reports, kept current whether or not a trip is running — the pins
@@ -607,12 +652,17 @@ struct MapScreen: View {
                     lastCameraAnimation = .distantPast
                     // Zoom straight into the user's pin the moment GO is tapped, instead of
                     // waiting for the next GPS fix to snap the camera into follow-mode.
+                    isNavigationNorthUp = false
+                    trackingMode = .follow
                     if let location = viewModel.currentLocation {
-                        let heading = trackingMode == .followHeading
-                            ? (viewModel.currentHeading ?? (location.course >= 0 ? location.course : 0))
-                            : 0
+                        // Same course-up camera the trip will hold from here, so tapping GO
+                        // settles straight into it instead of swinging round on the first fix.
+                        let heading = navigationViewModel.matchedCourse
+                            ?? (location.course >= 0 ? location.course : nil)
+                            ?? viewModel.currentHeading
+                            ?? 0
                         animateCamera(duration: 0.6) {
-                            viewModel.followUser(at: location, heading: heading)
+                            viewModel.followUser(at: location, heading: heading, speed: location.speed)
                         }
                     }
                 },
@@ -863,6 +913,31 @@ struct MapScreen: View {
         isCameraUserControlled = false
         lastCameraAnimation = .distantPast
         lastHeadingAnimation = .distantPast
+
+        // Mid-trip this is Apple's "Recenter" button rather than the browsing map's three-state
+        // cycle: there's only one camera a driver wants, and the button's job is to give it back
+        // after they've panned off to look at something. It also undoes the compass, since
+        // north-up is the thing you were escaping from by tapping recenter.
+        if navigationViewModel.isActive {
+            Haptics.select()
+            trackingMode = .follow
+            isNavigationNorthUp = false
+            if let location = viewModel.currentLocation {
+                let heading = navigationViewModel.matchedCourse
+                    ?? (location.course >= 0 ? location.course : nil)
+                    ?? viewModel.currentHeading
+                    ?? 0
+                let followFrom = CLLocation(
+                    latitude: puckCoordinate(for: location).latitude,
+                    longitude: puckCoordinate(for: location).longitude
+                )
+                animateCamera(duration: 0.5) {
+                    viewModel.followUser(at: followFrom, heading: heading, speed: location.speed)
+                }
+            }
+            return
+        }
+
         switch trackingMode {
         case .off:
             Haptics.select()
@@ -951,6 +1026,10 @@ struct MapScreen: View {
                             // this the map snapped straight back to your heading on the next
                             // magnetometer reading, so the compass button looked broken.
                             if trackingMode == .followHeading { trackingMode = .follow }
+                            // Mid-trip the same tap means "stop spinning the map" — and it has to
+                            // stick, or the next fix's course-up camera would spin it straight
+                            // back. Recentring is what undoes it.
+                            if navigationViewModel.isActive { isNavigationNorthUp = true }
                             withAnimation(.smooth(duration: 0.4)) {
                                 viewModel.resetHeading(from: currentCamera)
                             }
@@ -1008,6 +1087,15 @@ struct MapScreen: View {
     /// otherwise. See `NavigationViewModel.matchedCoordinate` for when the match is trusted —
     /// a fix that disagrees with the route by more than its own error bar is drawn where the
     /// phone actually says it is.
+    /// The location button's glyph during a trip.
+    ///
+    /// A trip follows course-up, so the compass needle is the honest icon for "following" here —
+    /// the plain filled arrow is reserved for the north-up the compass button puts you in.
+    private var navigationLocationSymbol: String {
+        guard trackingMode != .off else { return "location" }
+        return isNavigationNorthUp ? "location.fill" : "location.north.line.fill"
+    }
+
     private func puckCoordinate(for location: CLLocation) -> CLLocationCoordinate2D {
         guard navigationViewModel.isActive else { return location.coordinate }
         return navigationViewModel.matchedCoordinate ?? location.coordinate
@@ -1069,7 +1157,7 @@ struct MapScreen: View {
                             // show a filled arrow whether or not it was tracking, so during a
                             // trip there was no way to tell by looking whether panning away had
                             // dropped follow.
-                            Image(systemName: trackingMode.locationSymbol)
+                            Image(systemName: navigationLocationSymbol)
                                 .scaledFont(size: 18, weight: .medium, relativeTo: .body)
                                 .foregroundStyle(trackingMode == .off ? Color.primary : Color.accentColor)
                                 .frame(width: 48, height: 48)
@@ -1115,19 +1203,19 @@ struct MapScreen: View {
                     }
                 } else {
                     VStack {
-                        // The distance shown is the distance to the *next* maneuver, so the
-                        // headline instruction has to be that maneuver's — pairing it with the
-                        // current step read as "900 ft" above a blank line, because MapKit
-                        // leaves the in-progress step's instruction empty.
+                        // The distance counts down to the end of the step being driven, and a
+                        // step's instruction describes the maneuver at its end — so the headline
+                        // is the *current* step's. Reading one ahead (the old workaround for
+                        // MapKit's empty opening step, which is now dropped at the source) put the
+                        // turn after next above the distance to the turn in front of you.
                         NavigationBanner(
-                            currentInstruction: navigationViewModel.nextStep?.instruction.nilIfEmpty
-                                ?? navigationViewModel.currentStep?.instruction.nilIfEmpty
+                            currentInstruction: navigationViewModel.currentStep?.instruction.nilIfEmpty
+                                ?? navigationViewModel.nextStep?.instruction.nilIfEmpty
                                 ?? "Head to \(navigationViewModel.destinationName)",
-                            nextInstruction: navigationViewModel.stepAfterNext?.instruction.nilIfEmpty,
+                            nextInstruction: navigationViewModel.nextStep?.instruction.nilIfEmpty,
                             distanceToNextStepText: navigationViewModel.formattedDistanceToNextStep,
-                            currentManeuverIcon: navigationViewModel.nextStep?.maneuverIcon
-                                ?? navigationViewModel.currentStep?.maneuverIcon ?? "arrow.up",
-                            nextManeuverIcon: navigationViewModel.stepAfterNext?.maneuverIcon ?? "arrow.up"
+                            currentManeuverIcon: navigationViewModel.currentStep?.maneuverIcon ?? "arrow.up",
+                            nextManeuverIcon: navigationViewModel.nextStep?.maneuverIcon ?? "arrow.up"
                         )
 
                         // Which lane to be in, on the run-in to the junction — directly under the

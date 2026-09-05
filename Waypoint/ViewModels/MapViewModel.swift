@@ -176,16 +176,84 @@ final class MapViewModel {
         )
     }
 
-    /// Follow-camera used during navigation: tilted 3D, oriented toward the user's heading.
-    func followUser(at location: CLLocation, heading: CLLocationDirection) {
-        let heading = heading >= 0 ? heading : 0
+    /// Follow-camera used during navigation, built the way Apple builds it: tilted, turned to
+    /// point the way you're going, zoomed to suit how fast you're going, and with you sitting low
+    /// on the screen rather than in the middle of it.
+    ///
+    /// The last part is the one that isn't obvious. A driver needs to see the road *ahead*, so
+    /// Apple pushes the blue dot down toward the bottom of the map and gives the rest of the
+    /// screen to what's coming. SwiftUI's `Map` has no content-inset API to do that with, so the
+    /// camera is instead centred on a point projected up the road from where you actually are,
+    /// which puts the dot below centre by the same amount.
+    ///
+    /// `northUp` is the compass escape hatch: it keeps the offset and the tilt but stops the map
+    /// spinning, for someone who'd rather read it like a paper map.
+    func followUser(
+        at location: CLLocation,
+        heading: CLLocationDirection,
+        speed: CLLocationSpeed = 0,
+        northUp: Bool = false
+    ) {
+        let course = heading >= 0 ? heading : 0
+        let distance = Self.followDistance(forSpeed: speed)
         cameraPosition = .camera(
             MapCamera(
-                centerCoordinate: location.coordinate,
-                distance: 400,
-                heading: heading,
+                centerCoordinate: Self.coordinate(
+                    from: location.coordinate,
+                    bearing: course,
+                    metres: distance * Self.lookAheadFraction
+                ),
+                distance: distance,
+                heading: northUp ? 0 : course,
                 pitch: 55
             )
+        )
+    }
+
+    /// How far up the road to place the centre of the camera, as a share of the camera's own
+    /// distance.
+    ///
+    /// Empirical rather than derived: where a point lands on screen under a tilted camera depends
+    /// on the field of view MapKit picks, which it doesn't expose. Measured against a real drive —
+    /// at 0.35 the dot was pushed right to the bottom edge and spent half its time behind the
+    /// arrival bar, which is worse than centring it. This sits it clear of that bar with the road
+    /// ahead filling the rest, which is where Apple keeps it.
+    static let lookAheadFraction = 0.18
+
+    /// Apple pulls the camera back as you speed up — at 70mph the next turn is half a mile away
+    /// and a 400m camera shows you nothing but tarmac, while in town that same camera is exactly
+    /// right. Clamped at both ends so a bad speed reading can't throw the zoom.
+    static func followDistance(forSpeed speed: CLLocationSpeed) -> Double {
+        let slow = 3.0    // ~7mph
+        let fast = 30.0   // ~67mph
+        let clamped = min(max(speed.isFinite && speed > 0 ? speed : slow, slow), fast)
+        let t = (clamped - slow) / (fast - slow)
+        return 350 + t * 750
+    }
+
+    /// The point `metres` along `bearing` from a coordinate, on a sphere.
+    static func coordinate(
+        from origin: CLLocationCoordinate2D,
+        bearing: CLLocationDirection,
+        metres: Double
+    ) -> CLLocationCoordinate2D {
+        guard metres > 0 else { return origin }
+        let earthRadius = 6_371_000.0
+        let angular = metres / earthRadius
+        let bearingRadians = bearing * .pi / 180
+        let lat1 = origin.latitude * .pi / 180
+        let lon1 = origin.longitude * .pi / 180
+
+        let lat2 = asin(
+            sin(lat1) * cos(angular) + cos(lat1) * sin(angular) * cos(bearingRadians)
+        )
+        let lon2 = lon1 + atan2(
+            sin(bearingRadians) * sin(angular) * cos(lat1),
+            cos(angular) - sin(lat1) * sin(lat2)
+        )
+        return CLLocationCoordinate2D(
+            latitude: lat2 * 180 / .pi,
+            longitude: lon2 * 180 / .pi
         )
     }
 
@@ -201,14 +269,21 @@ final class MapViewModel {
         )
     }
 
+    /// Fires once, on the first fix of a session — the equivalent of Apple Maps opening already
+    /// centred on you rather than on the last place you happened to be looking.
+    var onFirstFix: (() -> Void)?
+
     private func centerOnUserLocation(_ location: CLLocation) {
         guard !hasCenteredOnUser else { return }
         hasCenteredOnUser = true
+        // A 0.05° span is about 5km across — the neighbourhood two neighbourhoods over. Apple
+        // opens at street level, close enough to read the road you're standing on.
         cameraPosition = .region(
             MKCoordinateRegion(
                 center: location.coordinate,
-                span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+                span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012)
             )
         )
+        onFirstFix?()
     }
 }

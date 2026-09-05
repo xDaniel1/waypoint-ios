@@ -121,6 +121,35 @@ final class LaneGuidanceTests: XCTestCase {
         XCTAssertEqual(AppleRoutesService.maneuver(approaching: fromSouth, leaving: back), "UTURN_LEFT")
     }
 
+    /// A step's polyline is the road leading *up to* its instruction, so the turn it describes is
+    /// the angle where that line ends — not where it starts.
+    ///
+    /// This is the bug that put a right-turn arrow beside "Turn left onto Dean St" on a real
+    /// drive: with two turns back to back, reading the angle at the start of a step gives you the
+    /// *previous* instruction's turn, and it only shows up when consecutive turns go opposite ways
+    /// — a route that turns right twice looks perfectly fine either way.
+    func testPairsEachInstructionWithTheTurnAtTheEndOfItsOwnStep() {
+        // North up Boerum Pl, left onto Dean St, then right onto Hoyt St.
+        let boerum = [
+            CLLocationCoordinate2D(latitude: 40.6880, longitude: -73.9900),
+            CLLocationCoordinate2D(latitude: 40.6890, longitude: -73.9900),
+        ]
+        let dean = [
+            CLLocationCoordinate2D(latitude: 40.6890, longitude: -73.9900),
+            CLLocationCoordinate2D(latitude: 40.6890, longitude: -73.9915),
+        ]
+        let hoyt = [
+            CLLocationCoordinate2D(latitude: 40.6890, longitude: -73.9915),
+            CLLocationCoordinate2D(latitude: 40.6900, longitude: -73.9915),
+        ]
+
+        // "Turn left onto Dean St" belongs to the Boerum leg, and it is a left.
+        XCTAssertEqual(AppleRoutesService.maneuver(approaching: boerum, leaving: dean), "TURN_LEFT")
+        // "Turn right onto Hoyt St" belongs to the Dean leg, and it is a right — the reading that
+        // pinned it to the start of its own step would have called this one a left.
+        XCTAssertEqual(AppleRoutesService.maneuver(approaching: dean, leaving: hoyt), "TURN_RIGHT")
+    }
+
     // MARK: Helpers
 
     private func way(
