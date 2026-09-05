@@ -580,7 +580,19 @@ struct MapScreen: View {
             // it was eating the budget and leaving the map trailing behind a moving rider.
             animateHeading(duration: 0.25, linear: true) {
                 if navigationViewModel.isActive {
-                    viewModel.followUser(at: location, heading: newHeading)
+                    // Matches the fix-driven follow camera exactly. Dropping `speed` here made
+                    // this command a 350m camera while the GPS path was commanding one sized to
+                    // how fast you're going, so the two pulsed the zoom against each other; and
+                    // the raw fix, rather than the route-matched point, un-snapped the puck.
+                    viewModel.followUser(
+                        at: CLLocation(
+                            latitude: puckCoordinate(for: location).latitude,
+                            longitude: puckCoordinate(for: location).longitude
+                        ),
+                        heading: navigationViewModel.matchedCourse ?? newHeading,
+                        speed: location.speed,
+                        northUp: isNavigationNorthUp
+                    )
                 } else {
                     viewModel.orientToHeading(at: location, heading: newHeading, camera: currentCamera)
                 }
