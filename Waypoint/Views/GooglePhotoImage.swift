@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// Drop-in replacement for `AsyncImage` when loading a Google Places photo URL. Those URLs are
-/// on the same iOS-bundle-restricted API key as every other Google call here, but `AsyncImage`
-/// has no way to attach the required `X-Ios-Bundle-Identifier` header — so this fetches the
-/// image data manually with that header set, then renders it the same way `AsyncImage` would.
+/// on the same iOS-bundle-restricted API key as every other Google call here, and `AsyncImage`
+/// has no way to attach the `X-Goog-Api-Key` and `X-Ios-Bundle-Identifier` headers they need —
+/// so this fetches the image data manually with both set, then renders it as `AsyncImage` would.
 enum GooglePhotoImagePhase {
     case empty
     case success(Image)
@@ -42,7 +42,7 @@ struct GooglePhotoImage<Content: View>: View {
                 fadesIn = true
                 phase = .empty
                 var request = URLRequest(url: url)
-                GoogleAPIRequest.addBundleIdentifierHeader(to: &request)
+                GoogleAPIRequest.authorize(&request)
                 guard let (data, _) = try? await URLSession.shared.data(for: request),
                       let uiImage = UIImage(data: data) else {
                     phase = .failure
