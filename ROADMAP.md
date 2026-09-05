@@ -77,7 +77,14 @@ Recorded so we stop re-investigating. All of these need private APIs or licensed
   and `LaneGuidanceService` reads it off Overpass. Same route as the speed limits above.
 - **Junction View** (3D road-level view at complex interchanges) — private to Apple Maps.
 - **Speed limits / speed cameras** — no public API ([Apple dev forums](https://developer.apple.com/forums/thread/656038)).
-- **Offline maps** — MapKit doesn't expose tile downloads to third-party apps.
+- **Offline maps** — MapKit doesn't expose tile downloads to third-party apps. Apple Maps can do
+  this; an app built on MapKit cannot. The only route to real offline tiles is `MKTileOverlay`
+  with a non-Apple tile source, which means giving up Apple's rendering — i.e. giving up the one
+  thing this app is for. Not a gap to close, a trade not worth making.
+  *What is buildable, and is now done:* everything either side of the map keeps working without a
+  network. Place cards, guides and nearby results fall back to expired cache rather than nothing
+  (`DiskCache.value(forKey:allowingStale:)`), favorites and recents are local anyway, and an
+  active trip survives being killed. Transit is deliberately excluded — see `GoogleTransitService`.
 - ~~**Crowdsourced hazard reports**~~ — Apple's is fleet-sourced at a scale we can't touch, but
   reports now persist to Supabase and come back to other signed-in devices, which is the useful
   part of the feature at this size.

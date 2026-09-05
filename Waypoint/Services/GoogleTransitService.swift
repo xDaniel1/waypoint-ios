@@ -31,6 +31,11 @@ struct GoogleTransitService {
         guard isConfigured else { throw GooglePlacesError.missingAPIKey }
 
         let key = Self.cacheKey(origin: origin, destination: destination, departureDate: departureDate)
+        // Note the missing `allowingStale:` here, unlike the place caches. Those fall back to an
+        // expired copy when there's no network, because a restaurant's address and photos don't
+        // go wrong in a few hours. A transit route does: its whole value is "the J is in four
+        // minutes", and a four-minute-old answer served an hour later is worse than admitting we
+        // don't know. Offline transit gets the offline banner, not a confidently wrong departure.
         if let cached = await Self.cache.value(forKey: key) {
             return cached.routes.map(\.routeOption)
         }

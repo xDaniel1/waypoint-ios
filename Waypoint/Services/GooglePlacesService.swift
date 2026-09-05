@@ -231,12 +231,14 @@ private enum DetailsCache {
     private static let store = DiskCache<DetailedPlace>(name: "details", ttl: 6 * 3600)
     private static let byIDStore = DiskCache<DetailedPlace>(name: "details-by-id", ttl: 6 * 3600)
 
+    /// With no network there is nothing to refresh from, so an expired card is served rather
+    /// than dropped — see `DiskCache.value(forKey:allowingStale:)`.
     static func place(forKey key: String) async -> DetailedPlace? {
-        await store.value(forKey: key)
+        await store.value(forKey: key, allowingStale: NetworkMonitor.isOffline)
     }
 
     static func place(forID id: String) async -> DetailedPlace? {
-        await byIDStore.value(forKey: id)
+        await byIDStore.value(forKey: id, allowingStale: NetworkMonitor.isOffline)
     }
 
     static func store(_ place: DetailedPlace, forKey key: String?) async {
@@ -263,7 +265,8 @@ private enum NearbyCache {
     private static let longLivedStore = DiskCache<[DetailedPlace]>(name: "nearby-longlived", ttl: 7 * 24 * 3600)
 
     static func places(forKey key: String, longLived: Bool) async -> [DetailedPlace]? {
-        await (longLived ? longLivedStore : store).value(forKey: key)
+        await (longLived ? longLivedStore : store)
+            .value(forKey: key, allowingStale: NetworkMonitor.isOffline)
     }
 
     static func store(_ places: [DetailedPlace], forKey key: String, longLived: Bool) async {

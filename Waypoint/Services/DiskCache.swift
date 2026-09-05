@@ -10,6 +10,11 @@ import OSLog
 ///
 /// Lives in `Caches/` deliberately — this is all re-fetchable, so the system is free to evict it
 /// under storage pressure rather than us holding space the user can't reclaim.
+/// How long past its TTL an entry is still worth holding on to for the offline case. It has to
+/// stop somewhere or the file grows forever; a month is far longer than any plausible stretch
+/// without signal, and this all lives in `Caches/` so the system can evict it anyway.
+private let diskCacheStaleFloor: TimeInterval = 30 * 24 * 3600
+
 actor DiskCache<Value: Codable> {
     private struct Entry: Codable {
         let value: Value
@@ -29,10 +34,19 @@ actor DiskCache<Value: Codable> {
         DiskCacheRegistry.register { [weak self] in await self?.flush() }
     }
 
-    func value(forKey key: String) -> Value? {
+    /// `allowingStale` is for the offline case, and only for it.
+    ///
+    /// Past the TTL a value isn't good enough to serve when we *could* refresh it. With no
+    /// network there's nothing to refresh from, and this morning's copy of a place card beats an
+    /// empty screen on a subway platform — nothing about a restaurant's address or photos goes
+    /// wrong in a few hours. Callers pass the connectivity state; the cache doesn't reach for it
+    /// itself, partly to stay testable and partly because `NetworkMonitor` is main-actor-bound
+    /// and this is an actor.
+    func value(forKey key: String, allowingStale: Bool = false) -> Value? {
         loadIfNeeded()
-        guard let entry = memory[key], isFresh(entry) else { return nil }
-        return entry.value
+        guard let entry = memory[key] else { return nil }
+        if isFresh(entry) { return entry.value }
+        return allowingStale && isWorthKeeping(entry) ? entry.value : nil
     }
 
     func store(_ value: Value, forKey key: String) {
@@ -67,6 +81,10 @@ actor DiskCache<Value: Codable> {
         Date().timeIntervalSince(entry.cachedAt) < ttl
     }
 
+    private func isWorthKeeping(_ entry: Entry) -> Bool {
+        Date().timeIntervalSince(entry.cachedAt) < diskCacheStaleFloor
+    }
+
     // MARK: Disk
 
     private var fileURL: URL? {
@@ -86,8 +104,10 @@ actor DiskCache<Value: Codable> {
             try? FileManager.default.removeItem(at: fileURL)
             return
         }
-        // Drop anything already expired so the file doesn't grow without bound.
-        memory = decoded.filter { isFresh($0.value) }
+        // Keep expired-but-recent entries: they're no longer fresh enough to serve while the
+        // network is up, but they're what makes the app work at all without one. Dropping them
+        // at the TTL meant a relaunch threw away every place card the user had already opened.
+        memory = decoded.filter { isWorthKeeping($0.value) }
     }
 
     private func persist() {
